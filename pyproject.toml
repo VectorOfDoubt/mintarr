@@ -12,3 +12,9 @@ target-version = "py312"
 # for cleanup in v0.2.0.
 "app/server.py" = ["E402", "E701", "E722", "F841"]
 "tests/test_worker_queue.py" = ["F841"]
+
+[tool.mypy]
+python_version = "3.12"
+ignore_missing_imports = true
+# Strict typing is a v0.2.0 goal; v0.1.0 accepts the existing surface.
+follow_imports = "silent"

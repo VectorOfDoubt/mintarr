@@ -107,20 +107,46 @@ No. Adapters depend only on `app/adapters/base.py` and `app/adapters/context.py`
 
 This section is volatile. The agent reading this should also check [`MINTARR_DOCUMENTATION_INDEX.md`](../MINTARR_DOCUMENTATION_INDEX.md) and [`ROADMAP.md`](../strategy/ROADMAP.md) for the live status.
 
-As of 2026-05-26:
+As of 2026-05-31:
 
 - **Phase 0 (open-source foundation)** is complete. The cutover playbook ran and the public Mintarr repo exists.
 - **License is locked: AGPL-3.0-only** ([ADR-0005](../architecture/adr/0005-license.md)). LICENSE file at repo root.
-- **F3.5a Soulseek completed-folder ingest** design is locked (F3.5 design doc held in private monorepo pending v0.2.0 migration). Implementation deferred until Phase 0 cutover.
-- **F4.1 Static connector registry** design is captured in [CONNECTOR_PLUGIN_ARCHITECTURE.md](../design/CONNECTOR_PLUGIN_ARCHITECTURE.md). First implementation slice deferred until Phase 0 cutover.
+- **v0.1.0 is shipped** from the public repo. Post-cutover review landed in public commit `5398687` and private staging sync commit `e814383`.
+- **Public repo is the source of active Mintarr work.** Work in WSL at `/home/esj006/projects/mintarr`; the old private monorepo is legacy/staging reference, not the primary implementation workspace.
+- **F4.1 Static connector registry** is the next recommended implementation slice. The design is in [F4.1_STATIC_CONNECTOR_REGISTRY.md](../design/F4.1_STATIC_CONNECTOR_REGISTRY.md) and the broader architecture is in [CONNECTOR_PLUGIN_ARCHITECTURE.md](../design/CONNECTOR_PLUGIN_ARCHITECTURE.md).
+- **F3.5a Soulseek completed-folder ingest** should come after F4.1 so it registers through the connector model rather than becoming another standalone adapter to migrate later.
+- **v0.2.0 cleanup issues #9-#15** exist in the public GitHub repo. They cover mypy, ruff format, ruff per-file ignores, legacy design-doc migration, operator docs, frontend framework evaluation, and performance baseline.
 
 If you are picking up work, the next units in priority order are:
 
-1. ~~Resolve license blockers~~ — done; AGPL-3.0-only locked
-2. Resolve publication-audit blockers (Codex's audit lists specific items)
-3. Land F4.1 static connector registry
-4. Implement F3.5a Soulseek completed-folder ingest
-5. Begin Phase 2 dashboard redesign
+1. Land **F4.1 static connector registry** in `/home/esj006/projects/mintarr`
+2. Add **F4.2 Integrations dashboard** once connector data exists
+3. Implement **F3.5a Soulseek completed-folder ingest** through the connector registry
+4. Work down **v0.2.0 cleanup #9-#15** as parallel/small PRs
+5. Begin Phase 2 dashboard redesign only after ADR-0011 resolves the frontend framework question
+
+Suggested F4.1 start:
+
+```bash
+cd /home/esj006/projects/mintarr
+git checkout main
+git pull origin main
+git checkout -b feat/f4-connector-registry
+```
+
+Then read:
+
+- [F4.1_STATIC_CONNECTOR_REGISTRY.md](../design/F4.1_STATIC_CONNECTOR_REGISTRY.md)
+- [CONNECTOR_PLUGIN_ARCHITECTURE.md](../design/CONNECTOR_PLUGIN_ARCHITECTURE.md)
+- [CONNECTOR_MANIFEST_v1.md](../specs/CONNECTOR_MANIFEST_v1.md)
+- [HTTP_API_v1.md](../specs/HTTP_API_v1.md) dashboard connector endpoint section
+
+Expected F4.1 deliverables:
+
+- `app/connectors/` with `ConnectorManifest`, `ConnectorHealth`, `Connector` Protocol/base, registry helpers, and concrete connectors for existing source/verifier/output integrations
+- `GET /dashboard/v1/connectors` endpoint with auth
+- Tests for manifest shape, duplicate registration, required connector subset, runtime status JSON, and endpoint auth/shape
+- Docs/spec updates that move `CONNECTOR_MANIFEST_v1` from provisional to runtime-backed if implementation matches the spec
 
 ## Decisions you should not re-litigate
 

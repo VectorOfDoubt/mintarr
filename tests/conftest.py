@@ -32,9 +32,9 @@ sys.path.insert(0, str(APP_DIR))
 def _reset_state_db():
     """Reset state_db between tests so _initialized + _db_path are fresh.
 
-    F3.1: also re-seed the adapter registry with TidalAdapter so tests
+    F3.1: also re-seed the adapter registry with built-in adapters so tests
     that call reset_registry() do not leave subsequent tests with no
-    adapter registered.
+    adapter registered. F4.1 does the same for the connector registry.
     """
     try:
         import state_db
@@ -45,9 +45,14 @@ def _reset_state_db():
         pass
     try:
         import adapters
+        import connectors
         from adapters.tidal import TidalAdapter
+        from adapters.local_folder import LocalFolderAdapter
         adapters.reset_registry()
         adapters.register(TidalAdapter())
+        adapters.register(LocalFolderAdapter())
+        connectors.reset_registry()
+        connectors.register_builtin_connectors(warn_missing_required=False)
     except Exception:
         pass
     yield

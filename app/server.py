@@ -3596,6 +3596,13 @@ try:
 except Exception:
     log.exception("adapter registration failed — source grabs may not work")
 
+# F4.1: Register operator-facing connectors after adapters are available.
+try:
+    import connectors
+    connectors.register_builtin_connectors()
+except Exception:
+    log.exception("connector registration failed — dashboard connector status may be unavailable")
+
 # F2.1: Start background worker thread (single worker per design).
 # Skip in tests where pytest manages lifecycle, or via env-toggle for ops.
 if not (os.environ.get("MINTARR_DISABLE_WORKER") or os.environ.get("TIDALHIRES_DISABLE_WORKER")):

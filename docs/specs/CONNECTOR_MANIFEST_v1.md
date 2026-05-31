@@ -1,8 +1,8 @@
 # Connector Manifest — v1
 
 > **Type:** Spec / contract
-> **Version:** 1.0.0-draft — 2026-05-31
-> **Status:** Provisional design contract. Do not treat as a public compatibility promise until F4.1 static connector registry is implemented and `GET /dashboard/v1/connectors` exists in runtime.
+> **Version:** 1.0.0 — 2026-05-31
+> **Status:** Runtime-backed v1 contract. Implemented by F4.1 static connector registry and exposed through `GET /dashboard/v1/connectors`.
 > **Audience:** Connector authors. Mintarr maintainers when authoring connector manifests for built-in connectors. Dashboard / Integrations-tab authors consuming the manifest JSON.
 > **Related:** [ADAPTER_PROTOCOL_v1.md](ADAPTER_PROTOCOL_v1.md), [ADR-0003](../architecture/adr/0003-connector-vs-adapter.md), [F4.1 design](../design/F4.1_STATIC_CONNECTOR_REGISTRY.md)
 
@@ -10,7 +10,7 @@
 
 ## 1. What this specifies
 
-This document specifies the planned **`ConnectorManifest` dataclass** and the planned **runtime status JSON** Mintarr will expose via `GET /dashboard/v1/connectors`.
+This document specifies the **`ConnectorManifest` dataclass** and the **runtime status JSON** Mintarr exposes via `GET /dashboard/v1/connectors`.
 
 Adapters are versioned separately ([`ADAPTER_PROTOCOL_v1.md`](ADAPTER_PROTOCOL_v1.md)). A connector that wraps an adapter references the adapter; this spec does not duplicate adapter content.
 
@@ -48,7 +48,8 @@ class ConnectorManifest:
     # Identity
     id: str
     """Unique connector identifier. ^[a-z0-9_]+$.
-    For source connectors, MUST equal the underlying adapter's name."""
+    For source connectors, this is the operator-facing connector id.
+    The adapter linkage is expressed separately through adapter_class."""
 
     display_name: str
     """Human-readable name for dashboard surface. Title-cased.

@@ -188,7 +188,7 @@ Legend:
 | Path | Status | Owner | Prio | Notes |
 |---|---|---|---|---|
 | `ADAPTER_PROTOCOL_v1.md` | drafted | Claude | P1 | SemVer-versioned contract for SourceAdapter authors. Complete API + dataclass spec + worked example. |
-| `CONNECTOR_MANIFEST_v1.md` | provisional | Claude/Codex | P1 | Design contract only until F4.1 implements runtime registry and `/dashboard/v1/connectors`. |
+| `CONNECTOR_MANIFEST_v1.md` | locked | Claude/Codex | P1 | Runtime-backed by F4.1 static connector registry and `/dashboard/v1/connectors`. |
 | `SIDECAR_FORMAT_v2.md` | locked | Claude/Codex | P1 | Runtime-validated 2026-05-31 against imported, blocked and review sidecars. |
 | `HTTP_API_v1.md` | locked | Claude/Codex | P1 | Runtime-validated 2026-05-31 against Flask route inventory (33 routes). |
 | `LIDARR_INTEGRATION.md` | drafted | Claude | P1 | Supported Lidarr versions, endpoint catalogue, multi-version client design, version-specific quirks (3.1.x reference). |
@@ -228,7 +228,7 @@ Per-feature design docs. Numbered F-series (F3.1, F3.4, F4.1, etc). Each one fol
 | `F3.2_F3.3_NEWZNAB_ROUTING_DESIGN.md` | locked (legacy) | Claude/Codex | — | Migrated as-is. |
 | `F3.5_SOULSEEK_ADAPTER_DESIGN.md` | locked (legacy) | Codex/Claude | — | Migrated as-is. |
 | `CONNECTOR_PLUGIN_ARCHITECTURE.md` | drafted | Codex | P1 | Becomes basis for F4.1-F4.5 design docs. |
-| `F4.1_STATIC_CONNECTOR_REGISTRY.md` | drafted | Claude (Codex review pending) | P0 | First implementation slice of connector architecture. ConnectorManifest dataclass, registry, GET /dashboard/v1/connectors, 12 tests, ~9h estimate. |
+| `F4.1_STATIC_CONNECTOR_REGISTRY.md` | implemented | Claude/Codex | P0 | Static connector registry, built-in manifests, GET /dashboard/v1/connectors, and registry invariants landed. |
 | `F4.2_INTEGRATIONS_DASHBOARD.md` | planned | Claude | P2 | UI tab for connector status. |
 | `F4.3_CONNECTOR_CONFIG_DRY_RUN.md` | planned | Claude | P2 | enable/disable + mode toggle. |
 | `F5.1_RELEASE_FAMILY_MATCHING.md` | planned | Claude | P2 | Mintarr-side mitigation of Lidarr's multi-album / edition matching weakness. Locked-in feature from ADR-0007 §"Multi-album / release matching is not a fork problem". Includes: release-family scoring, track-count + track-title similarity, edition-aware import policy, dashboard explanation when Lidarr rejects, optional manual override with audit. Estimate 15-25h. |

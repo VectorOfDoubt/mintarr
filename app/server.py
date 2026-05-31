@@ -34,7 +34,7 @@ from functools import wraps
 from html import unescape as html_unescape
 from pathlib import Path
 from typing import Literal
-from urllib.parse import quote_plus
+from urllib.parse import quote_plus, unquote_plus  # noqa: F401
 from xml.sax.saxutils import escape as xml_escape
 
 from flask import Flask, Response, jsonify, request
@@ -277,8 +277,11 @@ def _save_jobs():
 # adapter never imports from server. server re-exports under the previous
 # underscore-prefixed names so existing callsites and test monkeypatches
 # keep working.
-from adapters.tidal import (
+from adapters.tidal import (  # noqa: F401
+    classify_quality as _classify_quality,
     get_session as _get_session,
+    release_title as _release_title,
+    search_albums as _search_albums,
 )
 
 

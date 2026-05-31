@@ -1287,6 +1287,29 @@ main { padding: 16px 24px; }
   font-size: 12px;
 }
 .filter-bar button:hover { border-color: var(--accent-primary); }
+.tab-bar {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--border-default);
+  margin: 8px 0 16px;
+}
+.tab-button {
+  background: transparent;
+  border: 1px solid transparent;
+  border-bottom: none;
+  color: var(--text-secondary);
+  padding: 8px 12px;
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  cursor: pointer;
+  font-size: 13px;
+}
+.tab-button:hover { color: var(--text-primary); border-color: var(--border-subtle); }
+.tab-button.active {
+  background: var(--bg-surface);
+  border-color: var(--border-default);
+  color: var(--text-primary);
+}
+.dashboard-view[hidden] { display: none; }
 .panel {
   background: var(--bg-surface);
   border: 1px solid var(--border-subtle);
@@ -1296,6 +1319,52 @@ main { padding: 16px 24px; }
 }
 .panel h2 { margin-top: 0; }
 .panel.warn { border-color: var(--status-warning); background: var(--status-warning-bg); }
+.integration-section { margin-bottom: 24px; }
+.integration-section h2 { margin-top: 0; }
+.connector-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 12px;
+}
+.connector-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 12px;
+}
+.connector-card.required.missing,
+.connector-card.required.blocked {
+  border-color: var(--status-danger);
+  background: var(--status-danger-bg);
+}
+.connector-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+  margin-bottom: 10px;
+}
+.connector-title { font-weight: 600; font-size: 14px; }
+.connector-id { color: var(--text-muted); font-family: var(--font-mono); font-size: 11px; margin-top: 2px; }
+.connector-meta {
+  display: grid;
+  grid-template-columns: minmax(92px, auto) 1fr;
+  gap: 6px 10px;
+  font-size: 12px;
+}
+.connector-meta .k { color: var(--text-secondary); }
+.connector-meta .v { color: var(--text-primary); min-width: 0; overflow-wrap: anywhere; }
+.connector-tags { display: flex; flex-wrap: wrap; gap: 4px; }
+.connector-tag {
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  padding: 1px 5px;
+  font-size: 10px;
+  font-family: var(--font-mono);
+}
+.connector-link { color: var(--accent-primary); text-decoration: none; }
+.connector-link:hover { color: var(--accent-primary-hover); }
 .command-list { display: grid; gap: 8px; }
 .command-item {
   display: grid;
@@ -1487,39 +1556,50 @@ h2 { margin: 32px 0 12px; font-size: 14px; font-weight: 600; color: var(--text-s
     <div id="timings-body" class="muted">No timing data yet; new jobs will populate this.</div>
   </section>
 
-  <div class="filter-bar">
-    <label>Filter:</label>
-    <select id="filter-status">
-      <option value="">All statuses</option>
-      <option value="needs_review">Needs review</option>
-      <option value="imported">Imported</option>
-      <option value="pending">Pending</option>
-      <option value="policy_violation">Policy alert</option>
-      <option value="failed">Failed</option>
-      <option value="blocked">Blocked</option>
-      <option value="discarded">Discarded</option>
-      <option value="promoted">Promoted</option>
-    </select>
-    <select id="filter-decision">
-      <option value="">All decisions</option>
-      <option value="ACCEPT">ACCEPT</option>
-      <option value="ACCEPT_PROVISIONAL">ACCEPT_PROVISIONAL</option>
-      <option value="REVIEW_REQUIRED">REVIEW_REQUIRED</option>
-      <option value="BLOCK">BLOCK</option>
-    </select>
-    <button onclick="clearFilters()">Clear</button>
-    <button onclick="refresh()">Refresh now</button>
+  <div class="tab-bar" role="tablist" aria-label="Dashboard views">
+    <button class="tab-button active" id="tab-records" role="tab" aria-controls="records-view" onclick="showView('records')">Records</button>
+    <button class="tab-button" id="tab-integrations" role="tab" aria-controls="integrations-view" onclick="showView('integrations')">Integrations</button>
   </div>
 
-  <h2>Records</h2>
-  <table id="records-table">
-    <thead><tr>
-      <th>Status</th><th>Reason</th><th>Title</th><th>Decision</th><th>Outcome</th><th>State</th><th>Score</th><th>JID</th><th></th>
-    </tr></thead>
-    <tbody id="records-body">
-      <tr><td colspan="9" class="muted">Loading...</td></tr>
-    </tbody>
-  </table>
+  <section class="dashboard-view" id="records-view">
+    <div class="filter-bar">
+      <label>Filter:</label>
+      <select id="filter-status">
+        <option value="">All statuses</option>
+        <option value="needs_review">Needs review</option>
+        <option value="imported">Imported</option>
+        <option value="pending">Pending</option>
+        <option value="policy_violation">Policy alert</option>
+        <option value="failed">Failed</option>
+        <option value="blocked">Blocked</option>
+        <option value="discarded">Discarded</option>
+        <option value="promoted">Promoted</option>
+      </select>
+      <select id="filter-decision">
+        <option value="">All decisions</option>
+        <option value="ACCEPT">ACCEPT</option>
+        <option value="ACCEPT_PROVISIONAL">ACCEPT_PROVISIONAL</option>
+        <option value="REVIEW_REQUIRED">REVIEW_REQUIRED</option>
+        <option value="BLOCK">BLOCK</option>
+      </select>
+      <button onclick="clearFilters()">Clear</button>
+      <button onclick="refresh()">Refresh now</button>
+    </div>
+
+    <h2>Records</h2>
+    <table id="records-table">
+      <thead><tr>
+        <th>Status</th><th>Reason</th><th>Title</th><th>Decision</th><th>Outcome</th><th>State</th><th>Score</th><th>JID</th><th></th>
+      </tr></thead>
+      <tbody id="records-body">
+        <tr><td colspan="9" class="muted">Loading...</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section class="dashboard-view" id="integrations-view" hidden>
+    <div id="integrations-body" class="muted">Loading integrations...</div>
+  </section>
 </main>
 
 <div id="drawer-overlay" onclick="closeDrawer()"></div>
@@ -1575,6 +1655,7 @@ let apikey = localStorage.getItem('tidalhires_apikey') || '';
 let refreshTimer = null;
 let lastUpdate = null;
 let activeDrawerJid = null;
+let activeView = localStorage.getItem('tidalhires_dashboard_view') || 'records';
 
 const $ = (id) => document.getElementById(id);
 
@@ -1614,7 +1695,20 @@ function init() {
   // Restore filters from localStorage
   $('filter-status').value = localStorage.getItem('tidalhires_filter_status') || '';
   $('filter-decision').value = localStorage.getItem('tidalhires_filter_decision') || '';
+  showView(activeView);
 }
+
+function showView(view) {
+  activeView = view === 'integrations' ? 'integrations' : 'records';
+  localStorage.setItem('tidalhires_dashboard_view', activeView);
+  $('records-view').hidden = activeView !== 'records';
+  $('integrations-view').hidden = activeView !== 'integrations';
+  $('tab-records').classList.toggle('active', activeView === 'records');
+  $('tab-integrations').classList.toggle('active', activeView === 'integrations');
+  $('tab-records').setAttribute('aria-selected', activeView === 'records' ? 'true' : 'false');
+  $('tab-integrations').setAttribute('aria-selected', activeView === 'integrations' ? 'true' : 'false');
+}
+
 function clearFilters() {
   $('filter-status').value = '';
   $('filter-decision').value = '';
@@ -1625,20 +1719,23 @@ function clearFilters() {
 
 async function refresh() {
   try {
-    const [sumResp, recResp, timingResp, jobsResp] = await Promise.all([
+    const [sumResp, recResp, timingResp, jobsResp, connectorResp] = await Promise.all([
       api('/summary'),
       api('/records?' + buildFilterParams()),
       api('/timings?window=7d'),
-      api('/jobs?state=queued,running,cancelling&limit=20')
+      api('/jobs?state=queued,running,cancelling&limit=20'),
+      api('/connectors')
     ]);
     const sum = await sumResp.json();
     const rec = await recResp.json();
     const timings = await timingResp.json();
     const jobs = await jobsResp.json();
-    renderSummary(sum);
+    const connectors = await connectorResp.json();
+    renderSummary(sum, connectors.connectors || []);
     renderActiveJobs(jobs.jobs || []);
     renderTimings(timings);
     renderRecords(rec.records);
+    renderIntegrations(connectors.connectors || []);
     lastUpdate = Date.now();
     updateRefreshIndicator();
     // Save filter state
@@ -1649,6 +1746,87 @@ async function refresh() {
       showToast('Refresh failed: ' + e.message, 'error');
     }
   }
+}
+
+function renderIntegrations(connectors) {
+  if (!connectors.length) {
+    $('integrations-body').innerHTML = '<span class="muted">No connectors registered.</span>';
+    return;
+  }
+  const groups = [
+    ['source', 'Sources'],
+    ['verifier', 'Verifiers'],
+    ['output', 'Outputs'],
+  ];
+  $('integrations-body').innerHTML = groups.map(([kind, label]) => {
+    const items = connectors.filter(c => c.kind === kind);
+    if (!items.length) return '';
+    return `
+      <section class="integration-section">
+        <h2>${label}</h2>
+        <div class="connector-grid">
+          ${items.map(renderConnectorCard).join('')}
+        </div>
+      </section>
+    `;
+  }).join('');
+}
+
+function statusBadge(status) {
+  const map = {
+    ok: ['success', 'OK'],
+    degraded: ['warning', 'Degraded'],
+    blocked: ['danger', 'Blocked'],
+    missing: ['danger', 'Missing'],
+    disabled: ['neutral', 'Disabled'],
+  };
+  return map[status] || ['neutral', status || 'Unknown'];
+}
+
+function yesNo(value) {
+  return value ? 'yes' : 'no';
+}
+
+function tagList(items) {
+  if (!items || !items.length) return 'none';
+  return `<span class="connector-tags">${items.map(item => `<span class="connector-tag">${esc(item)}</span>`).join('')}</span>`;
+}
+
+function renderConnectorCard(connector) {
+  const manifest = connector.manifest || {};
+  const runtime = connector.runtime || {};
+  const [badgeClass, badgeText] = statusBadge(runtime.health);
+  const stateClass = runtime.health || 'unknown';
+  const requiredClass = manifest.required ? 'required' : '';
+  const version = runtime.version || 'unknown';
+  const minVersion = manifest.min_supported_version || 'none';
+  const service = manifest.docker_service || 'none';
+  const profile = manifest.install_profile || 'none';
+  const docsUrl = manifest.docs_url || '';
+  const docs = docsUrl ? `<a class="connector-link" href="${esc(docsUrl)}" target="_blank" rel="noreferrer">docs</a>` : 'none';
+  const err = runtime.last_error ? `<div class="k">Last error</div><div class="v">${esc(runtime.last_error)}</div>` : '';
+  return `
+    <article class="connector-card ${requiredClass} ${esc(stateClass)}">
+      <div class="connector-head">
+        <div>
+          <div class="connector-title">${esc(connector.display_name || manifest.display_name || connector.id)}</div>
+          <div class="connector-id">${esc(connector.id || manifest.id || '')}</div>
+        </div>
+        <span class="badge ${badgeClass}">${esc(badgeText)}</span>
+      </div>
+      <div class="connector-meta">
+        <div class="k">Runtime</div><div class="v">${esc(runtime.mode || 'unknown')} · installed ${yesNo(runtime.installed)} · enabled ${yesNo(runtime.enabled)}</div>
+        <div class="k">Required</div><div class="v">${yesNo(manifest.required)}</div>
+        <div class="k">Version</div><div class="v">${esc(version)} · min ${esc(minVersion)}</div>
+        <div class="k">Service</div><div class="v">${esc(service)} · profile ${esc(profile)}</div>
+        <div class="k">Required env</div><div class="v">${tagList(manifest.required_env)}</div>
+        <div class="k">Optional env</div><div class="v">${tagList(manifest.optional_env)}</div>
+        <div class="k">Capabilities</div><div class="v">${tagList(manifest.capabilities)}</div>
+        <div class="k">Last check</div><div class="v">${esc(runtime.last_checked_at || 'unknown')} · ${docs}</div>
+        ${err}
+      </div>
+    </article>
+  `;
 }
 
 function renderActiveJobs(jobs) {
@@ -1693,9 +1871,16 @@ function buildFilterParams() {
   return params.join('&');
 }
 
-function renderSummary(s) {
+function connectorHealth(connectors, connectorId, fallback) {
+  const c = (connectors || []).find(item => item.id === connectorId);
+  return (c && c.runtime && c.runtime.health) || fallback || 'unknown';
+}
+
+function renderSummary(s, connectors=[]) {
   const c = s.counts;
   const commands = s.queue.lidarr_commands || {active_count: 0, blocking_count: 0, commands: []};
+  const flacHealth = connectorHealth(connectors, 'flac_detective', s.stack_health.flac_detective);
+  const lidarrHealth = connectorHealth(connectors, 'lidarr_manual_import', s.stack_health.lidarr);
   const cards = [
     {label: 'Total', val: c.total_decisions, cls: ''},
     {label: 'Imported', val: c.imported, cls: c.imported > 0 ? 'ok' : ''},
@@ -1710,7 +1895,7 @@ function renderSummary(s) {
   $('summary-grid').innerHTML = cards.map(c =>
     `<div class="card ${c.cls}"><div class="label">${c.label}</div><div class="val">${c.val}</div></div>`
   ).join('');
-  $('meta').textContent = `${c.total_decisions} records · Stack: tidalhires=${s.stack_health.tidalhires}, flac-detective=${s.stack_health.flac_detective}, lidarr=${s.stack_health.lidarr}`;
+  $('meta').textContent = `${c.total_decisions} records · Stack: tidalhires=${s.stack_health.tidalhires}, flac-detective=${flacHealth}, lidarr=${lidarrHealth}`;
   renderLidarrCommands(commands);
 }
 
@@ -1932,7 +2117,7 @@ async function loadLidarrContext(jid) {
   const target = $('lidarr-context');
   if (!target || activeDrawerJid !== jid) return;
   try {
-    const resp = await apiFetch(API + '/lidarr-context/' + encodeURIComponent(jid));
+    const resp = await api('/lidarr-context/' + encodeURIComponent(jid));
     if (activeDrawerJid !== jid) return;
     if (!resp.ok) {
       target.innerHTML = '<span class="muted">Lidarr context unavailable</span>';

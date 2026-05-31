@@ -77,6 +77,7 @@ Each source adapter has its own environment variables. Adapters are dormant (ret
 | Variable | Purpose | Default |
 |---|---|---|
 | `TIDAL_DL_NG_CONFIG` | Directory containing tidal-dl-ng's `settings.json` and `token.json` | `/root/.config/tidal_dl_ng-dev` |
+| `TIDAL_OAUTH_PKCE` | Load the stored TIDAL OAuth token as a PKCE session. Keep enabled for LOSSLESS/HI_RES delivery. | `1` |
 
 Mount the configured directory as a volume; populate `token.json` via `tidal-dl-ng login` (see [INSTALL.md](INSTALL.md) §4.1). The adapter is enabled when `token.json` exists.
 

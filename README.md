@@ -3,9 +3,12 @@
 > Quality control and import orchestration for Lidarr.
 > Verifies, scores, and orchestrates music imports across multiple sources.
 
+[![CI](https://github.com/eivindsjursen-lab/mintarr/actions/workflows/ci.yml/badge.svg)](https://github.com/eivindsjursen-lab/mintarr/actions/workflows/ci.yml)
+[![Container](https://github.com/eivindsjursen-lab/mintarr/actions/workflows/build.yml/badge.svg)](https://github.com/eivindsjursen-lab/mintarr/actions/workflows/build.yml)
+[![Docs](https://github.com/eivindsjursen-lab/mintarr/actions/workflows/docs.yml/badge.svg)](https://eivindsjursen-lab.github.io/mintarr/)
+[![Release](https://img.shields.io/github/v/release/eivindsjursen-lab/mintarr?include_prereleases&sort=semver)](https://github.com/eivindsjursen-lab/mintarr/releases)
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](LICENSE)
-[![Documentation](https://img.shields.io/badge/docs-mkdocs--material-blue)](https://eivindsjursen-lab.github.io/mintarr/)
-[![Status](https://img.shields.io/badge/status-foundation--phase-orange)](docs/strategy/ROADMAP.md)
+[![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://github.com/eivindsjursen-lab/mintarr/blob/main/docs/architecture/adr/0010-python-implementation-language.md)
 
 ---
 

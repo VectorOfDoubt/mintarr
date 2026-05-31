@@ -20,9 +20,59 @@ For this to remain true, tests must:
 
 The suite is currently 300+ tests. New PRs typically add 5-15 tests.
 
-## 2. Running tests
+## 2. Test matrix per change type
 
-### 2.1 Full suite
+Not every PR needs every test. This table is the authoritative answer to
+"what tests must I add for this change?" Reviewers reject PRs that miss
+the required tests for their change type.
+
+| If your change touches... | Required tests | Recommended tests |
+|---|---|---|
+|  (new source) | pytest unit tests for  +  +  against fixture data | One end-to-end pipeline test with this adapter mocked |
+|  | pytest per-phase unit test + at least one full-pipeline integration test | Failure-mode test for the changed phase |
+|  | pytest unit tests for new policy branch + sidecar shape regression test | Property-test (hypothesis) if the rule is numeric |
+|  Flask route | pytest endpoint test (auth + happy path + at least one error case) | Route appears in  output |
+|  (schema change) | Migration test asserting old + new shape coexist | Round-trip property test |
+|  (template / JSON) | pytest endpoint test + assert response structure | HTML smoke-render test if template logic changed |
+| Dependency bump (Dockerfile / requirements) | Full suite passes; container builds | Container smoke test boots Flask |
+|  only | None — link check via  is enough | MkDocs  build locally |
+|  | At least one test that imports the script and asserts its public function | If shell: shellcheck clean |
+|  | Workflow runs green on PR | Manual  smoke-run |
+
+### 2.1 Test layers we currently run
+
+| Layer | Tooling | Where | Trigger |
+|---|---|---|---|
+| Unit + integration (Python) | pytest |  | Every push, every PR |
+| Static analysis | ruff (with per-file ignores) |  +  | Every push, every PR |
+| Type check | mypy 1.10 |  | Disabled in v0.1.0; tracked for v0.2.0 |
+| Container build | Docker Buildx | root  | Every push, every tag |
+| Docs build | mkdocs Material  |  | Push to  paths |
+| Route inventory |  | Flask app | Manual + cutover gate |
+| Sidecar format |  | Real sidecars | Manual + cutover gate |
+
+### 2.2 Test layers we do NOT run yet
+
+These do not exist today. The condition under which each gets added is
+documented so future maintainers know when to introduce them.
+
+| Layer | Add when... | Likely tooling |
+|---|---|---|
+| Frontend E2E | Phase 2 dashboard redesign replaces server-rendered HTML/CSS/vanilla JS with a JavaScript framework. Whichever framework wins drives the choice (Playwright for cross-browser, Vitest + Testing Library for component, Storybook for visual). Until then, dashboard tests are server-side pytest only. | Playwright + framework-native runner |
+| End-to-end against a real Lidarr | An operator-reported bug shows the mocked Lidarr fixture diverges from real Lidarr behaviour in a way unit tests cannot catch. Requires a Lidarr-in-Docker fixture; cost is CI run time. | pytest + lidarr container service |
+| Performance baseline | Worker-queue or pipeline change risks regressing the N=1 single-threaded throughput recorded as the v0.1.0 baseline. Adds one pytest per measured path. | pytest-benchmark |
+| Soulseek lane | F3.5a Soulseek adapter implementation lands (post-cutover). Tests cover completed-folder validation, settle window, partial-marker rejection. | pytest with mocked slskd HTTP |
+| Container security scan | Operator or maintainer requests, OR repo grows to handle PII / regulated content (will not happen by design). | trivy / grype in CI |
+| Dependency licence scan | New AGPL-incompatible dependency proposed in a PR. | pip-licenses + manual review against ADR-0005 |
+| Mutation testing | A bug regresses despite passing tests; reveals the suite is too forgiving. | mutmut or cosmic-ray |
+
+If you think a layer is needed but the condition above has not been
+met, open an issue rather than adding the layer in your PR — adding
+test infrastructure is its own change.
+
+## 3. Running tests
+
+### 3.1 Full suite
 
 ```bash
 docker compose -f docker-compose.test.yaml run --rm tests
@@ -30,14 +80,14 @@ docker compose -f docker-compose.test.yaml run --rm tests
 
 Builds the test image on first run (~3-5 minutes). Runs in 3 seconds after that.
 
-### 2.2 Single file
+### 3.2 Single file
 
 ```bash
 docker compose -f docker-compose.test.yaml run --rm \
     --entrypoint pytest tests /tests/test_pipeline_phases.py -v
 ```
 
-### 2.3 Single test
+### 3.3 Single test
 
 ```bash
 docker compose -f docker-compose.test.yaml run --rm \
@@ -45,21 +95,21 @@ docker compose -f docker-compose.test.yaml run --rm \
     /tests/test_pipeline_phases.py::test_execute_source_grab_runs_phases_in_order -v
 ```
 
-### 2.4 With short traceback
+### 3.4 With short traceback
 
 ```bash
 docker compose -f docker-compose.test.yaml run --rm \
     --entrypoint pytest tests /tests/ -v --tb=short
 ```
 
-### 2.5 With stop-on-first-failure
+### 3.5 With stop-on-first-failure
 
 ```bash
 docker compose -f docker-compose.test.yaml run --rm \
     --entrypoint pytest tests /tests/ -v -x
 ```
 
-### 2.6 With stdout captured
+### 3.6 With stdout captured
 
 ```bash
 docker compose -f docker-compose.test.yaml run --rm \
@@ -68,7 +118,7 @@ docker compose -f docker-compose.test.yaml run --rm \
 
 `-s` is useful when debugging — `print` statements appear in test output.
 
-## 3. Test structure
+## 4. Test structure
 
 Tests live under `tests/`. One file per logical area:
 
@@ -97,11 +147,11 @@ tests/
 
 When you add a new file, prefix it `test_<area>.py`. When you add a new test in an existing file, group it near related tests.
 
-## 4. Fixtures
+## 5. Fixtures
 
 `conftest.py` provides cross-cutting fixtures. The key ones:
 
-### 4.1 `_reset_state_db` (autouse)
+### 5.1 `_reset_state_db` (autouse)
 
 Automatically resets state_db between tests:
 
@@ -111,7 +161,7 @@ Automatically resets state_db between tests:
 
 This means every test starts with a clean state_db and a fresh adapter registry. No test depends on database state from another test.
 
-### 4.2 `fake_album`
+### 5.2 `fake_album`
 
 A minimal stand-in for `tidalapi.Album` used by `_classify_quality` and `_release_title`:
 
@@ -129,7 +179,7 @@ def fake_album():
     )
 ```
 
-### 4.3 `fresh_db` (per-test)
+### 5.3 `fresh_db` (per-test)
 
 For tests that need explicit state_db setup beyond the autouse reset:
 
@@ -144,9 +194,9 @@ def fresh_db():
     return state_db
 ```
 
-## 5. Test patterns
+## 6. Test patterns
 
-### 5.1 Testing an adapter
+### 6.1 Testing an adapter
 
 Use a `FakePipelineContext` to exercise the adapter without the runtime:
 
@@ -183,7 +233,7 @@ def test_my_adapter_download_raw_copies_files(tmp_path):
     assert (raw_dir / "01 track.flac").exists()
 ```
 
-### 5.2 Testing a pipeline phase
+### 6.2 Testing a pipeline phase
 
 Use a `FakeAdapter` to drive the pipeline:
 
@@ -224,7 +274,7 @@ def test_execute_source_grab_runs_phases_in_order(tmp_path, monkeypatch):
     assert "ready_for_import" in stages
 ```
 
-### 5.3 Testing a Flask endpoint
+### 6.3 Testing a Flask endpoint
 
 Use Flask's test client:
 
@@ -247,7 +297,7 @@ def test_endpoint_returns_summary(client):
     assert "total_records" in r.get_json()
 ```
 
-### 5.4 Testing with mocked Lidarr
+### 6.4 Testing with mocked Lidarr
 
 Monkeypatch the helpers that call Lidarr:
 
@@ -266,7 +316,7 @@ def test_import_path_calls_lidarr_correctly(monkeypatch):
     assert seen["source_type"] == "local"
 ```
 
-### 5.5 Testing migrations
+### 6.5 Testing migrations
 
 Build a pre-migration database explicitly:
 
@@ -300,9 +350,9 @@ def test_migration_is_idempotent(tmp_path):
     state_db.init(db_path=db)  # second call should be no-op
 ```
 
-## 6. Writing assertions
+## 7. Writing assertions
 
-### 6.1 Assert specifics, not "it worked"
+### 7.1 Assert specifics, not "it worked"
 
 Bad:
 ```python
@@ -319,7 +369,7 @@ assert result.field_b == 42
 
 The first form catches "did not crash"; the second catches "did the right thing".
 
-### 6.2 Use pytest's assertion introspection
+### 7.2 Use pytest's assertion introspection
 
 Plain `assert` statements produce useful failure messages because pytest rewrites them:
 
@@ -330,7 +380,7 @@ assert payload["status"] == "ok"
 
 Avoid `unittest.TestCase.assertEqual` and friends — pytest's rewriting is better.
 
-### 6.3 Use parametrize for table-driven tests
+### 7.3 Use parametrize for table-driven tests
 
 ```python
 @pytest.mark.parametrize("score,expected_decision", [
@@ -347,7 +397,7 @@ def test_v2_decision_by_score(score, expected_decision):
 
 This generates 5 tests, each named distinctly. Failures point to the specific score that failed.
 
-## 7. Coverage expectations
+## 8. Coverage expectations
 
 Mintarr does not enforce coverage thresholds in CI. Coverage is meaningless without judgement — 100% coverage of obvious code provides no signal.
 
@@ -358,25 +408,25 @@ The expectation is qualitative:
 - **Critical paths get integration tests.** The four pipeline phases, the V2 decision matrix, the worker queue mechanics, the addurl dispatcher — these have end-to-end tests because they are load-bearing.
 - **Adapters get contract tests.** Every adapter has tests covering is_enabled, search, download_raw happy path, download_raw failure paths.
 
-## 8. What is hard to test
+## 9. What is hard to test
 
-### 8.1 Live Lidarr interaction
+### 9.1 Live Lidarr interaction
 
 Tests do not call a real Lidarr. They mock `_trigger_lidarr_import` and verify Mintarr's intent. To test against a real Lidarr, run a manual smoke test (see [DEVELOPMENT.md](DEVELOPMENT.md) §"Running Mintarr locally for manual testing").
 
-### 8.2 Subprocess behaviour
+### 9.2 Subprocess behaviour
 
 Tests do not invoke real `tidal-dl-ng`, `ffprobe`, `ffmpeg`, `flac`. They monkeypatch `subprocess.run` to return predetermined outputs. This means the test suite does not catch breakage in those tools' actual behaviour — only Mintarr's handling of them.
 
-### 8.3 Race conditions
+### 9.3 Race conditions
 
 The worker queue has lease + heartbeat mechanics that are hard to test in unit-test scale. Integration tests cover the simple cases (dequeue → run → complete); the complex cases (worker crash mid-job, lease takeover) are covered by hand-crafted scenarios in `test_worker_queue.py`.
 
-### 8.4 Real Soulseek peer behaviour
+### 9.4 Real Soulseek peer behaviour
 
 When F3.5b lands, Soulseek HTTP interaction will be tested against mocked slskd responses. Real peer behaviour cannot be reproduced in tests.
 
-## 9. Test-driven adapter authoring
+## 10. Test-driven adapter authoring
 
 For new source adapters, write the tests first:
 
@@ -388,13 +438,13 @@ For new source adapters, write the tests first:
 
 This is not enforced; it is just easier. By writing tests first, you confront the contract before writing the code that has to satisfy it.
 
-## 10. Debugging test failures
+## 11. Debugging test failures
 
-### 10.1 Read the traceback
+### 11.1 Read the traceback
 
 The traceback usually points at the failure line. With `--tb=short`, the last frame is what failed.
 
-### 10.2 Add print statements with `-s`
+### 11.2 Add print statements with `-s`
 
 ```python
 def test_my_thing():
@@ -410,7 +460,7 @@ docker compose -f docker-compose.test.yaml run --rm \
     --entrypoint pytest tests /tests/test_foo.py::test_my_thing -v -s
 ```
 
-### 10.3 Use pytest's `--pdb`
+### 11.3 Use pytest's `--pdb`
 
 Drops into a debugger on first failure:
 
@@ -421,7 +471,7 @@ docker compose -f docker-compose.test.yaml run --rm \
 
 Use `c` to continue, `q` to quit.
 
-### 10.4 Isolate the failing test
+### 11.4 Isolate the failing test
 
 A test that passes in isolation but fails in the full suite usually has a state-sharing problem. Find it by running smaller subsets:
 

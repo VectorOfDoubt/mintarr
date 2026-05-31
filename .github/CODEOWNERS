@@ -1,0 +1,18 @@
+# Mintarr CODEOWNERS — auto-assigns review on PRs.
+# See https://docs.github.com/en/repositories/managing-your-repositories-settings-and-features/customizing-your-repository/about-code-owners
+
+# Default: maintainer reviews every PR.
+* @eivindsjursen-lab
+
+# Locked decision records — require explicit maintainer review since
+# they capture committed-to architecture and are append-only.
+/docs/architecture/adr/ @eivindsjursen-lab
+
+# Versioned spec files — breaking changes require a successor file
+# (_v2.md). Maintainer review enforces SemVer policy from ADR-0004.
+/docs/specs/ @eivindsjursen-lab
+
+# CI / build / release tooling.
+/.github/ @eivindsjursen-lab
+/Dockerfile @eivindsjursen-lab
+/scripts/ @eivindsjursen-lab

@@ -175,12 +175,14 @@ docker compose -f docker-compose.test.yaml run --rm \
     --entrypoint mypy tests /app
 ```
 
-CI runs all three on every PR. Local pre-commit hooks save a CI round trip:
+CI currently runs pytest and `ruff check` on every PR. `mypy` and
+`ruff format --check` are configured but deferred to v0.2.0 cleanup issues.
+Local pre-commit hooks save a CI round trip:
 
 ```bash
 pip install pre-commit
 pre-commit install
-# Now ruff + mypy run automatically before every commit
+# Now ruff + mypy can run automatically before every commit
 ```
 
 Style conventions live in [STYLE_GUIDE.md](STYLE_GUIDE.md).

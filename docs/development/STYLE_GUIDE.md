@@ -9,7 +9,9 @@
 
 ## 1. Tooling
 
-Mintarr uses these tools enforced in CI:
+Mintarr uses these tools. The v0.1.0 CI enforces pytest and `ruff check`;
+`mypy` and `ruff format --check` are configured but deferred to v0.2.0 cleanup
+issues.
 
 | Tool | Purpose | Config file |
 |---|---|---|
@@ -17,7 +19,7 @@ Mintarr uses these tools enforced in CI:
 | `mypy` | Static type checking | `pyproject.toml` |
 | `pytest` | Test runner | `pyproject.toml` |
 
-All three run on every PR via GitHub Actions. Local pre-commit hooks save a CI round-trip:
+Local pre-commit hooks save a CI round-trip:
 
 ```bash
 pip install pre-commit

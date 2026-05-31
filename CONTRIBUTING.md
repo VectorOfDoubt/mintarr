@@ -50,7 +50,8 @@ Short version:
 - Python 3.12+ syntax
 - `ruff` formats and lints; configuration in `pyproject.toml`
 - Imports sorted by `ruff` (which uses `isort` semantics)
-- Type hints on public functions; `mypy` runs in CI
+- Type hints on public functions; `mypy` is configured but the CI job is
+  disabled until the v0.2.0 type-cleanup issue is resolved
 - Conventional commits (`feat:`, `fix:`, `docs:`, `chore:`, `refactor:`, `test:`)
 - One commit per logical change; squash branches with many WIP commits before merge
 

@@ -28,28 +28,28 @@ the required tests for their change type.
 
 | If your change touches... | Required tests | Recommended tests |
 |---|---|---|
-|  (new source) | pytest unit tests for  +  +  against fixture data | One end-to-end pipeline test with this adapter mocked |
-|  | pytest per-phase unit test + at least one full-pipeline integration test | Failure-mode test for the changed phase |
-|  | pytest unit tests for new policy branch + sidecar shape regression test | Property-test (hypothesis) if the rule is numeric |
-|  Flask route | pytest endpoint test (auth + happy path + at least one error case) | Route appears in  output |
-|  (schema change) | Migration test asserting old + new shape coexist | Round-trip property test |
-|  (template / JSON) | pytest endpoint test + assert response structure | HTML smoke-render test if template logic changed |
+| `app/adapters/` (new source) | pytest unit tests for `is_enabled()` + `search()` + `download_raw()` against fixture data | One end-to-end pipeline test with this adapter mocked |
+| `app/pipeline.py` | pytest per-phase unit test + at least one full-pipeline integration test | Failure-mode test for the changed phase |
+| `app/verification.py` / policy | pytest unit tests for new policy branch + sidecar shape regression test | Property-test (hypothesis) if the rule is numeric |
+| `app/server.py` Flask route | pytest endpoint test (auth + happy path + at least one error case) | Route appears in `scripts/inventory_flask_routes.py` output |
+| `app/state_db.py` (schema change) | Migration test asserting old + new shape coexist | Round-trip property test |
+| `app/dashboard.py` (template / JSON) | pytest endpoint test + assert response structure | HTML smoke-render test if template logic changed |
 | Dependency bump (Dockerfile / requirements) | Full suite passes; container builds | Container smoke test boots Flask |
-|  only | None — link check via  is enough | MkDocs  build locally |
-|  | At least one test that imports the script and asserts its public function | If shell: shellcheck clean |
-|  | Workflow runs green on PR | Manual  smoke-run |
+| Documentation only | None — link check via `scripts/check_markdown_links.py` is enough | `mkdocs build --strict` locally |
+| `scripts/` | At least one test that imports the script and asserts its public function | If shell: shellcheck clean |
+| `.github/workflows/` | Workflow runs green on PR | Manual scratch-branch smoke-run |
 
 ### 2.1 Test layers we currently run
 
 | Layer | Tooling | Where | Trigger |
 |---|---|---|---|
-| Unit + integration (Python) | pytest |  | Every push, every PR |
-| Static analysis | ruff (with per-file ignores) |  +  | Every push, every PR |
-| Type check | mypy 1.10 |  | Disabled in v0.1.0; tracked for v0.2.0 |
-| Container build | Docker Buildx | root  | Every push, every tag |
-| Docs build | mkdocs Material  |  | Push to  paths |
-| Route inventory |  | Flask app | Manual + cutover gate |
-| Sidecar format |  | Real sidecars | Manual + cutover gate |
+| Unit + integration (Python) | pytest | `tests/` | Every push, every PR |
+| Static analysis | ruff (with per-file ignores) | `app/` + `tests/` | Every push, every PR |
+| Type check | mypy 1.16 | `app/` | Disabled in v0.1.0; tracked for v0.2.0 |
+| Container build | Docker Buildx | root `Dockerfile` | Every push, every tag |
+| Docs build | MkDocs Material | `docs/` + `mkdocs.yml` | Push to docs paths |
+| Route inventory | `scripts/inventory_flask_routes.py` | Flask app | Manual + cutover gate |
+| Sidecar format | `scripts/validate_sidecar_format.py` | Real sidecars | Manual + cutover gate |
 
 ### 2.2 Test layers we do NOT run yet
 

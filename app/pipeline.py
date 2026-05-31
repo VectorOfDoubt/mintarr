@@ -22,7 +22,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
-from adapters.base import RawDownload, SourceAdapter
+from adapters.base import SourceAdapter
 from adapters.context import PipelineContext
 
 log = logging.getLogger("tidalhires.pipeline")

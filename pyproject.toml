@@ -1,0 +1,14 @@
+# Mintarr Python project metadata.
+# Build/dist configuration is currently container-only (Dockerfile drives
+# pip install); this file primarily holds tool configuration.
+
+[tool.ruff]
+target-version = "py312"
+
+[tool.ruff.lint.per-file-ignores]
+# v0.1.0 carryover: server.py predates ruff adoption and uses several legacy
+# patterns (compressed try/except, intentional module-level conditional
+# imports, named placeholders preserved for log-message readability). Tracked
+# for cleanup in v0.2.0.
+"app/server.py" = ["E402", "E701", "E722", "F841"]
+"tests/test_worker_queue.py" = ["F841"]

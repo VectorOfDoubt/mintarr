@@ -5,10 +5,7 @@ Covers all 18 tests from F3.2/F3.3 design v0.2 §9.
 
 from __future__ import annotations
 
-import io
-import json
 import os
-import re
 from email.utils import parsedate_to_datetime
 from pathlib import Path
 
@@ -283,7 +280,6 @@ def test_newznab_failure_isolation(routing_env, monkeypatch):
 
 def test_newznab_empty_query_skips_local_adapter(routing_env):
     """Empty Lidarr indexer-test must not expose arbitrary local folders."""
-    import adapters
     client, ingest = routing_env
     _seed_album(ingest, "ShouldNotAppear", "ShouldNotAppearAlbum")
     _seed_album(ingest, "Daft Punk", "Random Access Memories")

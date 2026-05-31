@@ -731,7 +731,7 @@ def test_dashboard_cache_invalidate_on_action(monkeypatch, tmp_path):
         output_dir,
     )
 
-    from dashboard_cache import clear, get_or_compute, _cache
+    from dashboard_cache import clear, _cache
     clear()
 
     client = server.app.test_client()

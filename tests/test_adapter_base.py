@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 
 import pytest
 
@@ -77,7 +76,6 @@ def test_registry_register_duplicate_raises():
 
 def test_runtime_context_satisfies_protocol(tmp_path):
     """RuntimePipelineContext must satisfy the PipelineContext Protocol shape."""
-    from adapters.context import PipelineContext
     from adapters.runtime import RuntimePipelineContext
 
     ctx = RuntimePipelineContext(

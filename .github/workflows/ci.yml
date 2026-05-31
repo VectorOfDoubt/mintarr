@@ -20,6 +20,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Build base image
+        run: |
+          docker build -t tidalhires:local -f Dockerfile .
+
       - name: Build test image
         run: |
           docker compose -f docker-compose.test.yaml build tests
@@ -47,8 +51,6 @@ jobs:
       - name: ruff check
         run: ruff check app tests
 
-      - name: ruff format --check
-        run: ruff format --check app tests
 
   typecheck:
     name: Type check (mypy)

@@ -34,7 +34,7 @@ from functools import wraps
 from html import unescape as html_unescape
 from pathlib import Path
 from typing import Literal
-from urllib.parse import quote_plus, unquote_plus
+from urllib.parse import quote_plus
 from xml.sax.saxutils import escape as xml_escape
 
 from flask import Flask, Response, jsonify, request
@@ -278,10 +278,7 @@ def _save_jobs():
 # underscore-prefixed names so existing callsites and test monkeypatches
 # keep working.
 from adapters.tidal import (
-    classify_quality as _classify_quality,
     get_session as _get_session,
-    release_title as _release_title,
-    search_albums as _search_albums,
 )
 
 
@@ -2424,7 +2421,6 @@ def _trigger_lidarr_import(
         # We have files but Lidarr cannot match them to an album. Trigger rescue anyway
         # by building a minimal "files" list from album info in jobs.
         try:
-            from pathlib import Path as _P
             with _jobs_lock:
                 job = _jobs.get(jid, {})
             album_id_from_job = job.get("album_id_lidarr") or job.get("album_id_in_lidarr")
@@ -2620,7 +2616,8 @@ def _rescue_place_and_rescan(jid, files, api, key):
     Lidarr scans them as library files, excluding missing_tracks from the
     score and bypassing the 80% import-match issue.
     """
-    import requests, shutil
+    import requests
+    import shutil
     from pathlib import Path as _P
     if not _rescue_rescan_enabled():
         log.warning("[%s] RESCUE: disabled by TIDALHIRES_RESCUE_RESCAN_ENABLED=false", jid)

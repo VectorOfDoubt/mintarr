@@ -1,0 +1,176 @@
+# Mintarr — MkDocs Material site configuration
+# Decision rationale: docs/architecture/adr/0006-docs-tooling-mkdocs-material.md
+
+site_name: Mintarr
+site_description: Quality control and import orchestration for Lidarr
+site_url: https://eivindsjursen-lab.github.io/mintarr/
+repo_url: https://github.com/eivindsjursen-lab/mintarr
+repo_name: eivindsjursen-lab/mintarr
+edit_uri: edit/main/docs/
+
+docs_dir: docs
+site_dir: site
+
+theme:
+  name: material
+  language: en
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: deep purple
+      accent: amber
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: deep purple
+      accent: amber
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+  font:
+    text: Inter
+    code: JetBrains Mono
+  features:
+    - navigation.tabs
+    - navigation.tabs.sticky
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - navigation.indexes
+    - navigation.footer
+    - search.suggest
+    - search.highlight
+    - search.share
+    - content.code.copy
+    - content.code.annotate
+    - content.tabs.link
+    - content.action.edit
+    - toc.follow
+    - toc.integrate
+
+plugins:
+  - search:
+      lang: en
+  - mermaid2:
+      arguments:
+        theme: |
+          ^(JSON.parse(__md_get("__palette").index == 1)) ? 'dark' : 'default'
+
+markdown_extensions:
+  # Core
+  - meta
+  - tables
+  - footnotes
+  - admonition
+  - attr_list
+  - md_in_html
+  - def_list
+  - toc:
+      permalink: true
+      permalink_title: Anchor link to this section
+
+  # PyMdown extensions
+  - pymdownx.details
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:mermaid2.fence_mermaid_custom
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.tasklist:
+      custom_checkbox: true
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  - pymdownx.keys
+  - pymdownx.mark
+  - pymdownx.smartsymbols
+  - pymdownx.tilde
+  - pymdownx.caret
+  - pymdownx.betterem:
+      smart_enable: all
+
+# Navigation mirrors docs/MINTARR_DOCUMENTATION_INDEX.md §4 (target shape)
+# Currently includes only documents that exist. New documents are added here
+# as they are written.
+nav:
+  - Home: index.md
+
+  - Strategy:
+      - Vision: strategy/VISION.md
+      - Roadmap: strategy/ROADMAP.md
+      - Glossary: strategy/GLOSSARY.md
+
+  - Architecture:
+      - Overview: architecture/OVERVIEW.md
+      - Pipeline: architecture/PIPELINE.md
+      - Data model: architecture/DATA_MODEL.md
+      - Security model: architecture/SECURITY_MODEL.md
+      - Cutover manifest: architecture/CUTOVER_MANIFEST.md
+      - Cutover playbook: architecture/MINTARR_CUTOVER_PLAYBOOK.md
+      - Decision Records:
+          - "ADR-0001 Rename from tidalhires": architecture/adr/0001-rename-from-tidalhires.md
+          - "ADR-0002 Single-instance arr-pattern": architecture/adr/0002-single-instance-arr-pattern.md
+          - "ADR-0003 Connector vs Adapter": architecture/adr/0003-connector-vs-adapter.md
+          - "ADR-0004 API versioning SemVer": architecture/adr/0004-api-versioning-semver.md
+          - "ADR-0005 License": architecture/adr/0005-license.md
+          - "ADR-0006 Docs tooling MkDocs Material": architecture/adr/0006-docs-tooling-mkdocs-material.md
+          - "ADR-0007 No Lidarr fork": architecture/adr/0007-no-lidarr-fork.md
+          - "ADR-0008 Strategic positioning": architecture/adr/0008-strategic-positioning.md
+          - "ADR-0009 Runtime hardening conventions": architecture/adr/0009-runtime-hardening-conventions.md
+          - "ADR-0010 Python implementation language": architecture/adr/0010-python-implementation-language.md
+
+  - Specs:
+      - "Adapter Protocol v1": specs/ADAPTER_PROTOCOL_v1.md
+      - "Connector Manifest v1": specs/CONNECTOR_MANIFEST_v1.md
+      - "Sidecar Format v2": specs/SIDECAR_FORMAT_v2.md
+      - "HTTP API v1": specs/HTTP_API_v1.md
+      - "Lidarr integration": specs/LIDARR_INTEGRATION.md
+
+  - Operations:
+      - Install: operations/INSTALL.md
+      - Configuration: operations/CONFIGURATION.md
+      - Upgrade guide: operations/UPGRADE_GUIDE.md
+      - Backup and restore: operations/BACKUP_RESTORE.md
+
+  - Development:
+      - Setup: development/DEVELOPMENT.md
+      - Testing: development/TESTING.md
+      - Style guide: development/STYLE_GUIDE.md
+      - Commit convention: development/COMMIT_CONVENTION.md
+      - Review checklist: development/REVIEW_CHECKLIST.md
+      - Adapter tutorial: development/ADAPTER_TUTORIAL.md
+      - Agent handover: development/AGENT_HANDOVER.md
+
+  - Community:
+      - Comparison: community/COMPARISON.md
+      - FAQ: community/FAQ.md
+
+  - Design:
+      - "Connector / plugin architecture": design/CONNECTOR_PLUGIN_ARCHITECTURE.md
+      - "F4.1 Static connector registry": design/F4.1_STATIC_CONNECTOR_REGISTRY.md
+
+  - Documentation Index: MINTARR_DOCUMENTATION_INDEX.md
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/eivindsjursen-lab/mintarr
+      name: Mintarr on GitHub
+  generator: false  # Hide the "Made with Material for MkDocs" footer
+
+extra_css:
+  - stylesheets/mintarr.css
+
+copyright: >
+  Copyright &copy; 2026 Eivind Sjursen and Mintarr contributors —
+  <a href="https://www.gnu.org/licenses/agpl-3.0.en.html">AGPL-3.0-only</a>

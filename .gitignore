@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# MkDocs
+site/
+
+# Local environment / secrets
+.env
+.env.*
+!.env.example
+config/
+data/
+state.db
+*.sqlite
+*.sqlite3
+
+# Runtime output
+downloads/
+output/
+complete/
+blocked_decisions/
+discarded/
+expired_review/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

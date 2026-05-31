@@ -1,0 +1,157 @@
+name: Bug report
+description: Report a Mintarr defect (something doesn't work as documented)
+title: "[Bug]: "
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Before opening a bug report:
+
+        - Search [existing issues](https://github.com/eivindsjursen-lab/mintarr/issues) to avoid duplicates
+        - Check [TROUBLESHOOTING.md](https://eivindsjursen-lab.github.io/mintarr/operations/TROUBLESHOOTING/) for common issues
+        - For security vulnerabilities, see [SECURITY.md](https://github.com/eivindsjursen-lab/mintarr/blob/main/SECURITY.md) — do NOT use this template
+
+  - type: input
+    id: version
+    attributes:
+      label: Mintarr version
+      description: Found in container logs at startup, or via `docker exec mintarr cat /app/VERSION` once released
+      placeholder: e.g., 1.0.3
+    validations:
+      required: true
+
+  - type: input
+    id: lidarr-version
+    attributes:
+      label: Lidarr version
+      description: Settings → System → About in Lidarr
+      placeholder: e.g., 3.1.0.4875
+    validations:
+      required: true
+
+  - type: dropdown
+    id: deployment
+    attributes:
+      label: Deployment shape
+      options:
+        - Docker Compose
+        - Docker run
+        - Other (specify in description)
+    validations:
+      required: true
+
+  - type: dropdown
+    id: source-adapter
+    attributes:
+      label: Source adapter involved
+      description: Which adapter is the bug related to?
+      options:
+        - TIDAL
+        - LocalFolder
+        - Soulseek
+        - Multiple
+        - Not adapter-related
+        - Unsure
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Bug description
+      description: A clear, concise description of what is wrong.
+      placeholder: |
+        Mintarr does X when I expect Y.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction steps
+      description: Step-by-step. Be specific — "click around" is not enough.
+      placeholder: |
+        1. Set MINTARR_API_KEY to ...
+        2. Trigger a TIDAL grab for album ID ...
+        3. Observe ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behaviour
+      description: What you thought would happen.
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behaviour
+      description: What actually happened.
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant log lines
+      description: |
+        Output of `docker logs mintarr --tail 200` or a relevant subset.
+        Redact API keys, OAuth tokens, and personal paths before pasting.
+      render: shell
+      placeholder: |
+        2026-05-26 ...
+    validations:
+      required: false
+
+  - type: textarea
+    id: sidecar
+    attributes:
+      label: Sidecar JSON (if applicable)
+      description: |
+        Contents of the affected record's verification.json sidecar.
+        Sidecars live under <OUTPUT_BASE>/<jid>/verification.json or /config/blocked_decisions/<jid>.json.
+        Redact paths and titles if sensitive.
+      render: json
+      placeholder: |
+        {
+          "jid": "...",
+          "v2_verification_decision": "BLOCK",
+          ...
+        }
+    validations:
+      required: false
+
+  - type: input
+    id: docker-compose
+    attributes:
+      label: docker-compose.yml (relevant subset)
+      description: |
+        Volumes and environment variables relevant to the bug.
+        Redact MINTARR_API_KEY, LIDARR_API_KEY, and any other secrets.
+      placeholder: e.g., MINTARR_API_KEY=<redacted>, LOCAL_INGEST_PATH=/local-ingest
+    validations:
+      required: false
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional context
+      description: Anything else that might help diagnose. Screenshots welcome.
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: confirm
+    attributes:
+      label: Confirmation
+      options:
+        - label: I have searched existing issues for duplicates
+          required: true
+        - label: I have redacted secrets and personal data from logs and configuration
+          required: true
+        - label: This is a bug, not a feature request or security issue
+          required: true

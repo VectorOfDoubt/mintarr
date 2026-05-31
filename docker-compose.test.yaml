@@ -1,0 +1,20 @@
+services:
+  tests:
+    build:
+      context: .
+      dockerfile: Dockerfile.test
+    image: tidalhires-tests:local
+    environment:
+      - TIDALHIRES_API_KEY=tidalhires-test-api-key
+      - DOWNLOAD_BASE=/tmp/downloads
+      - OUTPUT_BASE=/tmp/output
+      - TIDAL_DL_NG_CONFIG=/tmp/tidal-config
+    volumes:
+      - type: bind
+        source: ./app
+        target: /app
+      - type: bind
+        source: ./tests
+        target: /tests
+    working_dir: /app
+    command: ["pytest", "/tests", "-v", "--tb=short"]

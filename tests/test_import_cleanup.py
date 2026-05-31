@@ -1,0 +1,632 @@
+"""Regression tests for Lidarr queue cleanup after successful import."""
+
+from __future__ import annotations
+
+import os
+from types import SimpleNamespace
+from unittest.mock import ANY
+
+import server
+
+
+def _response(status_code=200, payload=None, text=""):
+    return SimpleNamespace(status_code=status_code, text=text, json=lambda: payload)
+
+
+def _seed_job(jid: str, title: str = "Test Album"):
+    server._jobs[jid] = {
+        "id": jid,
+        "status": "completed",
+        "title": title,
+        "percent": 100,
+    }
+
+
+def _assert_queue_cleanup(delete_mock, api: str, key: str, qid: int):
+    delete_mock.assert_called_once_with(
+        f"{api}/queue/{qid}",
+        params={"removeFromClient": "false", "blocklist": "false"},
+        headers={"X-Api-Key": key},
+        timeout=10,
+    )
+
+
+def test_rescue_place_and_rescan_can_be_disabled(monkeypatch, mocker):
+    monkeypatch.setenv("TIDALHIRES_RESCUE_RESCAN_ENABLED", "false")
+    get_mock = mocker.patch("requests.get")
+    post_mock = mocker.patch("requests.post")
+
+    ok = server._rescue_place_and_rescan(
+        "abc12345",
+        [{"albumId": 20, "artistId": 10, "path": "/downloads/TidalHiRes/complete/abc12345/01.flac"}],
+        "http://lidarr/api/v1",
+        "lidarr-key",
+    )
+
+    assert ok is False
+    get_mock.assert_not_called()
+    post_mock.assert_not_called()
+
+
+def test_download_job_stays_processing_until_lidarr_import(tmp_path, mocker):
+    jid = "4478eaef8089"
+    download_base = tmp_path / "downloads"
+    output_base = tmp_path / "output"
+    work_dir = download_base / jid
+    album_dir = work_dir / "Albums" / "Artist - Album"
+
+    mocker.patch.object(server, "DOWNLOAD_BASE", download_base)
+    mocker.patch.object(server, "OUTPUT_BASE", output_base)
+    mocker.patch.object(server, "_save_jobs")
+    observed = {}
+
+    def fake_run(args, **kwargs):
+        if args[:2] == ["tidal-dl-ng", "dl"]:
+            album_dir.mkdir(parents=True)
+            (album_dir / "01.flac").write_bytes(b"flac")
+        return SimpleNamespace(returncode=0, stderr="", stdout="")
+
+    def fake_trigger(import_jid, output_dir, worker_job_id=None, *, source_type="tidal"):
+        observed.update(server._jobs[import_jid])
+        observed["trigger_output_dir"] = str(output_dir)
+        observed["worker_job_id"] = worker_job_id
+        observed["trigger_source_type"] = source_type
+
+    mocker.patch.object(server.subprocess, "run", side_effect=fake_run)
+    mocker.patch.object(server, "_trigger_lidarr_import", side_effect=fake_trigger)
+    server._jobs[jid] = {"id": jid, "status": "queued", "album_id": 123, "percent": 0}
+
+    server._run_download_job(jid, 123)
+
+    assert observed["status"] == "processing"
+    assert "completed_at" not in observed
+    assert observed["output_dir"] == str(output_base / jid)
+    assert observed["trigger_output_dir"] == str(output_base / jid)
+    server._jobs.pop(jid, None)
+
+
+def test_manualimport_success_cleans_lidarr_queue(tmp_path, mocker):
+    jid = "592b388d"
+    output_dir = tmp_path / jid
+    output_dir.mkdir()
+    for idx in range(2):
+        (output_dir / f"{idx + 1:02d}.flac").write_bytes(b"flac")
+
+    api = "http://lidarr/api/v1"
+    key = "lidarr-key"
+    _seed_job(jid)
+    manualimport_items = [
+        {
+            "path": f"/downloads/TidalHiRes/complete/{jid}/01.flac",
+            "artist": {"id": 10},
+            "album": {"id": 20, "currentRelease": {"id": 30}},
+            "albumReleaseId": 30,
+            "tracks": [{"id": 101}],
+            "quality": {"quality": {"name": "FLAC 24bit"}},
+            "rejections": [],
+        },
+        {
+            "path": f"/downloads/TidalHiRes/complete/{jid}/02.flac",
+            "artist": {"id": 10},
+            "album": {"id": 20, "currentRelease": {"id": 30}},
+            "albumReleaseId": 30,
+            "tracks": [{"id": 102}],
+            "quality": {"quality": {"name": "FLAC 24bit"}},
+            "rejections": [],
+        },
+    ]
+
+    mocker.patch.dict(os.environ, {"LIDARR_API_URL": api})
+    mocker.patch.object(server, "_get_lidarr_key", return_value=key)
+    mocker.patch.object(server, "_log_decision")
+    mocker.patch.object(server, "_save_jobs")
+    mocker.patch.object(server.time, "sleep")
+
+    trackfile_calls = {"count": 0}
+
+    def fake_get(url, **kwargs):
+        if url == f"{api}/manualimport":
+            return _response(payload=manualimport_items)
+        if url == f"{api}/trackfile?albumId=20":
+            trackfile_calls["count"] += 1
+            if trackfile_calls["count"] <= 2:
+                return _response(payload=[])
+            return _response(payload=[{"id": 1}, {"id": 2}])
+        if url == f"{api}/queue?pageSize=200":
+            return _response(payload={"records": [{"id": 99, "downloadId": jid}]})
+        raise AssertionError(f"unexpected GET {url}")
+
+    def fake_post(url, **kwargs):
+        if url == "http://host.docker.internal:8889/analyze":
+            return _response(payload={"overall_verdict": "AUTHENTIC", "file_count": 2})
+        if url == f"{api}/command":
+            return _response(status_code=201, payload={"id": 123})
+        raise AssertionError(f"unexpected POST {url}")
+
+    get_mock = mocker.patch("requests.get", side_effect=fake_get)
+    post_mock = mocker.patch("requests.post", side_effect=fake_post)
+    delete_mock = mocker.patch("requests.delete", return_value=_response(status_code=204))
+
+    server._trigger_lidarr_import(jid, output_dir)
+
+    _assert_queue_cleanup(delete_mock, api, key, 99)
+    assert get_mock.call_count >= 5
+    assert post_mock.call_count == 2
+    assert server._jobs[jid]["status"] == "completed"
+    assert server._jobs[jid]["hidden_from_lidarr"] is True
+
+
+def test_manualimport_replace_success_uses_history_without_rescue(tmp_path, mocker):
+    jid = "f0026bd878e9"
+    output_dir = tmp_path / jid
+    output_dir.mkdir()
+    for idx in range(2):
+        (output_dir / f"{idx + 1:02d}.flac").write_bytes(b"flac")
+
+    api = "http://lidarr/api/v1"
+    key = "lidarr-key"
+    _seed_job(jid)
+    manualimport_items = [
+        {
+            "path": f"/downloads/TidalHiRes/complete/{jid}/01.flac",
+            "artist": {"id": 10},
+            "album": {"id": 20, "currentRelease": {"id": 30}},
+            "albumReleaseId": 30,
+            "tracks": [{"id": 101}],
+            "quality": {"quality": {"name": "FLAC 24bit"}},
+            "rejections": [],
+        },
+        {
+            "path": f"/downloads/TidalHiRes/complete/{jid}/02.flac",
+            "artist": {"id": 10},
+            "album": {"id": 20, "currentRelease": {"id": 30}},
+            "albumReleaseId": 30,
+            "tracks": [{"id": 102}],
+            "quality": {"quality": {"name": "FLAC 24bit"}},
+            "rejections": [],
+        },
+    ]
+
+    mocker.patch.dict(os.environ, {"LIDARR_API_URL": api})
+    mocker.patch.object(server, "_get_lidarr_key", return_value=key)
+    mocker.patch.object(server, "_log_decision")
+    mocker.patch.object(server, "_save_jobs")
+    mocker.patch.object(server.time, "sleep")
+    rescue_mock = mocker.patch.object(server, "_rescue_place_and_rescan")
+
+    def fake_get(url, **kwargs):
+        if url == f"{api}/manualimport":
+            return _response(payload=manualimport_items)
+        if url == f"{api}/trackfile?albumId=20":
+            return _response(payload=[{"id": 1}, {"id": 2}])
+        if url == f"{api}/history?pageSize=100&sortKey=date&sortDirection=descending":
+            return _response(payload={"records": [
+                {"downloadId": jid, "eventType": "trackFileImported"},
+                {"downloadId": jid, "eventType": "trackFileImported"},
+            ]})
+        if url == f"{api}/queue?pageSize=200":
+            return _response(payload={"records": [{"id": 44, "downloadId": jid}]})
+        raise AssertionError(f"unexpected GET {url}")
+
+    def fake_post(url, **kwargs):
+        if url == "http://host.docker.internal:8889/analyze":
+            return _response(payload={"overall_verdict": "AUTHENTIC", "file_count": 2})
+        if url == f"{api}/command":
+            return _response(status_code=201, payload={"id": 123})
+        raise AssertionError(f"unexpected POST {url}")
+
+    mocker.patch("requests.get", side_effect=fake_get)
+    mocker.patch("requests.post", side_effect=fake_post)
+    delete_mock = mocker.patch("requests.delete", return_value=_response(status_code=204))
+
+    server._trigger_lidarr_import(jid, output_dir)
+
+    rescue_mock.assert_not_called()
+    _assert_queue_cleanup(delete_mock, api, key, 44)
+    assert server._jobs[jid]["status"] == "completed"
+    assert server._jobs[jid]["hidden_from_lidarr"] is True
+
+
+def test_manualimport_moved_files_counts_as_success_without_history(tmp_path, mocker):
+    jid = "c335e496eee4"
+    output_dir = tmp_path / jid
+    output_dir.mkdir()
+    for idx in range(2):
+        (output_dir / f"{idx + 1:02d}.flac").write_bytes(b"flac")
+
+    api = "http://lidarr/api/v1"
+    key = "lidarr-key"
+    _seed_job(jid)
+    manualimport_items = [
+        {
+            "path": f"/downloads/TidalHiRes/complete/{jid}/01.flac",
+            "artist": {"id": 10},
+            "album": {"id": 20, "currentRelease": {"id": 30}},
+            "albumReleaseId": 30,
+            "tracks": [{"id": 101}],
+            "quality": {"quality": {"name": "FLAC 24bit"}},
+            "rejections": [],
+        },
+        {
+            "path": f"/downloads/TidalHiRes/complete/{jid}/02.flac",
+            "artist": {"id": 10},
+            "album": {"id": 20, "currentRelease": {"id": 30}},
+            "albumReleaseId": 30,
+            "tracks": [{"id": 102}],
+            "quality": {"quality": {"name": "FLAC 24bit"}},
+            "rejections": [],
+        },
+    ]
+
+    mocker.patch.dict(os.environ, {"LIDARR_API_URL": api})
+    mocker.patch.object(server, "_get_lidarr_key", return_value=key)
+    mocker.patch.object(server, "_log_decision")
+    mocker.patch.object(server, "_save_jobs")
+    mocker.patch.object(server.time, "sleep")
+    rescue_mock = mocker.patch.object(server, "_rescue_place_and_rescan")
+
+    trackfile_calls = {"count": 0}
+
+    def fake_get(url, **kwargs):
+        if url == f"{api}/manualimport":
+            return _response(payload=manualimport_items)
+        if url == f"{api}/trackfile?albumId=20":
+            trackfile_calls["count"] += 1
+            if trackfile_calls["count"] == 1:
+                return _response(payload=[])
+            return _response(payload=[{"id": 1}, {"id": 2}])
+        if url == f"{api}/history?pageSize=100&sortKey=date&sortDirection=descending":
+            return _response(payload={"records": []})
+        if url == f"{api}/queue?pageSize=200":
+            return _response(payload={"records": [{"id": 45, "downloadId": jid}]})
+        raise AssertionError(f"unexpected GET {url}")
+
+    def fake_post(url, **kwargs):
+        if url == "http://host.docker.internal:8889/analyze":
+            return _response(payload={"overall_verdict": "AUTHENTIC", "file_count": 2})
+        if url == f"{api}/command":
+            return _response(status_code=201, payload={"id": 123, "status": "failed"})
+        raise AssertionError(f"unexpected POST {url}")
+
+    mocker.patch("requests.get", side_effect=fake_get)
+    mocker.patch("requests.post", side_effect=fake_post)
+    delete_mock = mocker.patch("requests.delete", return_value=_response(status_code=204))
+
+    server._trigger_lidarr_import(jid, output_dir)
+
+    rescue_mock.assert_not_called()
+    _assert_queue_cleanup(delete_mock, api, key, 45)
+    assert server._jobs[jid]["status"] == "completed"
+    assert server._jobs[jid]["hidden_from_lidarr"] is True
+
+
+def test_all_rejected_manualimport_marks_failed_and_cleans_queue(tmp_path, mocker):
+    jid = "71f4fc24259a"
+    output_dir = tmp_path / jid
+    output_dir.mkdir()
+    (output_dir / "01.flac").write_bytes(b"flac")
+
+    api = "http://lidarr/api/v1"
+    key = "lidarr-key"
+    _seed_job(jid)
+    rejected_items = [
+        {
+            "path": f"/downloads/TidalHiRes/complete/{jid}/01.flac",
+            "artist": {"id": 10},
+            "album": {"id": 20, "currentRelease": {"id": 30}},
+            "tracks": [{"id": 101}],
+            "quality": {"quality": {"name": "FLAC 24bit"}},
+            "rejections": [{"reason": "Couldn't find similar album", "type": "permanent"}],
+        },
+    ]
+
+    mocker.patch.dict(os.environ, {"LIDARR_API_URL": api})
+    mocker.patch.object(server, "_get_lidarr_key", return_value=key)
+    save_mock = mocker.patch.object(server, "_save_jobs")
+    log_decision = mocker.patch.object(server, "_log_decision")
+
+    def fake_get(url, **kwargs):
+        if url == f"{api}/manualimport":
+            return _response(payload=rejected_items)
+        if url == f"{api}/trackfile?albumId=20":
+            return _response(payload=[])
+        if url == f"{api}/queue?pageSize=200":
+            return _response(payload={"records": [{"id": 77, "downloadId": jid}]})
+        raise AssertionError(f"unexpected GET {url}")
+
+    def fake_post(url, **kwargs):
+        if url == "http://host.docker.internal:8889/analyze":
+            return _response(payload={"overall_verdict": "AUTHENTIC", "file_count": 1})
+        raise AssertionError(f"unexpected POST {url}")
+
+    mocker.patch("requests.get", side_effect=fake_get)
+    mocker.patch("requests.post", side_effect=fake_post)
+    delete_mock = mocker.patch("requests.delete", return_value=_response(status_code=204))
+
+    server._trigger_lidarr_import(jid, output_dir)
+
+    _assert_queue_cleanup(delete_mock, api, key, 77)
+    assert server._jobs[jid]["status"] == "failed"
+    assert server._jobs[jid]["error"] == "no importable files after verification"
+    assert server._jobs[jid]["hidden_from_lidarr"] is True
+    save_mock.assert_called()
+    log_decision.assert_any_call(
+        jid,
+        v2_result=ANY,
+        decision="IMPORT_FAILED",
+        reason="no importable files after verification",
+        verdict="AUTHENTIC",
+        new_kbps=3000,
+        existing_quality="nothing",
+        existing_kbps=0,
+        album_ids=[20],
+        title="Test Album",
+    )
+    failed_record = log_decision.call_args_list[-1].kwargs["v2_result"]
+    assert failed_record.import_outcome == "FAILED"
+    assert failed_record.verification_decision == "ACCEPT"
+
+
+def test_release_family_rejections_are_force_imported_after_verification(tmp_path, mocker):
+    jid = "93b7fc24259a"
+    output_dir = tmp_path / jid
+    output_dir.mkdir()
+    for idx in range(2):
+        (output_dir / f"{idx + 1:02d} - Track {idx + 1} (2026 Remaster).flac").write_bytes(b"flac")
+
+    api = "http://lidarr/api/v1"
+    key = "lidarr-key"
+    _seed_job(jid)
+    manualimport_items = [
+        {
+            "path": f"/downloads/TidalHiRes/complete/{jid}/01 - Track 1 (2026 Remaster).flac",
+            "artist": {"id": 10},
+            "album": {"id": 20, "currentRelease": {"id": 30}},
+            "albumReleaseId": 30,
+            "tracks": [{"id": 101, "title": "Track 1"}],
+            "quality": {"quality": {"name": "FLAC 24bit"}},
+            "rejections": [
+                {"reason": "Album match is not close enough: 56.3 % vs 80 %", "type": "permanent"},
+                {"reason": "Has unmatched tracks", "type": "permanent"},
+            ],
+        },
+        {
+            "path": f"/downloads/TidalHiRes/complete/{jid}/02 - Track 2 (2026 Remaster).flac",
+            "artist": {"id": 10},
+            "album": {"id": 20, "currentRelease": {"id": 30}},
+            "albumReleaseId": 30,
+            "tracks": [{"id": 102, "title": "Track 2"}],
+            "quality": {"quality": {"name": "FLAC 24bit"}},
+            "rejections": [
+                {"reason": "Album match is not close enough: 56.3 % vs 80 %", "type": "permanent"},
+                {"reason": "Has unmatched tracks", "type": "permanent"},
+            ],
+        },
+    ]
+
+    mocker.patch.dict(os.environ, {"LIDARR_API_URL": api})
+    mocker.patch.object(server, "_get_lidarr_key", return_value=key)
+    mocker.patch.object(server, "_log_decision")
+    mocker.patch.object(server, "_save_jobs")
+    mocker.patch.object(server.time, "sleep")
+
+    trackfile_calls = {"count": 0}
+
+    def fake_get(url, **kwargs):
+        if url == f"{api}/manualimport":
+            return _response(payload=manualimport_items)
+        if url == f"{api}/trackfile?albumId=20":
+            trackfile_calls["count"] += 1
+            if trackfile_calls["count"] <= 2:
+                return _response(payload=[])
+            return _response(payload=[{"id": 1}, {"id": 2}])
+        if url == f"{api}/queue?pageSize=200":
+            return _response(payload={"records": [{"id": 55, "downloadId": jid}]})
+        raise AssertionError(f"unexpected GET {url}")
+
+    def fake_post(url, **kwargs):
+        if url == "http://host.docker.internal:8889/analyze":
+            return _response(payload={"overall_verdict": "AUTHENTIC", "file_count": 2})
+        if url == f"{api}/command":
+            files = kwargs["json"]["files"]
+            assert len(files) == 2
+            assert files[0]["trackIds"] == [101]
+            assert files[1]["trackIds"] == [102]
+            return _response(status_code=201, payload={"id": 123})
+        raise AssertionError(f"unexpected POST {url}")
+
+    mocker.patch("requests.get", side_effect=fake_get)
+    post_mock = mocker.patch("requests.post", side_effect=fake_post)
+    delete_mock = mocker.patch("requests.delete", return_value=_response(status_code=204))
+
+    server._trigger_lidarr_import(jid, output_dir)
+
+    _assert_queue_cleanup(delete_mock, api, key, 55)
+    assert post_mock.call_count == 2
+    assert server._jobs[jid]["status"] == "completed"
+    assert server._jobs[jid]["hidden_from_lidarr"] is True
+
+
+def test_validator_fail_closed_cleans_lidarr_queue(tmp_path, mocker):
+    jid = "91f4fc24259a"
+    output_dir = tmp_path / jid
+    output_dir.mkdir()
+    (output_dir / "01.flac").write_bytes(b"flac")
+
+    api = "http://lidarr/api/v1"
+    key = "lidarr-key"
+    _seed_job(jid)
+    manualimport_items = [
+        {
+            "path": f"/downloads/TidalHiRes/complete/{jid}/01.flac",
+            "artist": {"id": 10},
+            "album": {"id": 20, "currentRelease": {"id": 30}},
+            "tracks": [{"id": 101}],
+            "quality": {"quality": {"name": "FLAC 24bit"}},
+            "rejections": [],
+        },
+    ]
+
+    mocker.patch.dict(os.environ, {"LIDARR_API_URL": api})
+    mocker.patch.object(server, "_get_lidarr_key", return_value=key)
+    mocker.patch.object(server, "_save_jobs")
+    mocker.patch.object(server, "_log_decision")
+
+    def fake_get(url, **kwargs):
+        if url == f"{api}/manualimport":
+            return _response(payload=manualimport_items)
+        if url == f"{api}/trackfile?albumId=20":
+            return _response(payload=[])
+        if url == f"{api}/history?pageSize=50&sortKey=date&sortDirection=descending":
+            return _response(payload={"records": []})
+        if url == f"{api}/queue?pageSize=200":
+            return _response(payload={"records": [{"id": 66, "downloadId": jid}]})
+        raise AssertionError(f"unexpected GET {url}")
+
+    def fake_post(url, **kwargs):
+        if url == "http://host.docker.internal:8889/analyze":
+            return _response(status_code=500, text="validator down")
+        raise AssertionError(f"unexpected POST {url}")
+
+    mocker.patch("requests.get", side_effect=fake_get)
+    mocker.patch("requests.post", side_effect=fake_post)
+    delete_mock = mocker.patch("requests.delete", return_value=_response(status_code=204))
+
+    server._trigger_lidarr_import(jid, output_dir)
+
+    _assert_queue_cleanup(delete_mock, api, key, 66)
+    assert server._jobs[jid]["status"] == "failed"
+    assert "validator unavailable" in server._jobs[jid]["error"]
+    assert server._jobs[jid]["hidden_from_lidarr"] is True
+
+
+def test_rescue_failed_marks_failed_and_cleans_queue(tmp_path, mocker):
+    jid = "8bb5dade010b"
+    output_dir = tmp_path / jid
+    output_dir.mkdir()
+    (output_dir / "01.flac").write_bytes(b"flac")
+
+    api = "http://lidarr/api/v1"
+    key = "lidarr-key"
+    _seed_job(jid)
+    manualimport_items = [
+        {
+            "path": f"/downloads/TidalHiRes/complete/{jid}/01.flac",
+            "artist": {"id": 10},
+            "album": {"id": 20, "currentRelease": {"id": 30}},
+            "albumReleaseId": 30,
+            "tracks": [{"id": 101}],
+            "quality": {"quality": {"name": "FLAC 24bit"}},
+            "rejections": [],
+        },
+    ]
+
+    mocker.patch.dict(os.environ, {"LIDARR_API_URL": api})
+    mocker.patch.object(server, "_get_lidarr_key", return_value=key)
+    mocker.patch.object(server, "_save_jobs")
+    log_decision = mocker.patch.object(server, "_log_decision")
+    mocker.patch.object(server, "_rescue_place_and_rescan", return_value=False)
+    mocker.patch.object(server.time, "sleep")
+
+    trackfile_calls = {"count": 0}
+
+    def fake_get(url, **kwargs):
+        if url == f"{api}/manualimport":
+            return _response(payload=manualimport_items)
+        if url == f"{api}/trackfile?albumId=20":
+            trackfile_calls["count"] += 1
+            return _response(payload=[])
+        if url == f"{api}/queue?pageSize=200":
+            return _response(payload={"records": [{"id": 88, "downloadId": jid}]})
+        raise AssertionError(f"unexpected GET {url}")
+
+    def fake_post(url, **kwargs):
+        if url == "http://host.docker.internal:8889/analyze":
+            return _response(payload={"overall_verdict": "AUTHENTIC", "file_count": 1})
+        if url == f"{api}/command":
+            return _response(status_code=201, payload={"id": 123})
+        raise AssertionError(f"unexpected POST {url}")
+
+    mocker.patch("requests.get", side_effect=fake_get)
+    mocker.patch("requests.post", side_effect=fake_post)
+    delete_mock = mocker.patch("requests.delete", return_value=_response(status_code=204))
+
+    server._trigger_lidarr_import(jid, output_dir)
+
+    _assert_queue_cleanup(delete_mock, api, key, 88)
+    assert server._jobs[jid]["status"] == "failed"
+    assert server._jobs[jid]["error"] == "manualimport and rescue failed"
+    assert trackfile_calls["count"] >= 3
+    log_decision.assert_any_call(
+        jid,
+        v2_result=ANY,
+        decision="IMPORT_FAILED",
+        reason="manualimport and rescue failed",
+        verdict="AUTHENTIC",
+        new_kbps=3000,
+        existing_quality="nothing",
+        existing_kbps=0,
+        album_ids=[20],
+        title="Test Album",
+    )
+    failed_record = log_decision.call_args_list[-1].kwargs["v2_result"]
+    assert failed_record.import_outcome == "FAILED"
+    assert failed_record.verification_decision == "ACCEPT"
+
+
+def test_pending_lidarr_manualimport_does_not_rescue_or_fail(tmp_path, mocker):
+    jid = "90707e7b2a9c"
+    output_dir = tmp_path / jid
+    output_dir.mkdir()
+    (output_dir / "01.flac").write_bytes(b"flac")
+
+    api = "http://lidarr/api/v1"
+    key = "lidarr-key"
+    _seed_job(jid)
+    manualimport_items = [
+        {
+            "path": f"/downloads/TidalHiRes/complete/{jid}/01.flac",
+            "artist": {"id": 10},
+            "album": {"id": 20, "currentRelease": {"id": 30}},
+            "albumReleaseId": 30,
+            "tracks": [{"id": 101}],
+            "quality": {"quality": {"name": "FLAC 24bit"}},
+            "rejections": [],
+        },
+    ]
+
+    mocker.patch.dict(os.environ, {"LIDARR_API_URL": api})
+    mocker.patch.object(server, "_get_lidarr_key", return_value=key)
+    mocker.patch.object(server, "_save_jobs")
+    log_decision = mocker.patch.object(server, "_log_decision")
+    rescue_mock = mocker.patch.object(server, "_rescue_place_and_rescan")
+    mocker.patch.object(server.time, "sleep")
+
+    def fake_get(url, **kwargs):
+        if url == f"{api}/manualimport":
+            return _response(payload=manualimport_items)
+        if url == f"{api}/trackfile?albumId=20":
+            return _response(payload=[])
+        if url == f"{api}/history?pageSize=100&sortKey=date&sortDirection=descending":
+            return _response(payload={"records": []})
+        if url == f"{api}/command/123":
+            return _response(payload={"id": 123, "status": "queued"})
+        raise AssertionError(f"unexpected GET {url}")
+
+    def fake_post(url, **kwargs):
+        if url == "http://host.docker.internal:8889/analyze":
+            return _response(payload={"overall_verdict": "AUTHENTIC", "file_count": 1})
+        if url == f"{api}/command":
+            return _response(status_code=201, payload={"id": 123, "status": "queued"})
+        raise AssertionError(f"unexpected POST {url}")
+
+    mocker.patch("requests.get", side_effect=fake_get)
+    mocker.patch("requests.post", side_effect=fake_post)
+
+    server._trigger_lidarr_import(jid, output_dir)
+
+    rescue_mock.assert_not_called()
+    assert server._jobs[jid]["status"] == "completed"
+    assert server._jobs[jid]["warning"] == "Lidarr ManualImport pending"
+    pending_record = log_decision.call_args_list[-1].kwargs["v2_result"]
+    assert pending_record.import_outcome == "PENDING"

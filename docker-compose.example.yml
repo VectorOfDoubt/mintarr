@@ -1,0 +1,148 @@
+# Mintarr — Example Docker Compose configuration
+#
+# This file is a template. Replace placeholders (anything in <ANGLE_BRACKETS>)
+# with your environment-specific values before deploying.
+#
+# Operators must NOT commit a copy of this file with real API keys, host paths,
+# or LAN addresses. Treat this as a starting point, not a configuration manager.
+
+services:
+  mintarr:
+    image: ghcr.io/eivindsjursen-lab/mintarr:latest
+    container_name: mintarr
+    restart: unless-stopped
+
+    environment:
+      # --- Required ---
+      # Long random string. Generate with: openssl rand -base64 32
+      - MINTARR_API_KEY=<generate-with-openssl-rand-base64-32>
+
+      # Lidarr endpoint. Use host.docker.internal if Lidarr runs on the
+      # host or in a different Docker network. Adjust port/path to match.
+      - LIDARR_API_URL=http://host.docker.internal:8686/api/v1
+
+      # --- Optional ---
+      # Path inside the container to the Lidarr config.xml (read-only mount).
+      # If set, Mintarr extracts Lidarr's API key from <ApiKey> in the XML.
+      # If unset, set LIDARR_API_KEY explicitly.
+      - LIDARR_CONFIG_XML=/lidarr-config/config.xml
+
+      # FLAC Detective HTTP endpoint. Mintarr will mark itself unhealthy
+      # without this; FLAC Detective is a hard verifier.
+      - FLAC_API_URL=http://flac-detective:8889/analyze
+
+      # Mintarr listens internally on 8000. BASE_URL is what Mintarr
+      # advertises to Lidarr in download URLs. Keep these in sync with the
+      # ports mapping below.
+      - BASE_URL=http://host.docker.internal:5025
+
+      # --- Source adapters ---
+      # TIDAL adapter — points at a directory containing token.json.
+      # Operators must run `tidal-dl-ng login` to populate this directory.
+      - TIDAL_DL_NG_CONFIG=/root/.config/tidal_dl_ng-dev
+
+      # LocalFolder adapter — drop Artist/Album/ directories here.
+      - LOCAL_INGEST_PATH=/local-ingest
+
+      # Soulseek adapter (F3.5a, planned). When implemented, point at the
+      # slskd completed-download root.
+      # - SOULSEEK_ENABLED=true
+      # - SOULSEEK_DOWNLOAD_ROOT=/soulseek-ingest
+
+      # --- Verification policy ---
+      # Enables the V2 verification pipeline. Default is true; set to false
+      # only if you understand the implications.
+      - V2_VERIFICATION_ENABLED=true
+
+      # REVIEW_REQUIRED queue retention in days. Records older than this
+      # are auto-expired (move to expired_review/).
+      - REVIEW_RETENTION_DAYS=30
+
+      # --- Rescue / rescan behaviour ---
+      # If Lidarr ManualImport fails, Mintarr can fall back to a
+      # place-files-and-rescan rescue. Disabled by default for safety; the
+      # rescue can trigger broad Lidarr rescans in some configurations.
+      - MINTARR_RESCUE_RESCAN_ENABLED=false
+
+      # --- Optional: timezone ---
+      - TZ=Europe/Oslo
+
+    ports:
+      # Bind to localhost only. If you need network access from other hosts,
+      # do it through a reverse proxy (Caddy, NGINX, Traefik). Authentication
+      # is via MINTARR_API_KEY; no transport-layer auth is built in.
+      - "127.0.0.1:5025:8000"
+
+    volumes:
+      # Persistent state. Contains the SQLite state index, sidecars,
+      # decisions.jsonl, and configuration. Back this up.
+      - type: bind
+        source: <HOST_PATH_TO_MINTARR_CONFIG>
+        target: /config
+
+      # TIDAL adapter config (OAuth token). Source the token via
+      # `tidal-dl-ng login` once; Mintarr reuses it.
+      - type: bind
+        source: <HOST_PATH_TO_TIDAL_CONFIG>
+        target: /root/.config/tidal_dl_ng-dev
+
+      # Work area for active downloads. Files transit here during the
+      # download_raw and normalize_audio phases. Safe to wipe between runs.
+      - type: bind
+        source: <HOST_PATH_TO_MINTARR_WORK>
+        target: /downloads
+
+      # Output area. Verified files go here before Mintarr triggers Lidarr
+      # ManualImport. After successful import, Lidarr typically moves them.
+      - type: bind
+        source: <HOST_PATH_TO_MINTARR_OUTPUT>
+        target: /output
+
+      # Lidarr config (read-only). Mintarr reads the API key from
+      # config.xml. Skip if you set LIDARR_API_KEY in the environment.
+      - type: bind
+        source: <HOST_PATH_TO_LIDARR_CONFIG>
+        target: /lidarr-config
+        read_only: true
+
+      # Library mount (read-write). Required only if you enable the
+      # rescue/rescan import path. Path matches Lidarr's library root.
+      - type: bind
+        source: <HOST_PATH_TO_LIDARR_LIBRARY>
+        target: /music
+
+      # LocalFolder ingest path. Drop Artist/Album/ directories here and
+      # POST /local/ingest to enqueue.
+      - type: bind
+        source: <HOST_PATH_TO_LOCAL_INGEST>
+        target: /local-ingest
+
+# --- Companion services (often run separately) ---
+#
+# The example below assumes flac-detective runs in its own container.
+# If it lives in the same compose project, uncomment and adjust.
+#
+# services:
+#   flac-detective:
+#     image: <flac-detective-image>
+#     container_name: flac-detective
+#     restart: unless-stopped
+#     ports:
+#       - "127.0.0.1:8889:8889"
+#     environment:
+#       - FLAC_DETECTIVE_LOG_LEVEL=info
+#     # Mount the same /output directory as Mintarr so the detective can
+#     # read the files Mintarr asks it to analyze.
+#     volumes:
+#       - type: bind
+#         source: <HOST_PATH_TO_MINTARR_OUTPUT>
+#         target: /output
+#         read_only: true
+
+# --- Reverse proxy (Authelia/Authentik example, NOT required) ---
+#
+# Mintarr supports proxy-SSO via the Remote-User header. If you want
+# multi-user access without running multiple Mintarr containers, put
+# Mintarr behind Authelia or Authentik (or any proxy that sets
+# Remote-User). Mintarr captures the header for audit; permission
+# decisions remain single-admin per ADR-0002.

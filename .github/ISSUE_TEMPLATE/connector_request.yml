@@ -1,0 +1,127 @@
+name: Connector request
+description: Request a new source, verifier, or output connector
+title: "[Connector]: <connector name>"
+labels: ["connector", "feature", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this template for new source adapters (new music sources), verifier connectors
+        (new analysis tools), or output connectors (new import targets).
+
+        Before submitting:
+
+        - Check [VISION.md](https://eivindsjursen-lab.github.io/mintarr/strategy/VISION/) for in-scope sources
+        - Search [existing issues](https://github.com/eivindsjursen-lab/mintarr/issues?q=label%3Aconnector) for similar requests
+        - Read [ADAPTER_TUTORIAL.md](https://eivindsjursen-lab.github.io/mintarr/development/ADAPTER_TUTORIAL/) — building one yourself is the fastest path
+
+  - type: input
+    id: connector-name
+    attributes:
+      label: Connector name
+      description: Short identifier — what would the connector be called?
+      placeholder: e.g., "qbittorrent_torrent", "cuetools_ctdb", "plex_direct"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Connector kind
+      options:
+        - Source (provides files)
+        - Verifier (produces evidence)
+        - Output (delivers files)
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: What the connector does
+      description: What service or tool does it integrate? What is the use case?
+      placeholder: |
+        qBittorrent torrent client — ingests files from qBit's completed-download
+        category, runs them through Mintarr's QC pipeline before Lidarr import.
+    validations:
+      required: true
+
+  - type: input
+    id: upstream-url
+    attributes:
+      label: Upstream project URL
+      description: Link to the service or tool being integrated
+      placeholder: e.g., https://www.qbittorrent.org/
+    validations:
+      required: true
+
+  - type: input
+    id: upstream-license
+    attributes:
+      label: Upstream license
+      description: Important for connector compatibility
+      placeholder: e.g., GPL-3.0, Apache-2.0, AGPL-3.0
+    validations:
+      required: true
+
+  - type: dropdown
+    id: provenance
+    attributes:
+      label: Source provenance level (for source connectors)
+      description: How trustworthy is content from this source?
+      options:
+        - High (streaming service with quality guarantees)
+        - Medium (operator-controlled, e.g., LocalFolder)
+        - Low (peer-supplied, e.g., Soulseek)
+        - Not applicable (verifier or output connector)
+    validations:
+      required: true
+
+  - type: textarea
+    id: api
+    attributes:
+      label: API surface
+      description: How does the connector communicate with the upstream tool?
+      placeholder: |
+        - HTTP API at http://qbit:8080/api/v2/...
+        - Auth: API key in X-API-Key header
+        - Key endpoints: /api/v2/torrents/info, /api/v2/torrents/properties
+    validations:
+      required: true
+
+  - type: textarea
+    id: design-considerations
+    attributes:
+      label: Design considerations
+      description: |
+        What does the connector need to handle? Path traversal? Symlinks?
+        Partial downloads? Auth expiry? Rate limits?
+      placeholder: |
+        - qBit may report a torrent complete before all files are flushed to disk
+        - Symlinks in completed downloads are unusual but possible
+        - Free disk space on Mintarr's work area should be checked
+    validations:
+      required: false
+
+  - type: dropdown
+    id: implementation
+    attributes:
+      label: Implementation plan
+      options:
+        - I am willing to implement this connector
+        - I have started but need help
+        - I am requesting that someone else implement it
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: confirm
+    attributes:
+      label: Confirmation
+      options:
+        - label: I have read VISION.md and the boundary test in ADR-0008
+          required: true
+        - label: I have checked the upstream license is compatible with Mintarr's GPL-3.0
+          required: true
+        - label: I have searched existing issues for similar requests
+          required: true

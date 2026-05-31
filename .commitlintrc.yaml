@@ -1,0 +1,26 @@
+# Conventional Commits configuration for Mintarr
+# See docs/development/COMMIT_CONVENTION.md
+extends:
+  - '@commitlint/config-conventional'
+rules:
+  type-enum:
+    - 2
+    - always
+    - - feat
+      - fix
+      - docs
+      - test
+      - refactor
+      - chore
+      - perf
+      - style
+      - revert
+  subject-case:
+    - 2
+    - always
+    - - lower-case
+      - sentence-case
+  header-max-length:
+    - 2
+    - always
+    - 100

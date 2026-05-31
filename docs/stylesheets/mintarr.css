@@ -1,0 +1,8 @@
+/* Mintarr docs site — supplementary styles
+ *
+ * Theme primary/accent are configured in mkdocs.yml under theme.palette.
+ * This stylesheet is reserved for additions the Material theme does not
+ * cover (custom callouts, table-of-contents tweaks, code-block overrides).
+ *
+ * Kept intentionally empty at v0.1.0; populate as visual needs appear.
+ */

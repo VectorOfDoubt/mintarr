@@ -104,6 +104,7 @@ Mount the configured path as a bind mount. The adapter is enabled when the direc
 | `SOULSEEK_SEARCH_TIMEOUT` | slskd search timeout in seconds; minimum 5 | `8` |
 | `SOULSEEK_SEARCH_RESPONSE_LIMIT` | Max folder candidates returned per search | `5` |
 | `SOULSEEK_SEARCH_FILE_LIMIT` | Max raw file hits accepted per slskd search | `500` |
+| `SOULSEEK_SEARCH_SUFFIX` | Optional extra term appended to slskd searches | unset |
 | `SOULSEEK_MIN_TRACKS` | Minimum audio files required per folder candidate | `2` |
 | `SOULSEEK_DOWNLOAD_TIMEOUT` | Max seconds to wait for queued slskd downloads | `3600` |
 | `SOULSEEK_POLL_SECONDS` | Poll interval while waiting for slskd files | `5` |
@@ -113,6 +114,9 @@ It is enabled only when `SOULSEEK_ENABLED=true`, the root exists, and the `souls
 connector is in `import` mode. Manual ingest uses `POST /soulseek/ingest` with a
 relative path under the mounted root. slskd-backed Lidarr search/grab additionally
 requires `SOULSEEK_SEARCH_ENABLED=true`, `SLSKD_API_URL`, and `SLSKD_API_KEY`.
+By default Mintarr sends the album/artist query unchanged and filters returned
+files by supported audio suffix; set `SOULSEEK_SEARCH_SUFFIX` only if your
+Soulseek index benefits from an added search term.
 
 ## 4. Volume mounts
 
@@ -294,6 +298,7 @@ SLSKD_API_KEY=
 SOULSEEK_SEARCH_TIMEOUT=8
 SOULSEEK_SEARCH_RESPONSE_LIMIT=5
 SOULSEEK_SEARCH_FILE_LIMIT=500
+SOULSEEK_SEARCH_SUFFIX=
 SOULSEEK_MIN_TRACKS=2
 SOULSEEK_DOWNLOAD_TIMEOUT=3600
 SOULSEEK_POLL_SECONDS=5

@@ -165,7 +165,8 @@ def test_soulseek_search_uses_slskd_and_returns_folder_candidate(tmp_path, monke
     def fake_post(url, headers, json, timeout):
         assert url == "http://slskd.test/api/v0/searches"
         assert headers["X-API-Key"] == "test-key"
-        assert json["searchText"] == "Artist Album flac"
+        assert json["searchText"] == "Artist Album"
+        assert json["searchTimeout"] == 5000
         return _Response({"id": "search-1", "isComplete": False, "responses": []})
 
     def fake_get(url, headers, timeout):
@@ -196,6 +197,15 @@ def test_soulseek_search_uses_slskd_and_returns_folder_candidate(tmp_path, monke
     assert hits[0].source_id.startswith("slskd:")
     assert hits[0].title == "Artist - Album (FLAC) [Soulseek]"
     assert hits[0].size_bytes == 30
+
+
+def test_soulseek_search_can_append_optional_suffix(monkeypatch):
+    from adapters.soulseek import SoulseekCompletedAdapter
+
+    monkeypatch.setenv("SOULSEEK_SEARCH_SUFFIX", "lossless")
+    adapter = SoulseekCompletedAdapter()
+
+    assert adapter._search_text(query="", artist="Artist", album="Album") == "Artist Album lossless"
 
 
 def test_soulseek_slskd_download_queues_waits_and_copies(tmp_path, monkeypatch):

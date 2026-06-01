@@ -288,6 +288,30 @@ def built_in_connectors() -> list:
             ),
             adapter_name="local",
         ),
+        AdapterBackedConnector(
+            manifest=ConnectorManifest(
+                id="soulseek",
+                display_name="Soulseek",
+                kind=ConnectorKind.SOURCE,
+                api_version=MANIFEST_API_VERSION,
+                adapter_class="adapters.soulseek:SoulseekCompletedAdapter",
+                default_enabled=False,
+                required=False,
+                install_profile="soulseek",
+                docker_service="slskd",
+                required_env=("SOULSEEK_ENABLED", "SOULSEEK_DOWNLOAD_ROOT"),
+                optional_env=(
+                    "SOULSEEK_MAX_FILES",
+                    "SOULSEEK_MAX_BYTES",
+                    "SOULSEEK_SETTLE_SECONDS",
+                    "SOULSEEK_SEARCH_ENABLED",
+                ),
+                capabilities=("completed_folder_ingest", "copy_source_files", "manual_enqueue"),
+                docs_url="connectors/soulseek/",
+                min_supported_version=None,
+            ),
+            adapter_name="soulseek",
+        ),
         BinaryConnector(
             manifest=ConnectorManifest(
                 id="ffprobe",

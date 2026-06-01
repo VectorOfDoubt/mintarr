@@ -914,6 +914,104 @@ def local_ingest():
     return jsonify({"status": True, "nzo_ids": [jid], "job_id": job_id})
 
 
+@app.route("/soulseek/ingest", methods=["POST"])
+@require_apikey
+def soulseek_ingest():
+    """Enqueue a soulseek_grab job for files under SOULSEEK_DOWNLOAD_ROOT/<rel-path>."""
+    import adapters
+    from adapters.soulseek import hash_rel
+    import state_db
+
+    body = request.get_json(silent=True) or {}
+    raw_path = body.get("path")
+    if not isinstance(raw_path, str):
+        return jsonify({"status": False, "error": "path must be a string"}), 400
+    rel = raw_path.strip()
+    if not rel:
+        return jsonify({"status": False, "error": "path required"}), 400
+
+    adapter = adapters.get_adapter("soulseek")
+    if adapter is None or not adapter.is_enabled():
+        return jsonify({"status": False, "error": "soulseek adapter not enabled"}), 503
+    if not _adapter_import_mode_enabled(adapter.name):
+        return jsonify({"status": False, "error": "soulseek adapter not in import mode"}), 503
+
+    try:
+        rel = adapter.normalize_candidate_id(rel)
+    except RuntimeError as exc:
+        message = str(exc)
+        status = 409 if "not settled" in message or "partial download markers" in message else 400
+        return jsonify({"status": False, "error": message}), status
+
+    dedupe_key = f"soulseek:{hash_rel(rel)}"
+    try:
+        existing = state_db.find_active_job_by_dedupe(dedupe_key)
+    except Exception:
+        log.exception("[soulseek_ingest] dedupe check failed (continuing)")
+        existing = None
+    if existing and existing.get("jid"):
+        return jsonify({
+            "status": True,
+            "nzo_ids": [existing["jid"]],
+            "job_id": existing.get("id"),
+        })
+
+    jid = uuid.uuid4().hex[:12]
+    title = f"[Soulseek] {rel}"
+    with _jobs_lock:
+        _jobs[jid] = {
+            "id": jid,
+            "category": "music",
+            "status": "queued",
+            "title": title,
+            "size": 0,
+            "percent": 0,
+            "source_type": "soulseek",
+            "source_id": rel,
+            "created_at": time.time(),
+        }
+        _save_jobs()
+
+    try:
+        job_id = state_db.enqueue_job(
+            jid=jid,
+            type="soulseek_grab",
+            payload={"source_id": rel, "title": title},
+            dedupe_key=dedupe_key,
+            source_type="soulseek",
+            source_id=rel,
+        )
+    except Exception:
+        log.exception("[soulseek_ingest] state_db.enqueue_job failed")
+        job_id = None
+    if job_id is None:
+        with _jobs_lock:
+            _jobs.pop(jid, None)
+            _save_jobs()
+        return jsonify({"status": False, "error": "queue unavailable"}), 503
+
+    try:
+        queued_job = state_db.get_job(job_id)
+    except Exception:
+        queued_job = None
+    if queued_job and queued_job.get("jid") and queued_job.get("jid") != jid:
+        existing_jid = queued_job["jid"]
+        with _jobs_lock:
+            _jobs.pop(jid, None)
+            _save_jobs()
+        log.info("[soulseek_ingest] enqueue dedupe hit — returning existing jid=%s for path=%r",
+                 existing_jid, rel)
+        return jsonify({
+            "status": True,
+            "nzo_ids": [existing_jid],
+            "job_id": queued_job.get("id"),
+        })
+
+    log.info("[%s] /soulseek/ingest enqueued soulseek_grab job_id=%s path=%r",
+             jid, job_id, rel)
+    return jsonify({"status": True, "nzo_ids": [jid], "job_id": job_id})
+
+
 # ---- Download worker ----
 def _mark_download_cancelled(jid: str, work_dir: Path | None = None) -> None:
     with _jobs_lock:
@@ -1084,6 +1182,11 @@ def _execute_tidal_grab_job(job: dict) -> tuple[str | None, dict | None]:
 def _execute_local_grab_job(job: dict) -> tuple[str | None, dict | None]:
     """Thin wrapper around generic source-grab executor for LocalFolder (F3.4)."""
     return _execute_source_grab_job(job, "local")
+
+
+def _execute_soulseek_grab_job(job: dict) -> tuple[str | None, dict | None]:
+    """Thin wrapper around generic source-grab executor for Soulseek completed folders."""
+    return _execute_source_grab_job(job, "soulseek")
 
 
 def _run_download_job(jid: str, album_id: int, worker_job_id: int | None = None):
@@ -3628,10 +3731,13 @@ try:
     import adapters
     from adapters.tidal import TidalAdapter
     from adapters.local_folder import LocalFolderAdapter
+    from adapters.soulseek import SoulseekCompletedAdapter
     if adapters.get_adapter("tidal") is None:
         adapters.register(TidalAdapter())
     if adapters.get_adapter("local") is None:
         adapters.register(LocalFolderAdapter())
+    if adapters.get_adapter("soulseek") is None:
+        adapters.register(SoulseekCompletedAdapter())
 except Exception:
     log.exception("adapter registration failed — source grabs may not work")
 
@@ -3650,6 +3756,7 @@ if not (os.environ.get("MINTARR_DISABLE_WORKER") or os.environ.get("TIDALHIRES_D
         # F2.2/F2.3/F3.4: register executors before starting worker
         worker.register_executor("tidal_grab", _execute_tidal_grab_job)
         worker.register_executor("local_grab", _execute_local_grab_job)
+        worker.register_executor("soulseek_grab", _execute_soulseek_grab_job)
         worker.register_executor("promote_import", _execute_promote_import_job)
         worker.register_executor("retry_import", _execute_retry_import_job)
         worker.start_worker()

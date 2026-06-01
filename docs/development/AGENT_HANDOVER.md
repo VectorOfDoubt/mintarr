@@ -30,7 +30,7 @@ Key files for orientation:
 - `app/verification.py` — V2 policy (the rules that turn evidence into decisions)
 - `app/state_db.py` — SQLite state index (query layer over sidecars)
 - `app/worker.py` — SQLite-backed worker queue (N=1 by default)
-- `app/adapters/` — source adapters (`tidal.py`, `local_folder.py`, future `soulseek.py`, `sab.py`, `qbit.py`)
+- `app/adapters/` — source adapters (`tidal.py`, `local_folder.py`, `soulseek.py`, `sab.py`, `qbit.py`)
 - `app/dashboard.py` — dashboard backend (Flask blueprint)
 
 For where each subsystem fits, read [docs/architecture/OVERVIEW.md](../architecture/OVERVIEW.md). For pipeline phase invariants, read [docs/architecture/PIPELINE.md](../architecture/PIPELINE.md).
@@ -107,7 +107,7 @@ No. Adapters depend only on `app/adapters/base.py` and `app/adapters/context.py`
 
 This section is volatile. The agent reading this should also check [`MINTARR_DOCUMENTATION_INDEX.md`](../MINTARR_DOCUMENTATION_INDEX.md) and [`ROADMAP.md`](../strategy/ROADMAP.md) for the live status.
 
-As of 2026-05-31:
+As of 2026-06-01:
 
 - **Phase 0 (open-source foundation)** is complete. The cutover playbook ran and the public Mintarr repo exists.
 - **License is locked: AGPL-3.0-only** ([ADR-0005](../architecture/adr/0005-license.md)). LICENSE file at repo root.
@@ -115,30 +115,22 @@ As of 2026-05-31:
 - **Public repo is the source of active Mintarr work.** Work in WSL at `/home/esj006/projects/mintarr`; the old private monorepo is legacy/staging reference, not the primary implementation workspace.
 - **F4.1 Static connector registry** is implemented in `app/connectors/` with `GET /dashboard/v1/connectors`. The design is in [F4.1_STATIC_CONNECTOR_REGISTRY.md](../design/F4.1_STATIC_CONNECTOR_REGISTRY.md) and the broader architecture is in [CONNECTOR_PLUGIN_ARCHITECTURE.md](../design/CONNECTOR_PLUGIN_ARCHITECTURE.md).
 - **F4.2 Integrations dashboard** is implemented on top of F4.1. It adds a server-rendered Integrations tab that consumes `/dashboard/v1/connectors`.
-- **F4.3 connector config / dry-run** is implemented on branch `feat/f4-connector-config`. It adds SQLite-backed connector modes, dry-run validation, dashboard controls, and source runtime gates for non-import connectors. The design is in [F4.3_CONNECTOR_CONFIG_DRY_RUN.md](../design/F4.3_CONNECTOR_CONFIG_DRY_RUN.md).
-- **F3.5a Soulseek completed-folder ingest** is now the next feature-sized unit. It should register through the connector model rather than becoming another standalone adapter to migrate later.
+- **F4.3 connector config / dry-run** is implemented on `main`. It adds SQLite-backed connector modes, dry-run validation, dashboard controls, and source runtime gates for non-import connectors. The design is in [F4.3_CONNECTOR_CONFIG_DRY_RUN.md](../design/F4.3_CONNECTOR_CONFIG_DRY_RUN.md).
+- **F3.5a Soulseek completed-folder ingest** is implemented. It registers through the connector model, exposes `POST /soulseek/ingest`, and copies completed slskd folders without mutating the source.
 - **Local Docker runtime cutover is complete.** As of 2026-05-31 20:16 Europe/Berlin, `mintarr` runs image `mintarr:local` on `127.0.0.1:5025->8000` using the old TidalHires mounts/env. Lidarr `indexer/test` and `downloadclient/test` pass against Mintarr. Backup is under `/home/esj006/backups/mintarr-cutover-20260531-194115`. The old `tidalhires-legacy-20260531-194210` container and temporary pre-PKCE Mintarr containers were removed after dogfood; keep the backup and old `tidalhires:local` image for now.
 - **Dogfood status after cutover:** Two pre-fix TIDAL dogfood grabs were safely blocked before import by the hard codec gate because non-PKCE sessions returned AAC/non-FLAC. Follow-up probing showed the same token returns AAC/HIGH when loaded as non-PKCE and FLAC/LOSSLESS when loaded as PKCE. The current branch patches Mintarr and the pinned `tidal-dl-ng` image build to force PKCE by default. Post-fix dogfood: `d07f571532a9` (`Andrea Bocelli - Season of Champions`) imported successfully with 8/8 FLAC tracks; `865979068122` (`Vince Gill - 50 Years From Home: Lonely's What I Do`) downloaded FLAC but stopped as `needs_review` after FLAC Detective flagged upsampled hi-res. This validates both the happy path and the review gate.
 - **v0.2.0 cleanup issues #9-#15** exist in the public GitHub repo. They cover mypy, ruff format, ruff per-file ignores, legacy design-doc migration, operator docs, frontend framework evaluation, and performance baseline.
 
 If you are picking up work, the next units in priority order are:
 
-1. Implement **F3.5a Soulseek completed-folder ingest** through the connector registry
+1. Merge and deploy **F3.5a Soulseek completed-folder ingest** if this branch is still in review
 2. Work down **v0.2.0 cleanup #9-#15** as parallel/small PRs
-3. Begin Phase 2 dashboard redesign only after ADR-0011 resolves the frontend framework question
+3. Design **F3.5b slskd HTTP search/download** only after F3.5a has dogfood evidence
+4. Begin Phase 2 dashboard redesign only after ADR-0011 resolves the frontend framework question
 
-Suggested F3.5a branch:
+Relevant docs for the current Soulseek surface:
 
-```bash
-cd /home/esj006/projects/mintarr
-git checkout main
-git pull origin main
-git checkout -b feat/f3-soulseek-completed-ingest
-```
-
-Then read:
-
-- Draft a Soulseek completed-folder ingest design doc before implementation if it does not exist yet
+- [F3.5_SOULSEEK_COMPLETED_INGEST.md](../design/F3.5_SOULSEEK_COMPLETED_INGEST.md)
 - [F4.3_CONNECTOR_CONFIG_DRY_RUN.md](../design/F4.3_CONNECTOR_CONFIG_DRY_RUN.md)
 - [F4.2_INTEGRATIONS_DASHBOARD.md](../design/F4.2_INTEGRATIONS_DASHBOARD.md)
 - [F4.1_STATIC_CONNECTOR_REGISTRY.md](../design/F4.1_STATIC_CONNECTOR_REGISTRY.md)

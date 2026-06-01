@@ -169,9 +169,43 @@ curl -X POST http://127.0.0.1:5025/local/ingest \
     -d '{"path":"Artist/Album"}'
 ```
 
-### 4.3 Soulseek (planned)
+### 4.3 Soulseek
 
-When F3.5a ships, the pattern matches LocalFolder. See the F3.5 design document for the in-progress spec.
+The Soulseek source adapter copies already-completed folders from a mounted slskd
+completed-download root. It does not trigger slskd searches or downloads in F3.5a.
+
+In `docker-compose.yml`, add:
+
+```yaml
+environment:
+  - SOULSEEK_ENABLED=true
+  - SOULSEEK_DOWNLOAD_ROOT=/soulseek-ingest
+volumes:
+  - /path/to/slskd/completed:/soulseek-ingest
+```
+
+Restart the container, then put the connector in import mode through the dashboard
+or API:
+
+```bash
+curl -X POST http://127.0.0.1:5025/dashboard/v1/connectors/soulseek/config \
+    -H "X-Api-Key: $MINTARR_API_KEY" \
+    -H "Content-Type: application/json" \
+    -d '{"mode":"import"}'
+```
+
+Trigger an ingest with a relative path under `/soulseek-ingest`:
+
+```bash
+curl -X POST http://127.0.0.1:5025/soulseek/ingest \
+    -H "X-Api-Key: $MINTARR_API_KEY" \
+    -H "Content-Type: application/json" \
+    -d '{"path":"Artist/Album"}'
+```
+
+Mintarr rejects absolute paths, path traversal, symlinks, partial download markers,
+folders without `.flac` or `.m4a` files, and folders that change during the settle
+window.
 
 ## 5. Configure Custom Formats in Lidarr
 
@@ -187,7 +221,7 @@ In Lidarr:
 4. Save with a score of `+50`
 5. Repeat for:
    - `Mintarr-local`: regex `\[Local\]`, score `+20`
-   - `Mintarr-soulseek`: regex `\[Soulseek\]`, score `-10` (when Soulseek lands)
+   - `Mintarr-soulseek`: regex `\[Soulseek\]`, score `-10`
 
 Then in your Quality Profile, attach the custom formats with the same scores.
 
@@ -215,4 +249,4 @@ If you hit something this document doesn't cover, that's a documentation bug —
 
 ---
 
-> Last updated: 2026-05-26
+> Last updated: 2026-06-01

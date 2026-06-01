@@ -16,7 +16,7 @@ Mintarr v1 is configured through:
 | Environment variables | Boot-time settings, secrets, mounts | Yes |
 | Docker volume mounts | Filesystem paths | Yes |
 | Lidarr's `config.xml` (mounted read-only) | Lidarr API key extraction | Yes |
-| `connector_config` SQLite table (F4.3, planned) | Per-connector enable/disable + dry-run | Yes |
+| `connector_config` SQLite table | Per-connector enable/disable + dry-run | Yes |
 
 Mintarr does not load `.env` files at runtime — Docker Compose handles that. Mintarr does not read YAML/TOML config files in v1.
 
@@ -89,7 +89,7 @@ Mount the configured directory as a volume; populate `token.json` via `tidal-dl-
 
 Mount the configured path as a bind mount. The adapter is enabled when the directory exists. Source files are never modified — Mintarr copies into its work area.
 
-### 3.3 Soulseek (planned)
+### 3.3 Soulseek
 
 | Variable | Purpose | Default |
 |---|---|---|
@@ -100,7 +100,10 @@ Mount the configured path as a bind mount. The adapter is enabled when the direc
 | `SOULSEEK_SETTLE_SECONDS` | File-size stable window for completed-folder check | `10` |
 | `SOULSEEK_SEARCH_ENABLED` | F3.5b gate; ignored in F3.5a | `false` |
 
-See the F3.5 Soulseek adapter design (held in private monorepo pending v0.2.0 migration) for context.
+The Soulseek adapter ingests already-completed folders under `SOULSEEK_DOWNLOAD_ROOT`.
+It is enabled only when `SOULSEEK_ENABLED=true`, the root exists, and the `soulseek`
+connector is in `import` mode. F3.5a does not call slskd HTTP search/download; use
+`POST /soulseek/ingest` with a relative path under the mounted root.
 
 ## 4. Volume mounts
 
@@ -113,6 +116,7 @@ Mintarr expects these volume mounts:
 | `/output` | Verified files awaiting Lidarr import | Bind |
 | `/root/.config/tidal_dl_ng-dev` | TIDAL adapter config (token.json) | Bind |
 | `/local-ingest` | LocalFolder source files | Bind |
+| `/soulseek-ingest` | Soulseek completed-download root | Bind |
 | `/lidarr-config` | Lidarr config (read-only, for API key extraction) | Bind, read-only |
 | `/music` | Lidarr music library (only required if `MINTARR_RESCUE_RESCAN_ENABLED=true`) | Bind |
 
@@ -213,7 +217,7 @@ Mintarr does not configure Lidarr's Custom Formats. The recommended configuratio
 |---|---|---|---|
 | TIDAL | `Mintarr-tidal` | `\[TIDAL\]` | +50 |
 | LocalFolder | `Mintarr-local` | `\[Local\]` | +20 |
-| Soulseek (planned) | `Mintarr-soulseek` | `\[Soulseek\]` | -10 |
+| Soulseek | `Mintarr-soulseek` | `\[Soulseek\]` | -10 |
 
 Effect: TIDAL beats LocalFolder when both are available; LocalFolder beats unscored alternatives; Soulseek is penalised relative to other sources.
 
@@ -269,7 +273,7 @@ TIDAL_DL_NG_CONFIG=/root/.config/tidal_dl_ng-dev
 # LocalFolder adapter
 LOCAL_INGEST_PATH=/local-ingest
 
-# Soulseek adapter (planned)
+# Soulseek adapter
 SOULSEEK_ENABLED=false
 SOULSEEK_DOWNLOAD_ROOT=
 SOULSEEK_MAX_FILES=300
@@ -294,4 +298,4 @@ TZ=UTC
 
 ---
 
-> Last updated: 2026-05-26
+> Last updated: 2026-06-01

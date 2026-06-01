@@ -4,6 +4,7 @@ Implements TIDALHIRES_DASHBOARD_API.md v1 endpoints:
 - GET /dashboard/v1/summary
 - GET /dashboard/v1/records
 - GET /dashboard/v1/record/<jid>
+- GET /dashboard/v1/connectors
 - GET /dashboard/v1/timings
 - GET /dashboard/v1/audio-sample/<jid>
 - GET /dashboard/v1/spectrum/<jid>
@@ -673,6 +674,16 @@ def summary():
     import server
     data = get_or_compute(("summary",), 10.0, lambda: _build_summary(server))
     return jsonify(data)
+
+
+@dashboard_bp.route("/v1/connectors", methods=["GET"])
+def connectors():
+    from server import require_apikey_check
+    auth_resp = require_apikey_check()
+    if auth_resp:
+        return auth_resp
+    import connectors as connector_registry
+    return jsonify(connector_registry.registry_payload())
 
 
 # ---------- /dashboard/v1/records ----------

@@ -368,11 +368,11 @@ Returns the operator-action audit timeline. The unscoped endpoint supports recen
 
 Request cancellation of a running worker job. Cooperative cancel — the adapter's next `check_cancelled()` call raises `JobCancelled`.
 
-### 6.9 `GET /dashboard/v1/connectors` (F4.1, planned)
+### 6.9 `GET /dashboard/v1/connectors`
 
 Returns the static connector registry + runtime status. Shape defined in [`CONNECTOR_MANIFEST_v1.md`](CONNECTOR_MANIFEST_v1.md) §6.
 
-This endpoint is not implemented in current runtime builds. It becomes part of v1 only when F4.1 lands and this spec is locked.
+This endpoint is read-only in F4.1. Connector mutation endpoints are deferred to F4.3.
 
 ### 6.10 `GET /dashboard/v1/timings`
 

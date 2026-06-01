@@ -113,40 +113,43 @@ As of 2026-05-31:
 - **License is locked: AGPL-3.0-only** ([ADR-0005](../architecture/adr/0005-license.md)). LICENSE file at repo root.
 - **v0.1.0 is shipped** from the public repo. Post-cutover review landed in public commit `5398687` and private staging sync commit `e814383`.
 - **Public repo is the source of active Mintarr work.** Work in WSL at `/home/esj006/projects/mintarr`; the old private monorepo is legacy/staging reference, not the primary implementation workspace.
-- **F4.1 Static connector registry** is the next recommended implementation slice. The design is in [F4.1_STATIC_CONNECTOR_REGISTRY.md](../design/F4.1_STATIC_CONNECTOR_REGISTRY.md) and the broader architecture is in [CONNECTOR_PLUGIN_ARCHITECTURE.md](../design/CONNECTOR_PLUGIN_ARCHITECTURE.md).
-- **F3.5a Soulseek completed-folder ingest** should come after F4.1 so it registers through the connector model rather than becoming another standalone adapter to migrate later.
+- **F4.1 Static connector registry** is implemented in `app/connectors/` with `GET /dashboard/v1/connectors`. The design is in [F4.1_STATIC_CONNECTOR_REGISTRY.md](../design/F4.1_STATIC_CONNECTOR_REGISTRY.md) and the broader architecture is in [CONNECTOR_PLUGIN_ARCHITECTURE.md](../design/CONNECTOR_PLUGIN_ARCHITECTURE.md).
+- **F4.2 Integrations dashboard** is the next recommended implementation slice now that connector data exists.
+- **F3.5a Soulseek completed-folder ingest** should come after F4.2/F4.3 so it registers through the connector model rather than becoming another standalone adapter to migrate later.
+- **Legacy `tidalhires` Docker runtime may still be live.** Do not stop or delete it during feature work. It currently maps `127.0.0.1:5025->8000` from image `tidalhires:local`, and Lidarr may still point at it as indexer/download client. Cut over only after a Mintarr container is deployed, Lidarr indexer + download client are repointed or verified, API keys match, health is green, and 2-5 dogfood imports succeed. Keep token/config/state/sidecar backups before removing the old runtime.
 - **v0.2.0 cleanup issues #9-#15** exist in the public GitHub repo. They cover mypy, ruff format, ruff per-file ignores, legacy design-doc migration, operator docs, frontend framework evaluation, and performance baseline.
 
 If you are picking up work, the next units in priority order are:
 
-1. Land **F4.1 static connector registry** in `/home/esj006/projects/mintarr`
-2. Add **F4.2 Integrations dashboard** once connector data exists
+1. Add **F4.2 Integrations dashboard** once connector data exists
+2. Add **F4.3 connector config / dry-run** for enable/disable and mode persistence
 3. Implement **F3.5a Soulseek completed-folder ingest** through the connector registry
 4. Work down **v0.2.0 cleanup #9-#15** as parallel/small PRs
 5. Begin Phase 2 dashboard redesign only after ADR-0011 resolves the frontend framework question
 
-Suggested F4.1 start:
+Suggested F4.2 start:
 
 ```bash
 cd /home/esj006/projects/mintarr
 git checkout main
 git pull origin main
-git checkout -b feat/f4-connector-registry
+git checkout -b feat/f4-integrations-dashboard
 ```
 
 Then read:
 
+- Draft `docs/design/F4.2_INTEGRATIONS_DASHBOARD.md` before implementation if it does not exist yet
 - [F4.1_STATIC_CONNECTOR_REGISTRY.md](../design/F4.1_STATIC_CONNECTOR_REGISTRY.md)
 - [CONNECTOR_PLUGIN_ARCHITECTURE.md](../design/CONNECTOR_PLUGIN_ARCHITECTURE.md)
 - [CONNECTOR_MANIFEST_v1.md](../specs/CONNECTOR_MANIFEST_v1.md)
 - [HTTP_API_v1.md](../specs/HTTP_API_v1.md) dashboard connector endpoint section
 
-Expected F4.1 deliverables:
+F4.1 runtime surface now available:
 
 - `app/connectors/` with `ConnectorManifest`, `ConnectorHealth`, `Connector` Protocol/base, registry helpers, and concrete connectors for existing source/verifier/output integrations
 - `GET /dashboard/v1/connectors` endpoint with auth
 - Tests for manifest shape, duplicate registration, required connector subset, runtime status JSON, and endpoint auth/shape
-- Docs/spec updates that move `CONNECTOR_MANIFEST_v1` from provisional to runtime-backed if implementation matches the spec
+- `CONNECTOR_MANIFEST_v1` is runtime-backed by the implementation
 
 ## Decisions you should not re-litigate
 

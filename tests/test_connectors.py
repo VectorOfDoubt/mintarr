@@ -143,6 +143,103 @@ def test_get_connectors_endpoint_returns_all(monkeypatch):
     assert data["connectors"][0]["runtime"]["health"] == "ok"
 
 
+def test_connector_payload_overlays_persisted_config():
+    import connectors
+    import state_db
+
+    connectors.reset_registry()
+    connectors.register(_DummyConnector("alpha", enabled=True))
+    state_db.set_connector_config("alpha", enabled=True, mode="dry_run", actor="test")
+
+    payload = connectors.registry_payload()
+    runtime = payload["connectors"][0]["runtime"]
+    assert runtime["enabled"] is True
+    assert runtime["mode"] == "dry_run"
+    assert runtime["config"]["actor"] == "test"
+
+
+def test_connector_config_endpoint_requires_api_key():
+    client = server.app.test_client()
+    resp = client.post("/dashboard/v1/connectors/tidal/config", json={"mode": "dry_run"})
+    assert resp.status_code == 401
+
+
+def test_connector_config_dry_run_does_not_persist():
+    import connectors
+    import state_db
+
+    connectors.reset_registry()
+    connectors.register(_DummyConnector("alpha", enabled=True))
+
+    client = server.app.test_client()
+    resp = client.post(
+        f"/dashboard/v1/connectors/alpha/config?apikey={VALID_KEY}",
+        json={"mode": "dry_run", "dry_run": True},
+    )
+
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data["valid"] is True
+    assert data["dry_run"] is True
+    assert data["config"]["mode"] == "dry_run"
+    assert state_db.get_connector_config("alpha") is None
+
+
+def test_connector_config_persists_mode_change():
+    import connectors
+    import state_db
+
+    connectors.reset_registry()
+    connectors.register(_DummyConnector("alpha", enabled=True))
+
+    client = server.app.test_client()
+    resp = client.post(
+        f"/dashboard/v1/connectors/alpha/config?apikey={VALID_KEY}",
+        json={"mode": "dry_run"},
+    )
+
+    assert resp.status_code == 200
+    assert resp.get_json()["config"]["mode"] == "dry_run"
+    assert state_db.get_connector_config("alpha")["mode"] == "dry_run"
+
+
+def test_connector_config_rejects_required_disable():
+    import connectors
+
+    connectors.reset_registry()
+    connectors.register(_DummyConnector("ffprobe", required=True, enabled=True))
+
+    client = server.app.test_client()
+    resp = client.post(
+        f"/dashboard/v1/connectors/ffprobe/config?apikey={VALID_KEY}",
+        json={"mode": "disabled"},
+    )
+
+    assert resp.status_code == 409
+    assert "required connectors must stay in import mode" in resp.get_json()["errors"]
+
+
+def test_connector_config_rejects_disabling_only_output_for_import_source():
+    import connectors
+    from connectors import ConnectorKind
+
+    connectors.reset_registry()
+    connectors.register(_DummyConnector("source", kind=ConnectorKind.SOURCE, installed=True, enabled=True))
+    connectors.register(_DummyConnector("ffprobe", kind=ConnectorKind.VERIFIER, required=True, installed=True))
+    connectors.register(_DummyConnector("output", kind=ConnectorKind.OUTPUT, installed=True, enabled=True))
+
+    client = server.app.test_client()
+    resp = client.post(
+        f"/dashboard/v1/connectors/output/config?apikey={VALID_KEY}",
+        json={"mode": "disabled"},
+    )
+
+    assert resp.status_code == 409
+    assert resp.get_json()["errors"] == [
+        "source connectors in import mode require at least one installed output connector"
+    ]
+
+
 def test_tidal_connector_installed_iff_token_present(tmp_path):
     from adapters.tidal import TidalAdapter
     from connectors import AdapterBackedConnector, ConnectorKind, ConnectorManifest, MANIFEST_API_VERSION

@@ -200,6 +200,21 @@ def test_addurl_rejects_disabled_source(routing_env, monkeypatch):
     assert "source not enabled" in r.get_json()["error"]
 
 
+def test_addurl_rejects_source_not_in_import_mode(routing_env):
+    import state_db
+
+    state_db.set_connector_config("local_folder", enabled=True, mode="dry_run", actor="test")
+
+    client, _ = routing_env
+    r = client.post(
+        f"/sabnzbd/api?apikey={_api_key()}",
+        data={"mode": "addurl", "name": "local:Artist/Album"},
+    )
+
+    assert r.status_code == 503
+    assert "source not in import mode" in r.get_json()["error"]
+
+
 # ---- newznab aggregation -------------------------------------------------
 
 
@@ -232,6 +247,36 @@ def test_newznab_aggregates_from_enabled_adapters(routing_env, monkeypatch):
     body = r.data.decode()
     assert "tidal:111" in body
     assert "local:L-Artist/L-Album" in body
+
+
+def test_newznab_skips_dry_run_source_adapter(routing_env, monkeypatch):
+    import adapters
+    import state_db
+    from adapters.base import ReleaseCandidate
+
+    tidal_rc = ReleaseCandidate(
+        source_type="tidal", source_id="111", title="T-Artist - T-Album [TIDAL] [FLAC 24bit]",
+        artist="T-Artist", album="T-Album", year=2024,
+        quality_tag="FLAC 24bit", size_bytes=1, download_url="tidal:111", priority=50,
+    )
+    local_rc = ReleaseCandidate(
+        source_type="local", source_id="L-Artist/L-Album",
+        title="L-Artist - L-Album (FLAC) [Local]",
+        artist="L-Artist", album="L-Album", year=None,
+        quality_tag="FLAC", size_bytes=2, download_url="local:L-Artist/L-Album", priority=30,
+    )
+    monkeypatch.setattr(adapters.get_adapter("tidal"), "is_enabled", lambda: True)
+    monkeypatch.setattr(adapters.get_adapter("tidal"), "search", lambda **kw: [tidal_rc])
+    monkeypatch.setattr(adapters.get_adapter("local"), "search", lambda **kw: [local_rc])
+    state_db.set_connector_config("local_folder", enabled=True, mode="dry_run", actor="test")
+
+    client, _ = routing_env
+    r = client.get(f"/api?t=search&q=test&apikey={_api_key()}")
+
+    assert r.status_code == 200
+    body = r.get_data(as_text=True)
+    assert "tidal:111" in body
+    assert "local:L-Artist/L-Album" not in body
 
 
 def test_newznab_sorts_by_priority_descending(routing_env, monkeypatch):

@@ -227,6 +227,13 @@ The dashboard displays each status with a distinct visual treatment (Phase 2 wor
         "installed": true,
         "enabled": true,
         "mode": "import",
+        "config": {
+          "connector_id": "tidal",
+          "enabled": true,
+          "mode": "import",
+          "updated_at": null,
+          "actor": null
+        },
         "health": "ok",
         "version": null,
         "last_error": null,

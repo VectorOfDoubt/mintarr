@@ -123,6 +123,15 @@ CREATE INDEX IF NOT EXISTS idx_jobs_jid ON jobs(jid);
 CREATE INDEX IF NOT EXISTS idx_jobs_created ON jobs(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_jobs_dedupe ON jobs(dedupe_key, state);
 CREATE INDEX IF NOT EXISTS idx_jobs_lease ON jobs(state, lease_expires_at);
+
+-- F4.3 connector runtime config
+CREATE TABLE IF NOT EXISTS connector_config (
+    connector_id TEXT PRIMARY KEY,
+    enabled INTEGER NOT NULL,
+    mode TEXT NOT NULL,
+    updated_at REAL NOT NULL,
+    actor TEXT
+);
 """
 
 # Default lease/heartbeat per F2 design
@@ -423,6 +432,75 @@ def list_actions(jid: str | None = None, limit: int = 100) -> list[dict]:
     except Exception:
         log.exception("state_db.list_actions failed for jid=%s", jid)
         return []
+
+
+def _connector_config_row(row: sqlite3.Row | dict) -> dict:
+    data = dict(row)
+    data["enabled"] = bool(data["enabled"])
+    return data
+
+
+def get_connector_config(connector_id: str) -> dict | None:
+    if not _ensure_initialized() or not connector_id:
+        return None
+    try:
+        with _lock, _connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM connector_config WHERE connector_id = ?",
+                (connector_id,),
+            ).fetchone()
+            return _connector_config_row(row) if row else None
+    except Exception:
+        log.exception("state_db.get_connector_config failed for connector_id=%s", connector_id)
+        return None
+
+
+def list_connector_config() -> dict[str, dict]:
+    if not _ensure_initialized():
+        return {}
+    try:
+        with _lock, _connect() as conn:
+            rows = conn.execute("SELECT * FROM connector_config ORDER BY connector_id").fetchall()
+            return {row["connector_id"]: _connector_config_row(row) for row in rows}
+    except Exception:
+        log.exception("state_db.list_connector_config failed")
+        return {}
+
+
+def set_connector_config(
+    connector_id: str,
+    *,
+    enabled: bool,
+    mode: str,
+    actor: str = "user_dashboard",
+) -> dict | None:
+    if not _ensure_initialized() or not connector_id:
+        return None
+    updated_at = time.time()
+    try:
+        with _lock, _connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO connector_config (connector_id, enabled, mode, updated_at, actor)
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(connector_id) DO UPDATE SET
+                  enabled=excluded.enabled,
+                  mode=excluded.mode,
+                  updated_at=excluded.updated_at,
+                  actor=excluded.actor
+                """,
+                (connector_id, int(bool(enabled)), mode, updated_at, actor),
+            )
+        return {
+            "connector_id": connector_id,
+            "enabled": bool(enabled),
+            "mode": mode,
+            "updated_at": updated_at,
+            "actor": actor,
+        }
+    except Exception:
+        log.exception("state_db.set_connector_config failed for connector_id=%s", connector_id)
+        return None
 
 
 def count_by_status() -> dict[str, int]:

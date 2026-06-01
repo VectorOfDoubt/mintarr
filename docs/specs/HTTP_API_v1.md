@@ -372,13 +372,41 @@ Request cancellation of a running worker job. Cooperative cancel — the adapter
 
 Returns the static connector registry + runtime status. Shape defined in [`CONNECTOR_MANIFEST_v1.md`](CONNECTOR_MANIFEST_v1.md) §6.
 
-This endpoint is read-only in F4.1. Connector mutation endpoints are deferred to F4.3.
+Runtime status includes persisted connector mode when present. If no persisted
+row exists, mode falls back to the connector manifest default.
 
-### 6.10 `GET /dashboard/v1/timings`
+### 6.10 `POST /dashboard/v1/connectors/<connector_id>/config`
+
+Validate or persist connector runtime mode.
+
+```http
+POST /dashboard/v1/connectors/tidal/config
+X-Api-Key: ...
+Content-Type: application/json
+```
+
+```json
+{
+  "mode": "dry_run",
+  "dry_run": true
+}
+```
+
+`dry_run=true` runs validation without writing SQLite config. `dry_run=false`
+or an omitted `dry_run` writes the config if validation passes.
+
+Responses include:
+
+- `200 OK` with `valid=true` and the proposed/saved config
+- `400 Bad Request` for invalid mode values
+- `404 Not Found` for unknown connector IDs
+- `409 Conflict` when required connector or import-mode invariants would be violated
+
+### 6.11 `GET /dashboard/v1/timings`
 
 Aggregate timing statistics for performance analysis.
 
-### 6.11 `GET /decisions`
+### 6.12 `GET /decisions`
 
 ```http
 GET /decisions?limit=100

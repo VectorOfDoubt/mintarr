@@ -230,7 +230,7 @@ Per-feature design docs. Numbered F-series (F3.1, F3.4, F4.1, etc). Each one fol
 | `CONNECTOR_PLUGIN_ARCHITECTURE.md` | drafted | Codex | P1 | Becomes basis for F4.1-F4.5 design docs. |
 | `F4.1_STATIC_CONNECTOR_REGISTRY.md` | implemented | Claude/Codex | P0 | Static connector registry, built-in manifests, GET /dashboard/v1/connectors, and registry invariants landed. |
 | `F4.2_INTEGRATIONS_DASHBOARD.md` | implemented | Codex | P2 | UI tab for connector status, grouped source/verifier/output inventory, no config mutation. |
-| `F4.3_CONNECTOR_CONFIG_DRY_RUN.md` | planned | Claude | P2 | enable/disable + mode toggle. |
+| `F4.3_CONNECTOR_CONFIG_DRY_RUN.md` | implemented | Codex | P2 | Connector config persistence, dry-run validation, mode controls, and source runtime gates. |
 | `F5.1_RELEASE_FAMILY_MATCHING.md` | planned | Claude | P2 | Mintarr-side mitigation of Lidarr's multi-album / edition matching weakness. Locked-in feature from ADR-0007 §"Multi-album / release matching is not a fork problem". Includes: release-family scoring, track-count + track-title similarity, edition-aware import policy, dashboard explanation when Lidarr rejects, optional manual override with audit. Estimate 15-25h. |
 
 ### 6.8 Community (`docs/community/`)

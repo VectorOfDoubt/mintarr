@@ -26,6 +26,11 @@ _session = None
 _session_lock = threading.Lock()
 
 
+def _use_pkce_oauth() -> bool:
+    value = os.environ.get("TIDAL_OAUTH_PKCE", "1").strip().lower()
+    return value not in {"0", "false", "no", "off"}
+
+
 def get_session():
     """Load OAuth token from TIDAL_DL_NG_CONFIG and create a tidalapi.Session.
 
@@ -50,11 +55,12 @@ def get_session():
             t["access_token"],
             t.get("refresh_token"),
             t.get("expiry_time"),
+            is_pkce=_use_pkce_oauth(),
         )
         if not ok:
             raise RuntimeError("tidalapi.load_oauth_session failed — token expired? Re-login.")
         _session = s
-        log.info("TIDAL session loaded — user: %s", s.user.username if s.user else "?")
+        log.info("TIDAL session loaded")
         return _session
 
 

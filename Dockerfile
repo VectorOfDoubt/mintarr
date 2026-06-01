@@ -14,6 +14,37 @@ RUN pip install --no-cache-dir \
     gunicorn==26.0.0 \
     requests==2.32.5
 
+# The pinned Radexito CLI still defaults stored tokens to non-PKCE OAuth,
+# which makes TIDAL return AAC/HIGH even when HI_RES_LOSSLESS is configured.
+# Force PKCE for stored-token loads and new browser logins until upstream fixes it.
+RUN python - <<'PY'
+from pathlib import Path
+import inspect
+import tidal_dl_ng.config as config
+
+path = Path(inspect.getfile(config))
+text = path.read_text()
+text = text.replace(
+    "def login_token(self, do_pkce: bool = False) -> bool:",
+    "def login_token(self, do_pkce: bool = True) -> bool:",
+)
+text = text.replace(
+    "            # Login method: Device linking\n"
+    "            self.session.login_oauth_simple(fn_print)\n"
+    "            # Login method: PKCE authorization (was necessary for HI_RES_LOSSLESS streaming earlier)\n"
+    "            # self.session.login_pkce(fn_print)\n",
+    "            # Login method: PKCE authorization (required for LOSSLESS/HI_RES streaming)\n"
+    "            self.session.login_pkce(fn_print)\n",
+)
+path.write_text(text)
+
+patched = path.read_text()
+if "def login_token(self, do_pkce: bool = True) -> bool:" not in patched:
+    raise SystemExit("failed to patch tidal-dl-ng stored-token PKCE default")
+if "self.session.login_pkce(fn_print)" not in patched:
+    raise SystemExit("failed to patch tidal-dl-ng login method")
+PY
+
 # tidal-dl-ng config-folder
 ENV TIDAL_DL_NG_CONFIG=/config/tidal_dl_ng
 

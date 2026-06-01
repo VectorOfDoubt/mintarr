@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 
+import sys
+from types import SimpleNamespace
+
 import pytest
 
 
@@ -109,3 +112,57 @@ def test_tidal_adapter_name_and_source_type():
     a = TidalAdapter()
     assert a.name == "tidal"
     assert a.source_type == "tidal"
+
+
+def test_tidal_get_session_loads_token_as_pkce(tmp_path, monkeypatch):
+    from adapters import tidal
+
+    config_dir = tmp_path / "tidal-config"
+    config_dir.mkdir()
+    (config_dir / "token.json").write_text(
+        '{"token_type":"Bearer","access_token":"access","refresh_token":"refresh","expiry_time":1}'
+    )
+    seen = {}
+
+    class _FakeSession:
+        def load_oauth_session(self, token_type, access_token, refresh_token, expiry_time, *, is_pkce=False):
+            seen["is_pkce"] = is_pkce
+            self.user = SimpleNamespace(username="redacted")
+            return True
+
+    monkeypatch.setenv("TIDAL_DL_NG_CONFIG", str(config_dir))
+    monkeypatch.delenv("TIDAL_OAUTH_PKCE", raising=False)
+    monkeypatch.setitem(sys.modules, "tidalapi", SimpleNamespace(Session=_FakeSession))
+    tidal.reset_session_cache()
+    try:
+        tidal.get_session()
+        assert seen["is_pkce"] is True
+    finally:
+        tidal.reset_session_cache()
+
+
+def test_tidal_get_session_pkce_can_be_disabled(tmp_path, monkeypatch):
+    from adapters import tidal
+
+    config_dir = tmp_path / "tidal-config"
+    config_dir.mkdir()
+    (config_dir / "token.json").write_text(
+        '{"token_type":"Bearer","access_token":"access","refresh_token":"refresh","expiry_time":1}'
+    )
+    seen = {}
+
+    class _FakeSession:
+        def load_oauth_session(self, token_type, access_token, refresh_token, expiry_time, *, is_pkce=False):
+            seen["is_pkce"] = is_pkce
+            self.user = SimpleNamespace(username="redacted")
+            return True
+
+    monkeypatch.setenv("TIDAL_DL_NG_CONFIG", str(config_dir))
+    monkeypatch.setenv("TIDAL_OAUTH_PKCE", "0")
+    monkeypatch.setitem(sys.modules, "tidalapi", SimpleNamespace(Session=_FakeSession))
+    tidal.reset_session_cache()
+    try:
+        tidal.get_session()
+        assert seen["is_pkce"] is False
+    finally:
+        tidal.reset_session_cache()

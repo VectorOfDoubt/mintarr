@@ -218,7 +218,7 @@ The dashboard displays each status with a distinct visual treatment (Phase 2 wor
         "install_profile": null,
         "docker_service": null,
         "required_env": ["TIDAL_DL_NG_CONFIG"],
-        "optional_env": [],
+        "optional_env": ["TIDAL_OAUTH_PKCE"],
         "capabilities": ["hires_audio", "oauth_session", "subprocess_download"],
         "docs_url": "connectors/tidal/",
         "min_supported_version": null
@@ -374,7 +374,7 @@ class TidalConnector:
         install_profile=None,
         docker_service=None,
         required_env=("TIDAL_DL_NG_CONFIG",),
-        optional_env=(),
+        optional_env=("TIDAL_OAUTH_PKCE",),
         capabilities=("hires_audio", "oauth_session", "subprocess_download"),
         docs_url="connectors/tidal/",
         min_supported_version=None,

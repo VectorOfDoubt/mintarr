@@ -132,6 +132,8 @@ docker exec -it mintarr tidal-dl-ng login
 
 Follow the prompts. A web browser link is shown — open it, authenticate to TIDAL, copy the code back to the terminal. Mintarr's `token.json` is written to `<TIDAL_DL_NG_CONFIG>/token.json`.
 
+Mintarr's container patches the pinned `tidal-dl-ng` build to use PKCE OAuth for stored-token loads and new logins. Keep `TIDAL_OAUTH_PKCE=1` unless you are deliberately debugging TIDAL client behaviour; non-PKCE sessions can be downgraded to AAC/HIGH even when `HI_RES_LOSSLESS` is configured.
+
 Verify:
 
 ```bash

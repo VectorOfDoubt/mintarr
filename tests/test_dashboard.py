@@ -64,6 +64,20 @@ def test_dashboard_html_does_not_require_apikey(monkeypatch, tmp_path):
     assert "TidalHires V2 Dashboard" in body
     assert "summary-grid" in body
     assert "drawer" in body
+    assert "integrations-view" in body
+    assert "tab-integrations" in body
+
+
+def test_dashboard_html_fetches_and_renders_connectors(monkeypatch, tmp_path):
+    _patch_paths(monkeypatch, tmp_path)
+    client = server.app.test_client()
+    resp = client.get("/dashboard")
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert "api('/connectors')" in body
+    assert "function renderIntegrations" in body
+    assert "connector-card" in body
+    assert "Required env" in body
 
 
 def test_dashboard_summary_returns_expected_shape(monkeypatch, tmp_path):

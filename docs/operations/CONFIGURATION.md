@@ -98,12 +98,21 @@ Mount the configured path as a bind mount. The adapter is enabled when the direc
 | `SOULSEEK_MAX_FILES` | Maximum files per candidate folder | `300` |
 | `SOULSEEK_MAX_BYTES` | Maximum total bytes per candidate (0 = unlimited) | `0` |
 | `SOULSEEK_SETTLE_SECONDS` | File-size stable window for completed-folder check | `10` |
-| `SOULSEEK_SEARCH_ENABLED` | F3.5b gate; ignored in F3.5a | `false` |
+| `SOULSEEK_SEARCH_ENABLED` | Enable slskd-backed Newznab search candidates | `false` |
+| `SLSKD_API_URL` | slskd HTTP base URL, e.g. `http://host.docker.internal:5030` | unset |
+| `SLSKD_API_KEY` | slskd API key for `X-API-Key` authentication | unset |
+| `SOULSEEK_SEARCH_TIMEOUT` | slskd search timeout in seconds; minimum 5 | `8` |
+| `SOULSEEK_SEARCH_RESPONSE_LIMIT` | Max folder candidates returned per search | `5` |
+| `SOULSEEK_SEARCH_FILE_LIMIT` | Max raw file hits accepted per slskd search | `500` |
+| `SOULSEEK_MIN_TRACKS` | Minimum audio files required per folder candidate | `2` |
+| `SOULSEEK_DOWNLOAD_TIMEOUT` | Max seconds to wait for queued slskd downloads | `3600` |
+| `SOULSEEK_POLL_SECONDS` | Poll interval while waiting for slskd files | `5` |
 
 The Soulseek adapter ingests already-completed folders under `SOULSEEK_DOWNLOAD_ROOT`.
 It is enabled only when `SOULSEEK_ENABLED=true`, the root exists, and the `soulseek`
-connector is in `import` mode. F3.5a does not call slskd HTTP search/download; use
-`POST /soulseek/ingest` with a relative path under the mounted root.
+connector is in `import` mode. Manual ingest uses `POST /soulseek/ingest` with a
+relative path under the mounted root. slskd-backed Lidarr search/grab additionally
+requires `SOULSEEK_SEARCH_ENABLED=true`, `SLSKD_API_URL`, and `SLSKD_API_KEY`.
 
 ## 4. Volume mounts
 
@@ -280,6 +289,14 @@ SOULSEEK_MAX_FILES=300
 SOULSEEK_MAX_BYTES=0
 SOULSEEK_SETTLE_SECONDS=10
 SOULSEEK_SEARCH_ENABLED=false
+SLSKD_API_URL=
+SLSKD_API_KEY=
+SOULSEEK_SEARCH_TIMEOUT=8
+SOULSEEK_SEARCH_RESPONSE_LIMIT=5
+SOULSEEK_SEARCH_FILE_LIMIT=500
+SOULSEEK_MIN_TRACKS=2
+SOULSEEK_DOWNLOAD_TIMEOUT=3600
+SOULSEEK_POLL_SECONDS=5
 
 # Auth / SSO
 MINTARR_REMOTE_USER_HEADER=Remote-User

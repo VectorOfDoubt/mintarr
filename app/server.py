@@ -414,6 +414,12 @@ def _addurl_canonicalize(adapter, raw_id: str, name: str):
         rel = adapter.normalize_candidate_id(raw_id)  # raises RuntimeError if invalid
         return (rel, f"local:{_hr(rel)}", f"[Local] {rel}", 0)
 
+    if adapter.name == "soulseek":
+        from adapters.soulseek import hash_rel as _hr
+        source_id = adapter.normalize_candidate_id(raw_id)
+        title = adapter.title_for_candidate_id(source_id)
+        return (source_id, f"soulseek:{_hr(source_id)}", title, 0)
+
     # Generic fallback for future adapters
     return (raw_id, f"{adapter.name}:{raw_id}", f"[{adapter.name.upper()}] {raw_id}", 0)
 
@@ -421,6 +427,8 @@ def _addurl_canonicalize(adapter, raw_id: str, name: str):
 def _canonicalize_source_id(adapter, source_id: str) -> str:
     """Run per-adapter validation on a decoded source_id before NZB generation."""
     if adapter.name == "local":
+        return adapter.normalize_candidate_id(source_id)
+    if adapter.name == "soulseek":
         return adapter.normalize_candidate_id(source_id)
     if adapter.name == "tidal":
         return str(int(source_id))  # validates int-shape

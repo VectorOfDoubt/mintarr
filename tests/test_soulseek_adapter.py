@@ -135,6 +135,145 @@ def test_soulseek_download_raw_copies_without_modifying_source(tmp_path):
     assert [item["stage"] for item in ctx.progress_calls] == ["copying", "copied"]
 
 
+def test_soulseek_search_uses_slskd_and_returns_folder_candidate(tmp_path, monkeypatch):
+    from adapters.soulseek import SoulseekCompletedAdapter
+
+    root = tmp_path / "soulseek"
+    root.mkdir()
+    adapter = SoulseekCompletedAdapter(
+        download_root=str(root),
+        enabled=True,
+        search_enabled=True,
+        slskd_api_url="http://slskd.test",
+        slskd_api_key="test-key",
+        search_timeout=5,
+        search_response_limit=2,
+        min_tracks=2,
+    )
+
+    class _Response:
+        def __init__(self, payload):
+            self._payload = payload
+            self.content = b"{}"
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return self._payload
+
+    def fake_post(url, headers, json, timeout):
+        assert url == "http://slskd.test/api/v0/searches"
+        assert headers["X-API-Key"] == "test-key"
+        assert json["searchText"] == "Artist Album flac"
+        return _Response({"id": "search-1", "isComplete": False, "responses": []})
+
+    def fake_get(url, headers, timeout):
+        assert headers["X-API-Key"] == "test-key"
+        if url.endswith("/searches/search-1"):
+            return _Response({"isComplete": True, "responses": []})
+        if url.endswith("/searches/search-1/responses"):
+            return _Response([
+                {
+                    "username": "peer",
+                    "files": [
+                        {"filename": "Music/Artist/Album/01 Track.flac", "size": 10},
+                        {"filename": "Music/Artist/Album/02 Track.flac", "size": 20},
+                        {"filename": "Music/Artist/Album/cover.jpg", "size": 5},
+                    ],
+                }
+            ])
+        raise AssertionError(url)
+
+    import requests
+    monkeypatch.setattr(requests, "post", fake_post)
+    monkeypatch.setattr(requests, "get", fake_get)
+
+    hits = adapter.search(query="", artist="Artist", album="Album")
+
+    assert len(hits) == 1
+    assert hits[0].source_type == "soulseek"
+    assert hits[0].source_id.startswith("slskd:")
+    assert hits[0].title == "Artist - Album (FLAC) [Soulseek]"
+    assert hits[0].size_bytes == 30
+
+
+def test_soulseek_slskd_download_queues_waits_and_copies(tmp_path, monkeypatch):
+    from adapters.soulseek import (
+        SlskdDownloadFile,
+        SlskdDownloadRequest,
+        SoulseekCompletedAdapter,
+    )
+
+    root = tmp_path / "soulseek"
+    completed = root / "Remote" / "Album"
+    completed.mkdir(parents=True)
+    adapter = SoulseekCompletedAdapter(
+        download_root=str(root),
+        enabled=True,
+        settle_seconds=0,
+        slskd_api_url="http://slskd.test",
+        slskd_api_key="test-key",
+        download_timeout=30,
+        poll_seconds=0.1,
+    )
+    request = SlskdDownloadRequest(
+        username="peer",
+        title="Artist - Album",
+        search_text="Artist Album flac",
+        files=(
+            SlskdDownloadFile("Remote/Album/01 Track.flac", 4),
+            SlskdDownloadFile("Remote/Album/02 Track.flac", 5),
+        ),
+    )
+    source_id = adapter._encode_slskd_source_id(request)
+    raw_dir = tmp_path / "raw"
+    ctx = _FakeContext(jid="slskd-job", raw_dir=raw_dir)
+    posts = []
+
+    class _Response:
+        content = b"{}"
+
+        def __init__(self, payload=None, status_code=201):
+            self._payload = payload or {}
+            self.status_code = status_code
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return self._payload
+
+    def fake_post(url, headers, json, timeout):
+        posts.append((url, json))
+        (completed / "01 Track.flac").write_bytes(b"flac")
+        (completed / "02 Track.flac").write_bytes(b"flac2")
+        return _Response()
+
+    def fake_get(url, headers, timeout):
+        return _Response({})
+
+    import requests
+    monkeypatch.setattr(requests, "post", fake_post)
+    monkeypatch.setattr(requests, "get", fake_get)
+
+    result = adapter.download_raw(source_id, ctx)
+
+    assert posts == [(
+        "http://slskd.test/api/v0/transfers/downloads/peer",
+        [
+            {"filename": "Remote/Album/01 Track.flac", "size": 4},
+            {"filename": "Remote/Album/02 Track.flac", "size": 5},
+        ],
+    )]
+    assert result.file_count == 2
+    assert result.total_bytes == 9
+    assert sorted(p.name for p in raw_dir.rglob("*.flac")) == [
+        "01 01 Track.flac",
+        "02 02 Track.flac",
+    ]
+
+
 def test_soulseek_executor_threads_source_type(tmp_path, monkeypatch):
     import pipeline
     import server
@@ -262,3 +401,36 @@ def test_soulseek_ingest_endpoint_respects_connector_mode(soulseek_client):
 
     assert response.status_code == 503
     assert "not in import mode" in response.get_json()["error"]
+
+
+def test_soulseek_addurl_accepts_slskd_candidate_id(soulseek_client):
+    client, root = soulseek_client
+    from adapters.soulseek import SlskdDownloadFile, SlskdDownloadRequest
+    import adapters
+    import state_db
+
+    adapter = adapters.get_adapter("soulseek")
+    source_id = adapter._encode_slskd_source_id(SlskdDownloadRequest(
+        username="peer",
+        title="Artist - Album",
+        search_text="Artist Album flac",
+        files=(SlskdDownloadFile("Remote/Album/01 Track.flac", 10),),
+    ))
+
+    response = client.post(
+        "/sabnzbd/api",
+        data={"mode": "addurl", "name": f"soulseek:{source_id}"},
+        headers={"X-Api-Key": os.environ["TIDALHIRES_API_KEY"]},
+    )
+
+    assert response.status_code == 200, response.data
+    payload = response.get_json()
+    with state_db._connect() as conn:
+        job = conn.execute(
+            "SELECT type, source_type, source_id FROM jobs WHERE jid=?",
+            (payload["nzo_ids"][0],),
+        ).fetchone()
+    job = dict(job)
+    assert job["type"] == "soulseek_grab"
+    assert job["source_type"] == "soulseek"
+    assert job["source_id"] == source_id

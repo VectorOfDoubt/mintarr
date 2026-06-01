@@ -171,8 +171,10 @@ curl -X POST http://127.0.0.1:5025/local/ingest \
 
 ### 4.3 Soulseek
 
-The Soulseek source adapter copies already-completed folders from a mounted slskd
-completed-download root. It does not trigger slskd searches or downloads in F3.5a.
+The Soulseek source adapter supports both completed-folder ingest and
+slskd-backed Lidarr search/grab. In both modes, slskd writes to its normal
+completed-download root and Mintarr copies files into its own work area before
+verification.
 
 In `docker-compose.yml`, add:
 
@@ -180,6 +182,10 @@ In `docker-compose.yml`, add:
 environment:
   - SOULSEEK_ENABLED=true
   - SOULSEEK_DOWNLOAD_ROOT=/soulseek-ingest
+  # Optional: expose Soulseek results to Lidarr through Mintarr Newznab.
+  - SOULSEEK_SEARCH_ENABLED=true
+  - SLSKD_API_URL=http://host.docker.internal:5030
+  - SLSKD_API_KEY=<slskd-api-key>
 volumes:
   - /path/to/slskd/completed:/soulseek-ingest
 ```
@@ -206,6 +212,12 @@ curl -X POST http://127.0.0.1:5025/soulseek/ingest \
 Mintarr rejects absolute paths, path traversal, symlinks, partial download markers,
 folders without `.flac` or `.m4a` files, and folders that change during the settle
 window.
+
+When `SOULSEEK_SEARCH_ENABLED=true`, Lidarr searches Mintarr as usual. Mintarr
+adds `[Soulseek]` Newznab candidates from slskd. If Lidarr grabs one, the existing
+SAB-compatible Mintarr download client receives the grab, queues the selected
+files in slskd, waits for them under `/soulseek-ingest`, then runs normal Mintarr
+QC/import.
 
 ## 5. Configure Custom Formats in Lidarr
 

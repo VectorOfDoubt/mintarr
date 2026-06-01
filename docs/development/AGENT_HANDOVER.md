@@ -117,14 +117,14 @@ As of 2026-06-01:
 - **F4.2 Integrations dashboard** is implemented on top of F4.1. It adds a server-rendered Integrations tab that consumes `/dashboard/v1/connectors`.
 - **F4.3 connector config / dry-run** is implemented on `main`. It adds SQLite-backed connector modes, dry-run validation, dashboard controls, and source runtime gates for non-import connectors. The design is in [F4.3_CONNECTOR_CONFIG_DRY_RUN.md](../design/F4.3_CONNECTOR_CONFIG_DRY_RUN.md).
 - **F3.5a Soulseek completed-folder ingest** is implemented. It registers through the connector model, exposes `POST /soulseek/ingest`, and copies completed slskd folders without mutating the source.
-- **F3.5b Soulseek slskd trigger** is implemented on `feat/f3-soulseek-slskd-trigger`. It exposes Soulseek candidates through Mintarr Newznab when `SOULSEEK_SEARCH_ENABLED=true`, queues selected files through slskd HTTP, then runs normal Mintarr QC/import.
+- **F3.5b Soulseek slskd trigger** is merged on `main`. It exposes Soulseek candidates through Mintarr Newznab when `SOULSEEK_SEARCH_ENABLED=true`, queues selected files through slskd HTTP, then runs normal Mintarr QC/import. Mintarr sends artist/album search text unchanged by default and filters returned files by supported audio suffix; use `SOULSEEK_SEARCH_SUFFIX` only if the target slskd instance benefits from an added term.
 - **Local Docker runtime cutover is complete.** As of 2026-05-31 20:16 Europe/Berlin, `mintarr` runs image `mintarr:local` on `127.0.0.1:5025->8000` using the old TidalHires mounts/env. Lidarr `indexer/test` and `downloadclient/test` pass against Mintarr. Backup is under `/home/esj006/backups/mintarr-cutover-20260531-194115`. The old `tidalhires-legacy-20260531-194210` container and temporary pre-PKCE Mintarr containers were removed after dogfood; keep the backup and old `tidalhires:local` image for now.
 - **Dogfood status after cutover:** Two pre-fix TIDAL dogfood grabs were safely blocked before import by the hard codec gate because non-PKCE sessions returned AAC/non-FLAC. Follow-up probing showed the same token returns AAC/HIGH when loaded as non-PKCE and FLAC/LOSSLESS when loaded as PKCE. The current branch patches Mintarr and the pinned `tidal-dl-ng` image build to force PKCE by default. Post-fix dogfood: `d07f571532a9` (`Andrea Bocelli - Season of Champions`) imported successfully with 8/8 FLAC tracks; `865979068122` (`Vince Gill - 50 Years From Home: Lonely's What I Do`) downloaded FLAC but stopped as `needs_review` after FLAC Detective flagged upsampled hi-res. This validates both the happy path and the review gate.
 - **v0.2.0 cleanup issues #9-#15** exist in the public GitHub repo. They cover mypy, ruff format, ruff per-file ignores, legacy design-doc migration, operator docs, frontend framework evaluation, and performance baseline.
 
 If you are picking up work, the next units in priority order are:
 
-1. Merge and deploy **F3.5b Soulseek slskd trigger** if this branch is still in review
+1. Complete live F3.5b Soulseek dogfood against slskd/Lidarr
 2. Work down **v0.2.0 cleanup #9-#15** as parallel/small PRs
 3. Dogfood a real Soulseek result through Lidarr/Mintarr once slskd returns candidates
 4. Begin Phase 2 dashboard redesign only after ADR-0011 resolves the frontend framework question

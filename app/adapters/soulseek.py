@@ -193,7 +193,7 @@ class SoulseekCompletedAdapter:
                 "searchText": search_text,
                 "responseLimit": self.search_response_limit,
                 "fileLimit": self.search_file_limit,
-                "searchTimeout": self.search_timeout,
+                "searchTimeout": self.search_timeout * 1000,
                 "minimumResponseFileCount": self.min_tracks,
                 "filterResponses": True,
             }, timeout=self.search_timeout + 5)
@@ -345,8 +345,9 @@ class SoulseekCompletedAdapter:
         text = " ".join(p for p in parts if p)
         if not text:
             text = query.strip()
-        if text and "flac" not in text.lower():
-            text = f"{text} flac"
+        suffix = os.environ.get("SOULSEEK_SEARCH_SUFFIX", "").strip()
+        if suffix and suffix.lower() not in text.lower():
+            text = f"{text} {suffix}"
         return text
 
     def _api_headers(self) -> dict[str, str]:

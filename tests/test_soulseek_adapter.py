@@ -208,6 +208,42 @@ def test_soulseek_search_can_append_optional_suffix(monkeypatch):
     assert adapter._search_text(query="", artist="Artist", album="Album") == "Artist Album lossless"
 
 
+def test_soulseek_candidate_title_without_artist_avoids_source_prefix():
+    from adapters.soulseek import SoulseekCompletedAdapter
+
+    adapter = SoulseekCompletedAdapter()
+
+    assert adapter._candidate_title("Music/Fatboy Slim - Right Here", artist="", album="") == (
+        "Fatboy Slim - Right Here"
+    )
+
+
+def test_soulseek_slskd_source_id_uses_short_cached_token(tmp_path, monkeypatch):
+    from adapters.soulseek import (
+        SlskdDownloadFile,
+        SlskdDownloadRequest,
+        SoulseekCompletedAdapter,
+    )
+
+    monkeypatch.setenv("SOULSEEK_CANDIDATE_CACHE", str(tmp_path / "soulseek-candidates.json"))
+    adapter = SoulseekCompletedAdapter()
+    request = SlskdDownloadRequest(
+        username="peer",
+        title="Artist - Album",
+        search_text="Artist Album",
+        files=(
+            SlskdDownloadFile("Remote/Album/01 Track.flac", 4),
+            SlskdDownloadFile("Remote/Album/02 Track.flac", 5),
+        ),
+    )
+
+    source_id = adapter._encode_slskd_source_id(request)
+
+    assert source_id.startswith("slskd:")
+    assert len(source_id) < 40
+    assert adapter._decode_slskd_source_id(source_id) == request
+
+
 def test_soulseek_slskd_download_queues_waits_and_copies(tmp_path, monkeypatch):
     from adapters.soulseek import (
         SlskdDownloadFile,

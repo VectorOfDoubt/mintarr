@@ -12,6 +12,7 @@ import os
 import shutil
 import time
 import base64
+import hashlib
 import json
 from dataclasses import dataclass
 from pathlib import Path
@@ -466,7 +467,7 @@ class SoulseekCompletedAdapter:
         display_album = self._display_album(parent)
         if artist:
             return f"{artist} - {display_album}"
-        return f"Soulseek - {display_album}"
+        return display_album
 
     def _display_album(self, parent: str) -> str:
         clean = parent.replace("\\", "/").strip("/")
@@ -491,25 +492,71 @@ class SoulseekCompletedAdapter:
         return (int(digits) if digits else 9999, name.lower())
 
     def _encode_slskd_source_id(self, request: SlskdDownloadRequest) -> str:
-        payload = {
+        payload = self._slskd_request_payload(request)
+        raw = json.dumps(payload, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+        token = hashlib.sha256(raw).hexdigest()[:24]
+        self._store_slskd_request(token, payload)
+        return _SLSKD_PREFIX + token
+
+    def _slskd_request_payload(self, request: SlskdDownloadRequest) -> dict:
+        return {
             "v": 1,
             "u": request.username,
             "t": request.title,
             "q": request.search_text,
             "f": [{"filename": item.filename, "size": item.size} for item in request.files],
         }
-        raw = json.dumps(payload, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
-        return _SLSKD_PREFIX + base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
+
+    def _candidate_cache_path(self) -> Path:
+        return Path(os.environ.get("SOULSEEK_CANDIDATE_CACHE", "/config/soulseek_candidates.json"))
+
+    def _store_slskd_request(self, token: str, payload: dict) -> None:
+        path = self._candidate_cache_path()
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            existing: dict = {}
+            if path.exists():
+                existing = json.loads(path.read_text(encoding="utf-8") or "{}")
+                if not isinstance(existing, dict):
+                    existing = {}
+            existing[token] = payload
+            tmp = path.with_suffix(path.suffix + ".tmp")
+            tmp.write_text(json.dumps(existing, separators=(",", ":"), ensure_ascii=False), encoding="utf-8")
+            tmp.replace(path)
+        except Exception:
+            log.exception("failed to store Soulseek slskd candidate token")
+
+    def _load_slskd_request_payload(self, token: str) -> dict | None:
+        path = self._candidate_cache_path()
+        try:
+            if not path.exists():
+                return None
+            payloads = json.loads(path.read_text(encoding="utf-8") or "{}")
+            if isinstance(payloads, dict):
+                payload = payloads.get(token)
+                if isinstance(payload, dict):
+                    return payload
+        except Exception:
+            log.exception("failed to load Soulseek slskd candidate token")
+        return None
+
+    def _decode_legacy_slskd_source_id(self, token: str) -> dict:
+        padded = token + ("=" * (-len(token) % 4))
+        return json.loads(base64.urlsafe_b64decode(padded.encode("ascii")).decode("utf-8"))
 
     def _decode_slskd_source_id(self, source_id: str) -> SlskdDownloadRequest:
         if not source_id.startswith(_SLSKD_PREFIX):
             raise RuntimeError("soulseek slskd source_id must start with slskd:")
         token = source_id[len(_SLSKD_PREFIX):]
-        padded = token + ("=" * (-len(token) % 4))
-        try:
-            payload = json.loads(base64.urlsafe_b64decode(padded.encode("ascii")).decode("utf-8"))
-        except Exception as exc:
-            raise RuntimeError("bad soulseek slskd source_id") from exc
+        payload = self._load_slskd_request_payload(token)
+        if payload is None:
+            try:
+                payload = self._decode_legacy_slskd_source_id(token)
+            except Exception as exc:
+                raise RuntimeError("bad soulseek slskd source_id") from exc
+        return self._payload_to_slskd_request(payload)
+
+    def _payload_to_slskd_request(self, payload: dict) -> SlskdDownloadRequest:
         if payload.get("v") != 1:
             raise RuntimeError("unsupported soulseek slskd source_id version")
         username = str(payload.get("u") or "").strip()

@@ -47,6 +47,9 @@ services:
       # Soulseek adapter — point at the slskd completed-download root.
       # - SOULSEEK_ENABLED=true
       # - SOULSEEK_DOWNLOAD_ROOT=/soulseek-ingest
+      # - SOULSEEK_SEARCH_ENABLED=true
+      # - SLSKD_API_URL=http://host.docker.internal:5030
+      # - SLSKD_API_KEY=<slskd-api-key>
 
       # --- Verification policy ---
       # Enables the V2 verification pipeline. Default is true; set to false

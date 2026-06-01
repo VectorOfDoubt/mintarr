@@ -44,8 +44,7 @@ services:
       # LocalFolder adapter — drop Artist/Album/ directories here.
       - LOCAL_INGEST_PATH=/local-ingest
 
-      # Soulseek adapter (F3.5a, planned). When implemented, point at the
-      # slskd completed-download root.
+      # Soulseek adapter — point at the slskd completed-download root.
       # - SOULSEEK_ENABLED=true
       # - SOULSEEK_DOWNLOAD_ROOT=/soulseek-ingest
 
@@ -116,6 +115,12 @@ services:
       - type: bind
         source: <HOST_PATH_TO_LOCAL_INGEST>
         target: /local-ingest
+
+      # Soulseek completed-download root. Enable with SOULSEEK_ENABLED=true
+      # and POST /soulseek/ingest with a relative Artist/Album path.
+      # - type: bind
+      #   source: <HOST_PATH_TO_SLSKD_COMPLETED>
+      #   target: /soulseek-ingest
 
 # --- Companion services (often run separately) ---
 #

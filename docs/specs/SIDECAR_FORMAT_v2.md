@@ -60,7 +60,7 @@ Mintarr atomically writes sidecars via temp-file + rename. Readers should tolera
 |---|---|---|---|
 | `jid` | string | yes | 12-character hex job ID. Globally unique. |
 | `title` | string | yes | Release title at grab time. May differ from current Lidarr title if metadata changed. |
-| `source_type` | string | yes (v2.0.0+) | Source identifier (`tidal`, `local`, future `soulseek`, ...). v1 sidecars absent this default to `tidal` at read time. |
+| `source_type` | string | yes (v2.0.0+) | Source identifier (`tidal`, `local`, `soulseek`, future source ids, ...). v1 sidecars absent this default to `tidal` at read time. |
 | `album_ids` | array of int | no | Lidarr album IDs matched at grab time. Empty array if no match. |
 | `ts` | float | yes | Unix timestamp of sidecar write (most recent revision). |
 | `ts_iso` | string | yes | ISO-8601 timestamp matching `ts`. For human readers. |

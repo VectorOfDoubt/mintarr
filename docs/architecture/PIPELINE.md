@@ -45,7 +45,7 @@ For each source type, this varies:
 
 - **TIDAL:** invokes `tidal-dl-ng dl <url>` as a subprocess. Output is `.m4a` files (and sometimes pre-converted `.flac`) under `ctx.raw_dir`.
 - **LocalFolder:** copies files from `LOCAL_INGEST_PATH/<rel-path>/` to `ctx.raw_dir`. Source files are not modified.
-- **Soulseek (planned):** copies files from the slskd completed-download root to `ctx.raw_dir`, with completed-folder checks first.
+- **Soulseek:** copies files from the slskd completed-download root to `ctx.raw_dir`, with completed-folder checks first.
 - **Future sources:** follow the same pattern — produce files in `ctx.raw_dir`.
 
 ### 2.2 What download_raw does not do

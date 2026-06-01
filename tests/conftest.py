@@ -48,9 +48,11 @@ def _reset_state_db():
         import connectors
         from adapters.tidal import TidalAdapter
         from adapters.local_folder import LocalFolderAdapter
+        from adapters.soulseek import SoulseekCompletedAdapter
         adapters.reset_registry()
         adapters.register(TidalAdapter())
         adapters.register(LocalFolderAdapter())
+        adapters.register(SoulseekCompletedAdapter())
         connectors.reset_registry()
         connectors.register_builtin_connectors(warn_missing_required=False)
     except Exception:

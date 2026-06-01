@@ -1,7 +1,7 @@
 # HTTP API — v1
 
 > **Type:** Spec / contract
-> **Version:** 1.0.2 — runtime-validated 2026-05-31
+> **Version:** 1.0.3 — runtime-validated 2026-06-01
 > **Status:** Locked. Editorial fixes allowed; semantic changes require `HTTP_API_v2.md` per [ADR-0004](../architecture/adr/0004-api-versioning-semver.md).
 > **Audience:** Anyone calling Mintarr's HTTP endpoints. External dashboards, alternative front-ends, monitoring scripts, automation tools. Lidarr-facing endpoints (Newznab, SAB compat) follow those external protocols and are documented here for completeness only — they are not Mintarr-versioned.
 > **Goal:** Phase 3 work replaces this hand-written spec with an auto-generated OpenAPI document. Until then, this file is authoritative.
@@ -33,7 +33,7 @@ Endpoints group into five categories:
 |---|---|---|
 | Lidarr-facing | `/api`, `/newznab/api`, `/sabnzbd/api`, `/download/` | External protocols (Newznab, SAB) — not Mintarr-versioned |
 | Health | `/health` | Liveness check |
-| Source ingest | `/local/ingest`, `/soulseek/ingest` (planned) | Manual operator triggers per source |
+| Source ingest | `/local/ingest`, `/soulseek/ingest` | Manual operator triggers per source |
 | Dashboard | `/dashboard`, `/dashboard/v1/...` | Web UI and JSON API for it |
 | Legacy verification | `/verification`, `/decisions`, `/jobs` | Pre-dashboard V2 inspection/action endpoints retained for compatibility |
 | NZB pointer | `/download/<int>.nzb`, `/download/<source>/<id>.nzb` | NZB generation for SAB roundtrip |
@@ -173,9 +173,44 @@ Content-Type: application/json
 
 The path is normalised via `LocalFolderAdapter.normalize_candidate_id` before job creation. Path traversal, symlinks, and absolute paths are rejected. Duplicate paths return the existing job (dedupe by normalized rel-path hash).
 
-### 5.2 `POST /soulseek/ingest` (planned, F3.5a)
+### 5.2 `POST /soulseek/ingest`
 
-Same shape as `/local/ingest`. Triggers a Soulseek completed-folder grab. Adds completed-folder validation (settle window, no partial markers). See the F3.5 Soulseek adapter design (held in private monorepo pending v0.2.0 migration), §10.
+Trigger a Soulseek completed-folder grab. Same response shape as
+`/local/ingest`, with additional completed-folder validation.
+
+**Request:**
+
+```http
+POST /soulseek/ingest
+X-Api-Key: <MINTARR_API_KEY>
+Content-Type: application/json
+
+{
+  "path": "Artist/Album"
+}
+```
+
+`path` must be a relative path under `SOULSEEK_DOWNLOAD_ROOT`.
+
+**Response (success):**
+
+```http
+200 OK
+Content-Type: application/json
+
+{
+  "status": true,
+  "nzo_ids": ["0cd9dbf08198"],
+  "job_id": 42
+}
+```
+
+Validation:
+
+- Absolute paths, traversal, symlinked paths, and non-directory paths return `400`.
+- Partial download markers and folders that change during the settle window return `409`.
+- Disabled adapter or non-`import` connector mode returns `503`.
+- Duplicate active paths return the existing job (dedupe by normalized rel-path hash).
 
 ## 6. Dashboard endpoints
 
@@ -502,6 +537,7 @@ Cancel acknowledgement does not wait for the worker to actually stop — the end
 The following endpoints are idempotent:
 
 - `POST /local/ingest`: deduplicates by normalised path hash; same path returns the existing active job
+- `POST /soulseek/ingest`: deduplicates by normalised path hash; same path returns the existing active job
 - `POST /sabnzbd/api?mode=addurl`: deduplicates by `<source>:<source_id>`; same combination returns the existing active job
 - `POST /dashboard/v1/action/<jid>` with `{"action": "promote"}`: rejects if not in REVIEW_REQUIRED state; otherwise enqueues exactly once
 

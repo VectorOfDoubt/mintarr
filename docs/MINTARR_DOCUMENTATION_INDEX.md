@@ -1,8 +1,8 @@
 # Mintarr — Documentation Index
 
 > **Type:** Meta-document. Lists every planned Mintarr document, its status, owner and dependencies.
-> **Version:** 0.11 — 2026-05-31
-> **Status:** Foundation-phase tracker. Documentation set drafted. License AGPL-3.0-only. Language Python 3.12+ (ADR-0010). Cutover strategy: clean new repo, no inherited history ([MINTARR_CUTOVER_PLAYBOOK.md](architecture/MINTARR_CUTOVER_PLAYBOOK.md)). HTTP_API_v1 and SIDECAR_FORMAT_v2 runtime-validated and locked. Pre-cutover remaining: Eivind executes the playbook. F4.1 and Phase 8 deferred to post-cutover.
+> **Version:** 0.12 — 2026-06-01
+> **Status:** Public-repo tracker. Documentation set drafted. License AGPL-3.0-only. Language Python 3.12+ (ADR-0010). Cutover strategy: clean new repo, no inherited history ([MINTARR_CUTOVER_PLAYBOOK.md](architecture/MINTARR_CUTOVER_PLAYBOOK.md)). HTTP_API_v1 and SIDECAR_FORMAT_v2 runtime-validated and locked. F4.1-F4.3 landed post-cutover; F3.5a Soulseek completed-folder ingest is implemented.
 > **Audience:** Project maintainers (Eivind, Claude, Codex) coordinating doc work.
 
 ---
@@ -231,6 +231,7 @@ Per-feature design docs. Numbered F-series (F3.1, F3.4, F4.1, etc). Each one fol
 | `F4.1_STATIC_CONNECTOR_REGISTRY.md` | implemented | Claude/Codex | P0 | Static connector registry, built-in manifests, GET /dashboard/v1/connectors, and registry invariants landed. |
 | `F4.2_INTEGRATIONS_DASHBOARD.md` | implemented | Codex | P2 | UI tab for connector status, grouped source/verifier/output inventory, no config mutation. |
 | `F4.3_CONNECTOR_CONFIG_DRY_RUN.md` | implemented | Codex | P2 | Connector config persistence, dry-run validation, mode controls, and source runtime gates. |
+| `F3.5_SOULSEEK_COMPLETED_INGEST.md` | implemented | Codex | P1 | Soulseek completed-folder ingest through connector registry, `/soulseek/ingest`, copy-only adapter, completed-folder safety checks. |
 | `F5.1_RELEASE_FAMILY_MATCHING.md` | planned | Claude | P2 | Mintarr-side mitigation of Lidarr's multi-album / edition matching weakness. Locked-in feature from ADR-0007 §"Multi-album / release matching is not a fork problem". Includes: release-family scoring, track-count + track-title similarity, edition-aware import policy, dashboard explanation when Lidarr rejects, optional manual override with audit. Estimate 15-25h. |
 
 ### 6.8 Community (`docs/community/`)
@@ -323,5 +324,6 @@ When Codex and Claude work in parallel, they coordinate via this index — the *
 | 0.9 | 2026-05-31 | **HTTP_API_v1 and SIDECAR_FORMAT_v2 locked after runtime validation.** Route inventory covered 33 Flask routes; HTTP_API now documents legacy verification and infrastructure endpoints. Sidecar validation covered imported, blocked and review sidecars; SIDECAR_FORMAT now documents deployed optional legacy fields, sensor metadata, file metadata and `severity=info`. Cutover blocker list reduced to Eivind executing the playbook. |
 | 0.10 | 2026-05-31 | **Strategic-direction batch: ADR-0010 + Phase 8 + VISION-orchestration-clarification.** ADR-0010 locks Python 3.12+ as implementation language (preempts future "rewrite in C# for arr-stack" or "translate to Rust" proposals). ROADMAP adds Phase 8 "Mintarr Audio Lab" — additive in-house sensors complementing (not replacing) external verifiers. VISION clarifies that Mintarr orchestrates verifier tools in v1; in-house sensors are future-direction, not current state. No cutover-blocker impact; these align expectations for post-cutover work. |
 | 0.11 | 2026-05-31 | **Codex strategic-direction review.** ADR-0010 wording tightened after codebase validation: application runtime is ~7.4k Python LOC, public contract/cutover scripts are Python while private Windows incident helpers may remain PowerShell, Phase 8 reference fixed, and Python ecosystem examples corrected. ADR table duplicate removed. No structural disagreement with ADR-0010, Phase 8, or VISION orchestration wording. |
+| 0.12 | 2026-06-01 | **Post-cutover implementation tracker update.** F4.1-F4.3 are reflected as landed public-repo work. F3.5a Soulseek completed-folder ingest is tracked as implemented with runtime docs and API spec updates. |
 
-> Last updated: 2026-05-31
+> Last updated: 2026-06-01

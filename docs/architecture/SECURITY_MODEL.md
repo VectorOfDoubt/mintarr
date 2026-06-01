@@ -104,7 +104,7 @@ Operator action: re-run `tidal-dl-ng login` in the relevant config volume; resta
 Two ingest paths accept operator-supplied filesystem paths:
 
 - `POST /local/ingest {"path": "..."}` — LocalFolder
-- `POST /soulseek/ingest {"path": "..."}` — Soulseek (planned)
+- `POST /soulseek/ingest {"path": "..."}` — Soulseek
 
 Both go through the adapter's `normalize_candidate_id`, which:
 

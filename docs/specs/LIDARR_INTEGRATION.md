@@ -169,7 +169,7 @@ Source tags in Mintarr release titles:
 |---|---|---|
 | TIDAL | `[TIDAL]` | `Mintarr-tidal` regex `\[TIDAL\]` score +50 |
 | LocalFolder | `[Local]` | `Mintarr-local` regex `\[Local\]` score +20 |
-| Soulseek (planned) | `[Soulseek]` | `Mintarr-soulseek` regex `\[Soulseek\]` score -10 |
+| Soulseek | `[Soulseek]` | `Mintarr-soulseek` regex `\[Soulseek\]` score -10 |
 | Future SAB / qBit / CD-rip | `[<Source>]` | Per source, operator chooses |
 
 Quality tags (`[FLAC 24bit]`, `[FLAC]`, `[MP3 320]`) follow standard Lidarr-parser conventions and are not Mintarr-specific.

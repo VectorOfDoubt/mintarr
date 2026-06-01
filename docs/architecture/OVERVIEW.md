@@ -105,7 +105,7 @@ Endpoints fall into four categories:
 
 - **Lidarr-facing** — `/api` (Newznab), `/sabnzbd/api` (SAB emulation), `/download/<source>/<id>.nzb` (NZB pointer generation), `/health`
 - **Dashboard** — `/dashboard`, `/dashboard/v1/records`, `/dashboard/v1/summary`, `/dashboard/v1/jobs`, `/dashboard/v1/actions`
-- **Source-specific** — `/local/ingest` (LocalFolder), future `/soulseek/ingest`, future per-source endpoints as needed
+- **Source-specific** — `/local/ingest` (LocalFolder), `/soulseek/ingest` (Soulseek), future per-source endpoints as needed
 - **Future (Phase 3)** — `/openapi.json`, `/docs`, `/metrics`
 
 ### Connector registry (`mintarr/app/adapters/` and `mintarr/app/connectors/`)

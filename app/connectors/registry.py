@@ -6,6 +6,7 @@ import logging
 from typing import TYPE_CHECKING
 
 from .base import ConnectorKind, ConnectorMode, MANIFEST_API_VERSION, manifest_to_dict, unix_ts_to_iso
+from .config import config_for_manifest, configured_mode
 
 if TYPE_CHECKING:
     from .base import Connector
@@ -28,6 +29,13 @@ def get_connector(connector_id: str) -> "Connector | None":
 
 def all_connectors() -> list["Connector"]:
     return list(_connectors.values())
+
+
+def connector_for_adapter(adapter_name: str) -> "Connector | None":
+    for connector in _connectors.values():
+        if getattr(connector, "adapter_name", None) == adapter_name:
+            return connector
+    return None
 
 
 def required_connectors() -> list["Connector"]:
@@ -53,8 +61,8 @@ def import_mode_invariant_violations() -> list[str]:
         connector.manifest.id
         for connector in _connectors.values()
         if connector.manifest.kind == ConnectorKind.SOURCE
-        and connector.is_enabled()
         and connector.is_installed()
+        and configured_mode(connector.manifest) == ConnectorMode.IMPORT.value
     ]
     if not source_importing:
         return []
@@ -62,12 +70,12 @@ def import_mode_invariant_violations() -> list[str]:
     violations = [
         f"source connectors in import mode require installed verifier: {connector.manifest.id}"
         for connector in required_connectors()
-        if not connector.is_installed()
+        if not connector.is_installed() or configured_mode(connector.manifest) != ConnectorMode.IMPORT.value
     ]
     output_installed = any(
         connector.manifest.kind == ConnectorKind.OUTPUT
-        and connector.is_enabled()
         and connector.is_installed()
+        and configured_mode(connector.manifest) == ConnectorMode.IMPORT.value
         for connector in _connectors.values()
     )
     if not output_installed:
@@ -77,8 +85,7 @@ def import_mode_invariant_violations() -> list[str]:
 
 def connector_to_dict(connector: "Connector") -> dict:
     health = connector.health()
-    enabled = connector.is_enabled()
-    mode = ConnectorMode.IMPORT.value if enabled else ConnectorMode.DISABLED.value
+    config = config_for_manifest(connector.manifest)
     return {
         "id": connector.manifest.id,
         "kind": connector.manifest.kind.value,
@@ -86,8 +93,9 @@ def connector_to_dict(connector: "Connector") -> dict:
         "manifest": manifest_to_dict(connector.manifest),
         "runtime": {
             "installed": connector.is_installed(),
-            "enabled": enabled,
-            "mode": mode,
+            "enabled": config["enabled"],
+            "mode": config["mode"],
+            "config": config,
             "health": health.status,
             "version": connector.detected_version(),
             "last_error": health.last_error,

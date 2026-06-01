@@ -53,7 +53,7 @@ def test_init_creates_all_tables(fresh_db):
     import sqlite3
     conn = sqlite3.connect(str(fresh_db))
     tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-    assert {"records", "sensor_runs", "file_evidence", "actions"}.issubset(tables)
+    assert {"records", "sensor_runs", "file_evidence", "actions", "connector_config"}.issubset(tables)
 
 
 # ---------- upsert_record ----------
@@ -185,6 +185,32 @@ def test_log_action_global_list(fresh_db):
     state_db.log_action("j2", "promote", "user_dashboard", "ok")
     all_actions = state_db.list_actions(limit=10)
     assert len(all_actions) == 2
+
+
+def test_connector_config_round_trip(fresh_db):
+    saved = state_db.set_connector_config(
+        "tidal",
+        enabled=True,
+        mode="dry_run",
+        actor="test",
+    )
+
+    assert saved is not None
+    assert saved["connector_id"] == "tidal"
+    assert saved["enabled"] is True
+    assert saved["mode"] == "dry_run"
+    assert state_db.get_connector_config("tidal")["mode"] == "dry_run"
+    assert state_db.list_connector_config()["tidal"]["actor"] == "test"
+
+
+def test_connector_config_update_overwrites_existing(fresh_db):
+    state_db.set_connector_config("tidal", enabled=True, mode="dry_run", actor="test")
+    state_db.set_connector_config("tidal", enabled=False, mode="disabled", actor="test2")
+
+    row = state_db.get_connector_config("tidal")
+    assert row["enabled"] is False
+    assert row["mode"] == "disabled"
+    assert row["actor"] == "test2"
 
 
 # ---------- list_records (filtering) ----------

@@ -77,6 +77,8 @@ def test_dashboard_html_fetches_and_renders_connectors(monkeypatch, tmp_path):
     assert "api('/connectors')" in body
     assert "function renderIntegrations" in body
     assert "connector-card" in body
+    assert "saveConnectorConfig" in body
+    assert "/connectors/' + encodeURIComponent(connectorId) + '/config" in body
     assert "Required env" in body
 
 

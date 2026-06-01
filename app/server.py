@@ -109,10 +109,41 @@ def _v2_verification_enabled() -> bool:
 
 
 def _rescue_rescan_enabled() -> bool:
+    try:
+        import state_db
+        row = state_db.get_connector_config("lidarr_rescue_rescan")
+        if row is not None and row.get("mode") != "import":
+            return False
+    except Exception:
+        pass
     value = os.environ.get("MINTARR_RESCUE_RESCAN_ENABLED")
     if value is None:
         value = os.environ.get("TIDALHIRES_RESCUE_RESCAN_ENABLED", "true")
     return value.lower() in ("1", "true", "yes", "on")
+
+
+def _connector_import_mode_enabled(connector_id: str) -> bool:
+    try:
+        import connectors
+        connector = connectors.get_connector(connector_id)
+        if connector is None:
+            return True
+        return connectors.configured_mode(connector.manifest) == connectors.ConnectorMode.IMPORT.value
+    except Exception:
+        log.debug("connector mode lookup failed for %s; allowing runtime path", connector_id, exc_info=True)
+        return True
+
+
+def _adapter_import_mode_enabled(adapter_name: str) -> bool:
+    try:
+        import connectors
+        connector = connectors.connector_for_adapter(adapter_name)
+        if connector is None:
+            return True
+        return connectors.configured_mode(connector.manifest) == connectors.ConnectorMode.IMPORT.value
+    except Exception:
+        log.debug("adapter connector mode lookup failed for %s; allowing runtime path", adapter_name, exc_info=True)
+        return True
 
 
 def _record_job_timing(jid: str, stage: str, seconds: float) -> None:
@@ -550,6 +581,8 @@ def newznab():
         base = os.environ.get("BASE_URL") or request.host_url.rstrip("/")
         all_candidates = []
         for adapter in _adapters.enabled_adapters():
+            if not _adapter_import_mode_enabled(adapter.name):
+                continue
             if empty_query and adapter.name != "tidal":
                 continue
             try:
@@ -686,6 +719,8 @@ def sab():
             return jsonify({"status": False, "error": f"unknown source: {source}"}), 400
         if not adapter.is_enabled():
             return jsonify({"status": False, "error": f"source not enabled: {source}"}), 503
+        if not _adapter_import_mode_enabled(adapter.name):
+            return jsonify({"status": False, "error": f"source not in import mode: {source}"}), 503
 
         try:
             source_id, dedupe_key, title, size_est = _addurl_canonicalize(adapter, raw_id, name)
@@ -802,6 +837,8 @@ def local_ingest():
     adapter = adapters.get_adapter("local")
     if adapter is None or not adapter.is_enabled():
         return jsonify({"status": False, "error": "local adapter not enabled"}), 503
+    if not _adapter_import_mode_enabled(adapter.name):
+        return jsonify({"status": False, "error": "local adapter not in import mode"}), 503
 
     try:
         rel = adapter.normalize_candidate_id(rel)
@@ -3538,6 +3575,8 @@ def download_nzb(source: str, encoded_source_id: str):
         return Response("unknown source", status=404)
     if not adapter.is_enabled():
         return Response("source disabled", status=503)
+    if not _adapter_import_mode_enabled(adapter.name):
+        return Response("source not in import mode", status=503)
     try:
         source_id = _canonicalize_source_id(adapter, source_id)
     except (RuntimeError, ValueError) as exc:

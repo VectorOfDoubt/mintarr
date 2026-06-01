@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Callable
 
 from .base import ConnectorHealth, ConnectorKind, ConnectorManifest, MANIFEST_API_VERSION, health_checked_now
+from .config import configured_enabled
 from .registry import check_required_connectors_installed, get_connector, register
 
 
@@ -29,7 +30,7 @@ class AdapterBackedConnector:
         return bool(adapter and adapter.is_enabled())
 
     def is_enabled(self) -> bool:
-        return self.manifest.default_enabled
+        return configured_enabled(self.manifest)
 
     def health(self) -> ConnectorHealth:
         if not self.is_enabled():
@@ -55,7 +56,7 @@ class BinaryConnector:
         return shutil.which(self.binary) is not None
 
     def is_enabled(self) -> bool:
-        return self.manifest.default_enabled
+        return configured_enabled(self.manifest)
 
     def health(self) -> ConnectorHealth:
         if not self.is_enabled():
@@ -119,7 +120,7 @@ class FlacDetectiveConnector:
         return self.health().status in {"ok", "degraded"}
 
     def is_enabled(self) -> bool:
-        return self.manifest.default_enabled
+        return configured_enabled(self.manifest)
 
     def health(self) -> ConnectorHealth:
         if (
@@ -174,13 +175,20 @@ class LidarrConnector:
         return self.health().status in {"ok", "degraded", "blocked"}
 
     def is_enabled(self) -> bool:
+        try:
+            import state_db
+            stored = state_db.get_connector_config(self.manifest.id)
+        except Exception:
+            stored = None
+        if stored is not None:
+            return bool(stored.get("enabled"))
         if self.manifest.id == "lidarr_rescue_rescan":
             value = os.environ.get("MINTARR_RESCUE_RESCAN_ENABLED")
             if value is None:
                 value = os.environ.get("TIDALHIRES_RESCUE_RESCAN_ENABLED")
             if value is not None:
                 return value.lower() in {"1", "true", "yes", "on"}
-        return self.manifest.default_enabled
+        return configured_enabled(self.manifest)
 
     def health(self) -> ConnectorHealth:
         if (

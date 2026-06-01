@@ -686,6 +686,88 @@ def connectors():
     return jsonify(connector_registry.registry_payload())
 
 
+@dashboard_bp.route("/v1/connectors/<connector_id>/config", methods=["POST"])
+def connector_config(connector_id: str):
+    from server import require_apikey_check
+    auth_resp = require_apikey_check()
+    if auth_resp:
+        return auth_resp
+
+    import connectors as connector_registry
+    import state_db
+
+    body = request.get_json(silent=True) or {}
+    dry_run = bool(body.get("dry_run"))
+    enabled = body.get("enabled") if "enabled" in body else None
+    mode = body.get("mode") if "mode" in body else None
+    proposed, errors = connector_registry.validate_connector_update(
+        connector_id,
+        enabled=enabled,
+        mode=mode,
+        connectors=connector_registry.all_connectors(),
+    )
+    if proposed is None and errors == ["unknown connector"]:
+        return jsonify({"connector_id": connector_id, "valid": False, "errors": errors}), 404
+    if errors:
+        status = 400 if any(error.startswith("invalid connector mode") for error in errors) else 409
+        state_db.log_action(
+            f"connector:{connector_id}",
+            "connector_config_dry_run" if dry_run else "connector_config",
+            "user_dashboard",
+            f"http_{status}",
+            {"mode": mode, "enabled": enabled, "dry_run": dry_run, "errors": errors},
+        )
+        return jsonify({
+            "connector_id": connector_id,
+            "dry_run": dry_run,
+            "valid": False,
+            "config": proposed,
+            "errors": errors,
+        }), status
+
+    assert proposed is not None
+    if dry_run:
+        state_db.log_action(
+            f"connector:{connector_id}",
+            "connector_config_dry_run",
+            "user_dashboard",
+            "ok",
+            {"mode": proposed["mode"], "enabled": proposed["enabled"]},
+        )
+        return jsonify({
+            "connector_id": connector_id,
+            "dry_run": True,
+            "valid": True,
+            "config": proposed,
+            "errors": [],
+        })
+
+    saved = connector_registry.persist_connector_config(proposed)
+    if saved is None:
+        return jsonify({
+            "connector_id": connector_id,
+            "dry_run": False,
+            "valid": False,
+            "errors": ["failed to persist connector config"],
+        }), 500
+    state_db.log_action(
+        f"connector:{connector_id}",
+        "connector_config",
+        "user_dashboard",
+        "ok",
+        {"mode": saved["mode"], "enabled": saved["enabled"]},
+    )
+    invalidate_prefix("summary")
+    invalidate_prefix("connectors")
+    return jsonify({
+        "connector_id": connector_id,
+        "dry_run": False,
+        "valid": True,
+        "config": saved,
+        "errors": [],
+    })
+
+
 # ---------- /dashboard/v1/records ----------
 def _build_records_from_db(server_mod, filters: dict) -> dict | None:
     """F1.6: try DB-backed query first. Returns None to signal fallback to sidecar-scan."""
@@ -1365,6 +1447,38 @@ main { padding: 16px 24px; }
 }
 .connector-link { color: var(--accent-primary); text-decoration: none; }
 .connector-link:hover { color: var(--accent-primary-hover); }
+.connector-controls {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border-subtle);
+}
+.connector-controls select {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-default);
+  color: var(--text-primary);
+  border-radius: var(--radius-sm);
+  padding: 5px 8px;
+  font-size: 12px;
+}
+.connector-controls button {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-default);
+  color: var(--text-primary);
+  border-radius: var(--radius-sm);
+  padding: 5px 9px;
+  cursor: pointer;
+  font-size: 12px;
+}
+.connector-controls button:hover { border-color: var(--accent-primary); }
+.connector-controls button.primary {
+  background: var(--accent-primary);
+  border-color: var(--accent-primary);
+  color: #fff;
+}
 .command-list { display: grid; gap: 8px; }
 .command-item {
   display: grid;
@@ -1656,6 +1770,7 @@ let refreshTimer = null;
 let lastUpdate = null;
 let activeDrawerJid = null;
 let activeView = localStorage.getItem('tidalhires_dashboard_view') || 'records';
+let lastConnectors = [];
 
 const $ = (id) => document.getElementById(id);
 
@@ -1731,6 +1846,7 @@ async function refresh() {
     const timings = await timingResp.json();
     const jobs = await jobsResp.json();
     const connectors = await connectorResp.json();
+    lastConnectors = connectors.connectors || [];
     renderSummary(sum, connectors.connectors || []);
     renderActiveJobs(jobs.jobs || []);
     renderTimings(timings);
@@ -1805,6 +1921,11 @@ function renderConnectorCard(connector) {
   const docsUrl = manifest.docs_url || '';
   const docs = docsUrl ? `<a class="connector-link" href="${esc(docsUrl)}" target="_blank" rel="noreferrer">docs</a>` : 'none';
   const err = runtime.last_error ? `<div class="k">Last error</div><div class="v">${esc(runtime.last_error)}</div>` : '';
+  const mode = runtime.mode || 'disabled';
+  const modeOptions = ['disabled', 'dry_run', 'import'].map(item => {
+    const selected = item === mode ? ' selected' : '';
+    return `<option value="${item}"${selected}>${item}</option>`;
+  }).join('');
   return `
     <article class="connector-card ${requiredClass} ${esc(stateClass)}">
       <div class="connector-head">
@@ -1825,8 +1946,34 @@ function renderConnectorCard(connector) {
         <div class="k">Last check</div><div class="v">${esc(runtime.last_checked_at || 'unknown')} · ${docs}</div>
         ${err}
       </div>
+      <div class="connector-controls">
+        <select id="connector-mode-${esc(connector.id)}" aria-label="Mode for ${esc(connector.id)}">${modeOptions}</select>
+        <button onclick="saveConnectorConfig('${esc(connector.id)}', true)">Dry run</button>
+        <button class="primary" onclick="saveConnectorConfig('${esc(connector.id)}', false)">Apply</button>
+      </div>
     </article>
   `;
+}
+
+async function saveConnectorConfig(connectorId, dryRun) {
+  const select = $('connector-mode-' + connectorId);
+  if (!select) return;
+  try {
+    const resp = await api('/connectors/' + encodeURIComponent(connectorId) + '/config', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({mode: select.value, dry_run: dryRun})
+    });
+    const data = await resp.json();
+    if (!resp.ok || data.valid === false) {
+      showToast((data.errors || ['Connector config rejected']).join('; '), 'error');
+      return;
+    }
+    showToast(dryRun ? 'Connector config is valid.' : 'Connector config saved.', 'success');
+    if (!dryRun) refresh();
+  } catch (e) {
+    if (e.message !== 'auth') showToast('Connector config failed: ' + e.message, 'error');
+  }
 }
 
 function renderActiveJobs(jobs) {

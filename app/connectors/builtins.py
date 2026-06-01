@@ -311,6 +311,7 @@ def built_in_connectors() -> list:
                     "SOULSEEK_SEARCH_RESPONSE_LIMIT",
                     "SOULSEEK_SEARCH_FILE_LIMIT",
                     "SOULSEEK_SEARCH_SUFFIX",
+                    "SOULSEEK_CANDIDATE_CACHE",
                     "SOULSEEK_MIN_TRACKS",
                     "SOULSEEK_DOWNLOAD_TIMEOUT",
                     "SOULSEEK_POLL_SECONDS",

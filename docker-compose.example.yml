@@ -51,6 +51,7 @@ services:
       # - SLSKD_API_URL=http://host.docker.internal:5030
       # - SLSKD_API_KEY=<slskd-api-key>
       # - SOULSEEK_SEARCH_SUFFIX=
+      # - SOULSEEK_CANDIDATE_CACHE=/config/soulseek_candidates.json
 
       # --- Verification policy ---
       # Enables the V2 verification pipeline. Default is true; set to false

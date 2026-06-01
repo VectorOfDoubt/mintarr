@@ -187,6 +187,7 @@ environment:
   - SLSKD_API_URL=http://host.docker.internal:5030
   - SLSKD_API_KEY=<slskd-api-key>
   - SOULSEEK_SEARCH_SUFFIX=
+  - SOULSEEK_CANDIDATE_CACHE=/config/soulseek_candidates.json
 volumes:
   - /path/to/slskd/completed:/soulseek-ingest
 ```

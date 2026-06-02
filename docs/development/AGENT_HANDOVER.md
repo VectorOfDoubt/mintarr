@@ -182,6 +182,8 @@ Additional controlled Soulseek dogfood:
 
 Follow-up fix after the dogfood: successful ManualImport no longer force-deletes the Lidarr queue row. Mintarr now only hides/completes its own SAB-emulated job on success, because deleting the Lidarr row after import creates misleading `downloadIgnored` history entries. Failed/blocked/review-required/orphaned terminal states still perform hard queue cleanup.
 
+Post-fix dogfood passed for Hilary Duff `luck... or something (happy hour edition)` (`albumId=6414`, Mintarr job `eeb8b0eb0c77`): Lidarr initiated the `[Soulseek]` grab, Soulseek downloaded 22/22 FLAC files, FLAC Detective accepted the release, and Lidarr imported 22/22 tracks. Lidarr history for the same `downloadId` contained 22 `trackFileImported` events and 0 `downloadIgnored` events. Queue state after the run was clean: Mintarr active jobs `0`, Lidarr queue `0`, Lidarr blocking commands `0`. Soulseek staging was removed; Mintarr audit sidecars remain.
+
 ## Decisions you should not re-litigate
 
 These have been considered, decided, and locked in ADRs. Do not propose reversing them without a successor ADR.

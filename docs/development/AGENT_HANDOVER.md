@@ -164,6 +164,14 @@ Current live runtime state after Soulseek dogfood and controlled rollout:
 - All current Lidarr quality profiles (`Any`, `Lossless`, `Standard`) score those CFs as TIDAL `+50`, Local `+20`, Soulseek `0`. Soulseek is intentionally not negative because the profiles have minimum Custom Format score `0`; negative would reject Soulseek instead of ranking it lower.
 - Queue state was clean after the last positive Soulseek dogfood: Mintarr active jobs `0`, Lidarr download queue `0`. A Lidarr library rescan may still be running after imports; do not confuse that with an active Mintarr grab.
 
+Latest controlled Lidarr-initiated Soulseek dogfood:
+
+- Lidarr release-search for John Lee Hooker `The Charcot Sessions` (`albumId=12159`) returned an accepted `TidalHires` / `[Soulseek]` release with `Mintarr-soulseek` score `0`.
+- Lidarr-initiated grab produced Mintarr job `94e173635619`.
+- Soulseek downloaded 23/23 FLAC files, FLAC Detective verdict was `AUTHENTIC`, and Mintarr imported via Lidarr `ManualImport`.
+- Lidarr album `12159` ended at 23/23 tracks, `percentOfTracks=100`, and download queue `0`.
+- Soulseek staging folder `/mnt/h/Nedlasting/Soulseek/complete/John Lee Hooker - The Charcot Sessions` was removed after import. Mintarr audit sidecar `/mnt/h/Nedlasting/TidalHiRes/complete/94e173635619/verification.json` was left in place.
+
 ## Decisions you should not re-litigate
 
 These have been considered, decided, and locked in ADRs. Do not propose reversing them without a successor ADR.

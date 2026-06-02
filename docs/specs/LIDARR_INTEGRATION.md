@@ -146,6 +146,7 @@ Quirks:
 
 - `GET /api/v1/manualimport?folder=...` may return rejections like `"Album match is not close enough: 70.1 % vs 80 %"` for valid imports of edition variants. Mintarr force-imports these via the release-family rejection allow-list.
 - The 80%-match heuristic occasionally causes Lidarr to refuse imports of files whose tracklist disagrees with the matched album release. Mintarr's release-switch logic (in `_trigger_lidarr_import`) selects a better-matching release before retrying.
+- For Soulseek imports, Mintarr runs a pre-ManualImport target-album guard. If Lidarr resolves a Soulseek candidate title to an incompatible album title, Mintarr aborts before `POST /api/v1/command`, marks the job import-failed, and removes the queue entry without blocklisting the release.
 - `POST /api/v1/command` returns immediately with `status="queued"` or `status="started"`. Mintarr polls via `GET /api/v1/command/<id>` until terminal (or until `_lidarr_command_still_pending` returns False).
 
 ### 6.2 Lidarr 4.x (preview)

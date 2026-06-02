@@ -187,10 +187,11 @@ def test_execute_source_grab_threads_non_tidal_source_type(pipeline_env, monkeyp
     adapter = _LocalFolderAdapter()
     seen: dict = {}
 
-    def _capturing_trigger(jid, output_dir, worker_job_id=None, *, source_type="tidal"):
+    def _capturing_trigger(jid, output_dir, worker_job_id=None, *, source_type="tidal", target_album_id=None):
         seen["jid"] = jid
         seen["source_type"] = source_type
         seen["output_dir"] = output_dir
+        seen["target_album_id"] = target_album_id
 
     monkeypatch.setattr(server, "_trigger_lidarr_import", _capturing_trigger)
 
@@ -209,6 +210,34 @@ def test_execute_source_grab_threads_non_tidal_source_type(pipeline_env, monkeyp
         "non-TIDAL adapter must thread its source_type through "
         "import_to_lidarr → _trigger_lidarr_import, not default to 'tidal'"
     )
+
+
+def test_execute_source_grab_threads_target_album_id(pipeline_env, monkeypatch):
+    server, pipeline = pipeline_env
+    adapter = _FakeAdapter()
+    seen: dict = {}
+
+    def _capturing_trigger(jid, output_dir, worker_job_id=None, *, source_type="tidal", target_album_id=None):
+        seen["jid"] = jid
+        seen["target_album_id"] = target_album_id
+
+    monkeypatch.setattr(server, "_trigger_lidarr_import", _capturing_trigger)
+
+    jid = "target-album-grab"
+    ctx = _FakeContext(
+        jid=jid,
+        raw_dir=server.DOWNLOAD_BASE / jid,
+        output_dir=server.OUTPUT_BASE / jid,
+    )
+    job = {
+        "id": None,
+        "jid": jid,
+        "payload_json": json.dumps({"source_id": "abc", "target_album_id": 9829}),
+    }
+
+    pipeline.execute_source_grab(job, adapter, ctx)
+
+    assert seen == {"jid": jid, "target_album_id": 9829}
 
 
 def test_prepare_output_directory_uses_ctx_output_dir(pipeline_env, tmp_path):

@@ -202,9 +202,10 @@ def test_local_executor_threads_source_type_local(tmp_path, monkeypatch):
 
     seen: dict = {}
 
-    def _capturing_trigger(jid, output_dir, worker_job_id=None, *, source_type="tidal"):
+    def _capturing_trigger(jid, output_dir, worker_job_id=None, *, source_type="tidal", target_album_id=None):
         seen["jid"] = jid
         seen["source_type"] = source_type
+        seen["target_album_id"] = target_album_id
 
     # Stub Lidarr-import + cancel/timing side effects so we exercise pipeline only
     monkeypatch.setattr(server, "_trigger_lidarr_import", _capturing_trigger)

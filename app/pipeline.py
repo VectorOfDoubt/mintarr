@@ -60,6 +60,12 @@ def execute_source_grab(
     candidate_id = str(payload.get("source_id") or payload.get("album_id") or "")
     if not candidate_id:
         raise ValueError(f"source-grab job missing source_id/album_id: {payload}")
+    target_album_id = (
+        payload.get("target_album_id")
+        or payload.get("lidarr_album_id")
+        or payload.get("album_id_lidarr")
+        or payload.get("album_id_in_lidarr")
+    )
 
     job_started = time.monotonic()
     with server._jobs_lock:
@@ -134,7 +140,12 @@ def execute_source_grab(
         jid, prepared.file_count, prepared.total_bytes // (1024 * 1024), prepared.output_dir,
     )
 
-    import_to_lidarr(prepared.output_dir, ctx, source_type=adapter.source_type)
+    import_to_lidarr(
+        prepared.output_dir,
+        ctx,
+        source_type=adapter.source_type,
+        target_album_id=target_album_id,
+    )
 
 
 def normalize_audio(raw_dir: Path, ctx: PipelineContext) -> NormalizeStats:
@@ -270,6 +281,7 @@ def import_to_lidarr(
     ctx: PipelineContext,
     *,
     source_type: str,
+    target_album_id: int | str | None = None,
 ) -> None:
     """Trigger Lidarr direct-import (which internally runs V2 verification
     + writes sidecar + calls Lidarr ManualImport).
@@ -289,6 +301,7 @@ def import_to_lidarr(
             output_dir,
             worker_job_id=ctx.worker_job_id,
             source_type=source_type,
+            target_album_id=target_album_id,
         )
         ctx.set_progress(
             stage="finalizing",

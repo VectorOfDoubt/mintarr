@@ -219,7 +219,10 @@ When `SOULSEEK_SEARCH_ENABLED=true`, Lidarr searches Mintarr as usual. Mintarr
 adds `[Soulseek]` Newznab candidates from slskd. If Lidarr grabs one, the existing
 SAB-compatible Mintarr download client receives the grab, queues the selected
 files in slskd, waits for them under `/soulseek-ingest`, then runs normal Mintarr
-QC/import.
+QC/import. Before handing the files to Lidarr ManualImport, Mintarr checks that
+Lidarr's resolved album title is compatible with the Soulseek candidate title; a
+clear mismatch is stopped as an import failure instead of being imported to the
+wrong album.
 
 ## 5. Configure Custom Formats in Lidarr
 

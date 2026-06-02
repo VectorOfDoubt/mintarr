@@ -330,9 +330,10 @@ def test_soulseek_executor_threads_source_type(tmp_path, monkeypatch):
     adapter = SoulseekCompletedAdapter(download_root=str(root), enabled=True, settle_seconds=0)
     seen: dict = {}
 
-    def _capturing_trigger(jid, output_dir, worker_job_id=None, *, source_type="tidal"):
+    def _capturing_trigger(jid, output_dir, worker_job_id=None, *, source_type="tidal", target_album_id=None):
         seen["jid"] = jid
         seen["source_type"] = source_type
+        seen["target_album_id"] = target_album_id
 
     monkeypatch.setattr(server, "_trigger_lidarr_import", _capturing_trigger)
     monkeypatch.setattr(server, "_raise_if_job_cancelled", lambda *a, **kw: None)
@@ -356,7 +357,7 @@ def test_soulseek_executor_threads_source_type(tmp_path, monkeypatch):
 
     pipeline.execute_source_grab(job, adapter, ctx)
 
-    assert seen == {"jid": jid, "source_type": "soulseek"}
+    assert seen == {"jid": jid, "source_type": "soulseek", "target_album_id": None}
 
 
 @pytest.fixture

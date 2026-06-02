@@ -66,11 +66,12 @@ def test_download_job_stays_processing_until_lidarr_import(tmp_path, mocker):
             (album_dir / "01.flac").write_bytes(b"flac")
         return SimpleNamespace(returncode=0, stderr="", stdout="")
 
-    def fake_trigger(import_jid, output_dir, worker_job_id=None, *, source_type="tidal"):
+    def fake_trigger(import_jid, output_dir, worker_job_id=None, *, source_type="tidal", target_album_id=None):
         observed.update(server._jobs[import_jid])
         observed["trigger_output_dir"] = str(output_dir)
         observed["worker_job_id"] = worker_job_id
         observed["trigger_source_type"] = source_type
+        observed["trigger_target_album_id"] = target_album_id
 
     mocker.patch.object(server.subprocess, "run", side_effect=fake_run)
     mocker.patch.object(server, "_trigger_lidarr_import", side_effect=fake_trigger)
@@ -154,6 +155,164 @@ def test_manualimport_success_cleans_lidarr_queue(tmp_path, mocker):
     assert post_mock.call_count == 2
     assert server._jobs[jid]["status"] == "completed"
     assert server._jobs[jid]["hidden_from_lidarr"] is True
+
+
+def test_soulseek_album_title_guard_handles_year_suffix_and_scene_mismatch():
+    assert server._soulseek_album_title_compatible(
+        "Artist - Album (2024) [Soulseek] [FLAC]",
+        "Album",
+    )
+    assert not server._soulseek_album_title_compatible(
+        "The_Pussycat_Dolls-PCD_Forever_(Deluxe_Edition)-16BIT-WEB-FLAC-2026-ENRiCH",
+        "PCD",
+    )
+
+
+def test_soulseek_manualimport_album_title_mismatch_blocks_wrong_lidarr_album(tmp_path, mocker):
+    jid = "a9ead0f97861"
+    output_dir = tmp_path / jid
+    output_dir.mkdir()
+    for idx in range(2):
+        (output_dir / f"{idx + 1:02d}.flac").write_bytes(b"flac")
+
+    api = "http://lidarr/api/v1"
+    key = "lidarr-key"
+    _seed_job(
+        jid,
+        title="The_Pussycat_Dolls-PCD_Forever_(Deluxe_Edition)-16BIT-WEB-FLAC-2026-ENRiCH",
+    )
+    manualimport_items = [
+        {
+            "path": f"/downloads/TidalHiRes/complete/{jid}/01.flac",
+            "artist": {"id": 10},
+            "album": {"id": 20, "title": "PCD", "currentRelease": {"id": 30}},
+            "albumReleaseId": 30,
+            "tracks": [{"id": 101}],
+            "quality": {"quality": {"name": "FLAC 24bit"}},
+            "rejections": [],
+        },
+        {
+            "path": f"/downloads/TidalHiRes/complete/{jid}/02.flac",
+            "artist": {"id": 10},
+            "album": {"id": 20, "title": "PCD", "currentRelease": {"id": 30}},
+            "albumReleaseId": 30,
+            "tracks": [{"id": 102}],
+            "quality": {"quality": {"name": "FLAC 24bit"}},
+            "rejections": [],
+        },
+    ]
+
+    mocker.patch.dict(os.environ, {"LIDARR_API_URL": api})
+    mocker.patch.object(server, "_get_lidarr_key", return_value=key)
+    mocker.patch.object(server, "_save_jobs")
+    log_decision = mocker.patch.object(server, "_log_decision")
+    mocker.patch.object(server.time, "sleep")
+
+    def fake_get(url, **kwargs):
+        if url == f"{api}/manualimport":
+            return _response(payload=manualimport_items)
+        if url == f"{api}/trackfile?albumId=20":
+            return _response(payload=[])
+        if url == f"{api}/album/20":
+            return _response(payload={"statistics": {"trackCount": 12, "trackFileCount": 0}})
+        if url == f"{api}/queue?pageSize=200":
+            return _response(payload={"records": [{"id": 77, "downloadId": jid}]})
+        raise AssertionError(f"unexpected GET {url}")
+
+    def fake_post(url, **kwargs):
+        if url == "http://host.docker.internal:8889/analyze":
+            return _response(payload={"overall_verdict": "AUTHENTIC", "file_count": 2})
+        if url == f"{api}/command":
+            raise AssertionError("Soulseek guard must stop before Lidarr ManualImport")
+        raise AssertionError(f"unexpected POST {url}")
+
+    mocker.patch("requests.get", side_effect=fake_get)
+    post_mock = mocker.patch("requests.post", side_effect=fake_post)
+    delete_mock = mocker.patch("requests.delete", return_value=_response(status_code=204))
+
+    server._trigger_lidarr_import(jid, output_dir, source_type="soulseek")
+
+    _assert_queue_cleanup(delete_mock, api, key, 77)
+    assert post_mock.call_count == 1
+    assert server._jobs[jid]["status"] == "failed"
+    assert "Soulseek manualimport target album mismatch" in server._jobs[jid]["error"]
+    failed_record = log_decision.call_args_list[-1].kwargs["v2_result"]
+    assert failed_record.import_outcome == "FAILED"
+    assert failed_record.verification_decision == "ACCEPT"
+
+
+def test_soulseek_manualimport_album_title_match_allows_import(tmp_path, mocker):
+    jid = "45f4f5d5d1fd"
+    output_dir = tmp_path / jid
+    output_dir.mkdir()
+    for idx in range(2):
+        (output_dir / f"{idx + 1:02d}.flac").write_bytes(b"flac")
+
+    api = "http://lidarr/api/v1"
+    key = "lidarr-key"
+    _seed_job(
+        jid,
+        title="The_Pussycat_Dolls-PCD_Forever_(Deluxe_Edition)-16BIT-WEB-FLAC-2026-ENRiCH",
+    )
+    manualimport_items = [
+        {
+            "path": f"/downloads/TidalHiRes/complete/{jid}/01.flac",
+            "artist": {"id": 10},
+            "album": {"id": 9829, "title": "PCD Forever (Deluxe Edition)", "currentRelease": {"id": 30}},
+            "albumReleaseId": 30,
+            "tracks": [{"id": 101}],
+            "quality": {"quality": {"name": "FLAC 24bit"}},
+            "rejections": [],
+        },
+        {
+            "path": f"/downloads/TidalHiRes/complete/{jid}/02.flac",
+            "artist": {"id": 10},
+            "album": {"id": 9829, "title": "PCD Forever (Deluxe Edition)", "currentRelease": {"id": 30}},
+            "albumReleaseId": 30,
+            "tracks": [{"id": 102}],
+            "quality": {"quality": {"name": "FLAC 24bit"}},
+            "rejections": [],
+        },
+    ]
+
+    mocker.patch.dict(os.environ, {"LIDARR_API_URL": api})
+    mocker.patch.object(server, "_get_lidarr_key", return_value=key)
+    mocker.patch.object(server, "_log_decision")
+    mocker.patch.object(server, "_save_jobs")
+    mocker.patch.object(server.time, "sleep")
+
+    trackfile_calls = {"count": 0}
+
+    def fake_get(url, **kwargs):
+        if url == f"{api}/manualimport":
+            return _response(payload=manualimport_items)
+        if url == f"{api}/trackfile?albumId=9829":
+            trackfile_calls["count"] += 1
+            if trackfile_calls["count"] <= 2:
+                return _response(payload=[])
+            return _response(payload=[{"id": 1}, {"id": 2}])
+        if url == f"{api}/album/9829":
+            return _response(payload={"statistics": {"trackCount": 25, "trackFileCount": 0}})
+        if url == f"{api}/queue?pageSize=200":
+            return _response(payload={"records": [{"id": 78, "downloadId": jid}]})
+        raise AssertionError(f"unexpected GET {url}")
+
+    def fake_post(url, **kwargs):
+        if url == "http://host.docker.internal:8889/analyze":
+            return _response(payload={"overall_verdict": "AUTHENTIC", "file_count": 2})
+        if url == f"{api}/command":
+            return _response(status_code=201, payload={"id": 123})
+        raise AssertionError(f"unexpected POST {url}")
+
+    mocker.patch("requests.get", side_effect=fake_get)
+    post_mock = mocker.patch("requests.post", side_effect=fake_post)
+    delete_mock = mocker.patch("requests.delete", return_value=_response(status_code=204))
+
+    server._trigger_lidarr_import(jid, output_dir, source_type="soulseek")
+
+    _assert_queue_cleanup(delete_mock, api, key, 78)
+    assert post_mock.call_count == 2
+    assert server._jobs[jid]["status"] == "completed"
 
 
 def test_manualimport_replace_success_uses_history_without_rescue(tmp_path, mocker):

@@ -1344,6 +1344,188 @@ def _album_ids_from_manualimport(items: list[dict]) -> list[int]:
     return sorted({i["album"]["id"] for i in items if i.get("album") and i["album"].get("id")})
 
 
+_SOULSEEK_TITLE_STOP_TOKENS = {
+    "a",
+    "an",
+    "and",
+    "bit",
+    "by",
+    "cd",
+    "disc",
+    "feat",
+    "featuring",
+    "flac",
+    "for",
+    "in",
+    "khz",
+    "lossless",
+    "m4a",
+    "mp3",
+    "of",
+    "on",
+    "ost",
+    "remix",
+    "scene",
+    "soulseek",
+    "the",
+    "tidal",
+    "to",
+    "tracks",
+    "vol",
+    "volume",
+    "web",
+}
+
+_SOULSEEK_QUALITY_TOKENS = {
+    "16bit",
+    "24bit",
+    "44khz",
+    "48khz",
+    "88khz",
+    "96khz",
+    "192khz",
+    "aac",
+    "alac",
+    "cd",
+    "deezer",
+    "flac",
+    "hires",
+    "lossless",
+    "mp3",
+    "qobuz",
+    "remastered",
+    "tidal",
+    "vinyl",
+    "web",
+}
+
+_SOULSEEK_RELEASE_FAMILY_TOKENS = {
+    "anniversary",
+    "bonus",
+    "deluxe",
+    "edition",
+    "expanded",
+    "extended",
+    "legacy",
+    "remaster",
+    "remastered",
+    "special",
+    "version",
+}
+
+
+def _manualimport_album_titles(items: list[dict]) -> list[str]:
+    titles: set[str] = set()
+    for item in items:
+        album = item.get("album") or {}
+        title = album.get("title") or album.get("albumTitle")
+        if title:
+            titles.add(str(title))
+    return sorted(titles)
+
+
+def _soulseek_title_tokens(value: str) -> set[str]:
+    text = html_unescape(str(value or "")).lower()
+    text = re.sub(r"['’]", "", text)
+    text = re.sub(r"[^a-z0-9]+", " ", text)
+    return {
+        token
+        for token in text.split()
+        if len(token) > 1 and token not in _SOULSEEK_TITLE_STOP_TOKENS
+    }
+
+
+def _soulseek_release_subject(title: str) -> str:
+    """Best-effort album-title fragment from a Soulseek/scene release name."""
+    value = re.sub(r"\[[^\]]+\]", " ", str(title or "")).strip()
+    if " - " in value:
+        subject = value.split(" - ", 1)[1]
+        return re.sub(r"\((?:19|20)\d{2}\)", " ", subject).strip()
+
+    parts = [part.strip() for part in value.split("-") if part.strip()]
+    if len(parts) < 2:
+        return value
+
+    subject_parts: list[str] = []
+    for part in parts[1:]:
+        tokens = _soulseek_title_tokens(part)
+        if not tokens:
+            continue
+        if tokens <= _SOULSEEK_QUALITY_TOKENS or re.fullmatch(r"(19|20)\d{2}", part.strip()):
+            break
+        subject_parts.append(part)
+    return " ".join(subject_parts) if subject_parts else value
+
+
+def _soulseek_album_title_compatible(candidate_title: str, album_title: str) -> bool:
+    subject_tokens = _soulseek_title_tokens(_soulseek_release_subject(candidate_title))
+    album_tokens = _soulseek_title_tokens(album_title)
+    if not subject_tokens or not album_tokens:
+        return True
+    if subject_tokens == album_tokens:
+        return True
+
+    overlap = subject_tokens & album_tokens
+    if not overlap:
+        return False
+
+    extra_subject_tokens = subject_tokens - album_tokens
+    if album_tokens <= subject_tokens and (
+        len(album_tokens) >= 2 or extra_subject_tokens <= _SOULSEEK_RELEASE_FAMILY_TOKENS
+    ):
+        return True
+
+    jaccard = len(overlap) / len(subject_tokens | album_tokens)
+    return jaccard >= 0.55
+
+
+def _manualimport_target_guard_failure(
+    jid: str,
+    items: list[dict],
+    *,
+    source_type: str,
+    target_album_id: int | str | None = None,
+) -> str | None:
+    album_ids = _album_ids_from_manualimport(items)
+    if target_album_id not in (None, ""):
+        try:
+            expected_album_id = int(target_album_id)
+        except (TypeError, ValueError):
+            expected_album_id = None
+        if expected_album_id is not None:
+            mismatched_ids = [aid for aid in album_ids if aid != expected_album_id]
+            if mismatched_ids:
+                return (
+                    "manualimport target album mismatch: "
+                    f"expected Lidarr albumId {expected_album_id}, got {mismatched_ids}"
+                )
+
+    if source_type != "soulseek":
+        return None
+
+    with _jobs_lock:
+        candidate_title = str((_jobs.get(jid) or {}).get("title") or "")
+    if not candidate_title:
+        return None
+
+    album_titles = _manualimport_album_titles(items)
+    if not album_titles:
+        return None
+
+    mismatches = [
+        title
+        for title in album_titles
+        if not _soulseek_album_title_compatible(candidate_title, title)
+    ]
+    if not mismatches:
+        return None
+
+    return (
+        "Soulseek manualimport target album mismatch: "
+        f"candidate {candidate_title!r} resolved to Lidarr album(s) {mismatches}"
+    )
+
+
 def _manualimport_album_complete(output_dir: Path, items: list[dict]) -> bool:
     audio_count = _count_audio_files(output_dir)
     if audio_count == 0:
@@ -2165,6 +2347,7 @@ def _trigger_lidarr_import(
     worker_job_id: int | None = None,
     *,
     source_type: str = "tidal",
+    target_album_id: int | str | None = None,
 ):
     """After download: smart pre-import evaluation.
 
@@ -2634,6 +2817,26 @@ def _trigger_lidarr_import(
                       album_ids=album_ids, title=_jobs.get(jid,{}).get("title",""))
         _write_sidecar_maybe(v2_result, output_dir)
         _mark_import_failed(jid, reason)
+        _cleanup_lidarr_queue(jid, api, key)
+        return
+
+    guard_reason = _manualimport_target_guard_failure(
+        jid,
+        items,
+        source_type=source_type,
+        target_album_id=target_album_id,
+    )
+    if guard_reason:
+        log.warning("[%s] %s — aborting before Lidarr ManualImport", jid, guard_reason)
+        _record_job_timing(jid, "lidarr_manualimport_sec", time.monotonic() - manualimport_started)
+        _set_v2_import_outcome(v2_result, "FAILED")
+        _log_decision(jid, v2_result=v2_result,
+                      decision="IMPORT_FAILED", reason=guard_reason,
+                      verdict=verdict, new_kbps=new_effective_kbps,
+                      existing_quality=existing_label, existing_kbps=existing_kbps,
+                      album_ids=album_ids, title=_jobs.get(jid,{}).get("title",""))
+        _write_sidecar_maybe(v2_result, output_dir)
+        _mark_import_failed(jid, guard_reason)
         _cleanup_lidarr_queue(jid, api, key)
         return
 

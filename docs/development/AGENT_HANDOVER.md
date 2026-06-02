@@ -172,6 +172,14 @@ Latest controlled Lidarr-initiated Soulseek dogfood:
 - Lidarr album `12159` ended at 23/23 tracks, `percentOfTracks=100`, and download queue `0`.
 - Soulseek staging folder `/mnt/h/Nedlasting/Soulseek/complete/John Lee Hooker - The Charcot Sessions` was removed after import. Mintarr audit sidecar `/mnt/h/Nedlasting/TidalHiRes/complete/94e173635619/verification.json` was left in place.
 
+Additional controlled Soulseek dogfood:
+
+- Paul Anka `Inspirations of Life and Love` (`albumId=9488`) was grabbed from Lidarr via `TidalHires` / `[Soulseek]`, Mintarr job `eae3ac57e717`.
+- It downloaded 11/11 FLAC files, FLAC Detective returned `AUTHENTIC`, and Lidarr imported 11/11 tracks. Soulseek staging was removed and the Mintarr `verification.json` sidecar was left in place.
+- The PCD Deluxe risk case was rerun from Lidarr (`albumId=9829`), Mintarr job `c277ec647832`.
+- PCD downloaded 25/25 FLAC files and verified `AUTHENTIC`, but Mintarr blocked before import because Lidarr `ManualImport` resolved the files to album `1492` instead of the hard target `9829`.
+- That is the expected safety outcome for this risk case: no files were imported to the wrong album, Lidarr queue returned to `0`, and the failed PCD staging/output audio folders were removed.
+
 ## Decisions you should not re-litigate
 
 These have been considered, decided, and locked in ADRs. Do not propose reversing them without a successor ADR.

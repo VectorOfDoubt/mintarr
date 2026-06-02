@@ -170,10 +170,12 @@ Source tags in Mintarr release titles:
 |---|---|---|
 | TIDAL | `[TIDAL]` | `Mintarr-tidal` regex `\[TIDAL\]` score +50 |
 | LocalFolder | `[Local]` | `Mintarr-local` regex `\[Local\]` score +20 |
-| Soulseek | `[Soulseek]` | `Mintarr-soulseek` regex `\[Soulseek\]` score -10 |
+| Soulseek | `[Soulseek]` | `Mintarr-soulseek` regex `\[Soulseek\]` score 0 |
 | Future SAB / qBit / CD-rip | `[<Source>]` | Per source, operator chooses |
 
 Quality tags (`[FLAC 24bit]`, `[FLAC]`, `[MP3 320]`) follow standard Lidarr-parser conventions and are not Mintarr-specific.
+
+Use a negative Soulseek score only when the relevant Lidarr quality profile minimum Custom Format score is low enough to allow it. With a minimum of `0`, a negative Soulseek score rejects the release rather than just making it lower priority.
 
 Documenting recommended CF scores is operator-documentation work, not Mintarr-code work. The recommendations live in [`docs/operations/CONFIGURATION.md`](../operations/CONFIGURATION.md).
 

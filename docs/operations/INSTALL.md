@@ -238,11 +238,13 @@ In Lidarr:
 4. Save with a score of `+50`
 5. Repeat for:
    - `Mintarr-local`: regex `\[Local\]`, score `+20`
-   - `Mintarr-soulseek`: regex `\[Soulseek\]`, score `-10`
+   - `Mintarr-soulseek`: regex `\[Soulseek\]`, score `0`
 
 Then in your Quality Profile, attach the custom formats with the same scores.
 
-Effect: TIDAL grabs win over LocalFolder when both are available; LocalFolder beats unscored alternatives.
+Effect: TIDAL grabs win over LocalFolder when both are available; LocalFolder beats unscored alternatives; Soulseek stays available without outranking TIDAL or LocalFolder.
+
+If your Quality Profile minimum Custom Format score is `0`, avoid a negative Soulseek score unless you also lower that minimum. A negative score with a `0` minimum can make Lidarr reject Soulseek releases entirely.
 
 ## 6. Verify end-to-end
 

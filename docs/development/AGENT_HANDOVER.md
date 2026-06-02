@@ -155,6 +155,15 @@ F4.2 runtime surface now available:
 - Connector runtime status cards showing health, installed/enabled/mode, versions, env names, docker hints, docs links, and last errors
 - Existing stack meta line uses connector health from `/dashboard/v1/connectors` when present
 
+Current live runtime state after Soulseek dogfood and controlled rollout:
+
+- `mintarr:local` is deployed as the live `mintarr` container on `127.0.0.1:5025`.
+- Lidarr `TidalHires` Newznab indexer points at Mintarr with RSS disabled, automatic search enabled, and interactive search enabled.
+- Lidarr `TidalHires` download client points at Mintarr `/sabnzbd` on port `5025`.
+- Lidarr Custom Formats now include `Mintarr-tidal` (`\[TIDAL\]`), `Mintarr-local` (`\[Local\]`), and `Mintarr-soulseek` (`\[Soulseek\]`).
+- All current Lidarr quality profiles (`Any`, `Lossless`, `Standard`) score those CFs as TIDAL `+50`, Local `+20`, Soulseek `0`. Soulseek is intentionally not negative because the profiles have minimum Custom Format score `0`; negative would reject Soulseek instead of ranking it lower.
+- Queue state was clean after the last positive Soulseek dogfood: Mintarr active jobs `0`, Lidarr download queue `0`. A Lidarr library rescan may still be running after imports; do not confuse that with an active Mintarr grab.
+
 ## Decisions you should not re-litigate
 
 These have been considered, decided, and locked in ADRs. Do not propose reversing them without a successor ADR.
@@ -219,4 +228,4 @@ Mintarr is built without a deadline ([VISION.md](../strategy/VISION.md)). It is 
 
 ---
 
-> Last updated: 2026-05-26
+> Last updated: 2026-06-02

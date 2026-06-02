@@ -233,11 +233,11 @@ Mintarr does not configure Lidarr's Custom Formats. The recommended configuratio
 |---|---|---|---|
 | TIDAL | `Mintarr-tidal` | `\[TIDAL\]` | +50 |
 | LocalFolder | `Mintarr-local` | `\[Local\]` | +20 |
-| Soulseek | `Mintarr-soulseek` | `\[Soulseek\]` | -10 |
+| Soulseek | `Mintarr-soulseek` | `\[Soulseek\]` | 0 |
 
-Effect: TIDAL beats LocalFolder when both are available; LocalFolder beats unscored alternatives; Soulseek is penalised relative to other sources.
+Effect: TIDAL beats LocalFolder when both are available; LocalFolder beats unscored alternatives; Soulseek remains allowed but does not outrank the higher-trust Mintarr sources.
 
-These are starting recommendations. Operators may adjust based on their experience.
+These are starting recommendations. Operators may adjust based on their experience. If the quality profile's minimum Custom Format score is `0`, do not give Soulseek a negative score unless you also lower that minimum; otherwise Lidarr will reject Soulseek releases instead of merely ranking them lower.
 
 ## 9. Worker behaviour
 

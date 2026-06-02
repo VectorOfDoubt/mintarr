@@ -86,7 +86,7 @@ def test_download_job_stays_processing_until_lidarr_import(tmp_path, mocker):
     server._jobs.pop(jid, None)
 
 
-def test_manualimport_success_cleans_lidarr_queue(tmp_path, mocker):
+def test_manualimport_success_does_not_delete_lidarr_queue(tmp_path, mocker):
     jid = "592b388d"
     output_dir = tmp_path / jid
     output_dir.mkdir()
@@ -130,7 +130,7 @@ def test_manualimport_success_cleans_lidarr_queue(tmp_path, mocker):
             return _response(payload=manualimport_items)
         if url == f"{api}/trackfile?albumId=20":
             trackfile_calls["count"] += 1
-            if trackfile_calls["count"] <= 2:
+            if trackfile_calls["count"] == 1:
                 return _response(payload=[])
             return _response(payload=[{"id": 1}, {"id": 2}])
         if url == f"{api}/queue?pageSize=200":
@@ -150,7 +150,7 @@ def test_manualimport_success_cleans_lidarr_queue(tmp_path, mocker):
 
     server._trigger_lidarr_import(jid, output_dir)
 
-    _assert_queue_cleanup(delete_mock, api, key, 99)
+    delete_mock.assert_not_called()
     assert get_mock.call_count >= 5
     assert post_mock.call_count == 2
     assert server._jobs[jid]["status"] == "completed"
@@ -329,7 +329,7 @@ def test_soulseek_manualimport_album_title_match_allows_import(tmp_path, mocker)
             return _response(payload=manualimport_items)
         if url == f"{api}/trackfile?albumId=9829":
             trackfile_calls["count"] += 1
-            if trackfile_calls["count"] <= 2:
+            if trackfile_calls["count"] == 1:
                 return _response(payload=[])
             return _response(payload=[{"id": 1}, {"id": 2}])
         if url == f"{api}/album/9829":
@@ -351,7 +351,7 @@ def test_soulseek_manualimport_album_title_match_allows_import(tmp_path, mocker)
 
     server._trigger_lidarr_import(jid, output_dir, source_type="soulseek")
 
-    _assert_queue_cleanup(delete_mock, api, key, 78)
+    delete_mock.assert_not_called()
     assert post_mock.call_count == 2
     assert server._jobs[jid]["status"] == "completed"
 
@@ -422,7 +422,7 @@ def test_manualimport_replace_success_uses_history_without_rescue(tmp_path, mock
     server._trigger_lidarr_import(jid, output_dir)
 
     rescue_mock.assert_not_called()
-    _assert_queue_cleanup(delete_mock, api, key, 44)
+    delete_mock.assert_not_called()
     assert server._jobs[jid]["status"] == "completed"
     assert server._jobs[jid]["hidden_from_lidarr"] is True
 
@@ -495,7 +495,7 @@ def test_manualimport_moved_files_counts_as_success_without_history(tmp_path, mo
     server._trigger_lidarr_import(jid, output_dir)
 
     rescue_mock.assert_not_called()
-    _assert_queue_cleanup(delete_mock, api, key, 45)
+    delete_mock.assert_not_called()
     assert server._jobs[jid]["status"] == "completed"
     assert server._jobs[jid]["hidden_from_lidarr"] is True
 
@@ -617,7 +617,7 @@ def test_release_family_rejections_are_force_imported_after_verification(tmp_pat
             return _response(payload=manualimport_items)
         if url == f"{api}/trackfile?albumId=20":
             trackfile_calls["count"] += 1
-            if trackfile_calls["count"] <= 2:
+            if trackfile_calls["count"] == 1:
                 return _response(payload=[])
             return _response(payload=[{"id": 1}, {"id": 2}])
         if url == f"{api}/queue?pageSize=200":
@@ -641,7 +641,7 @@ def test_release_family_rejections_are_force_imported_after_verification(tmp_pat
 
     server._trigger_lidarr_import(jid, output_dir)
 
-    _assert_queue_cleanup(delete_mock, api, key, 55)
+    delete_mock.assert_not_called()
     assert post_mock.call_count == 2
     assert server._jobs[jid]["status"] == "completed"
     assert server._jobs[jid]["hidden_from_lidarr"] is True

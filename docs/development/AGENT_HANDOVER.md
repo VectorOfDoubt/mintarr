@@ -180,6 +180,8 @@ Additional controlled Soulseek dogfood:
 - PCD downloaded 25/25 FLAC files and verified `AUTHENTIC`, but Mintarr blocked before import because Lidarr `ManualImport` resolved the files to album `1492` instead of the hard target `9829`.
 - That is the expected safety outcome for this risk case: no files were imported to the wrong album, Lidarr queue returned to `0`, and the failed PCD staging/output audio folders were removed.
 
+Follow-up fix after the dogfood: successful ManualImport no longer force-deletes the Lidarr queue row. Mintarr now only hides/completes its own SAB-emulated job on success, because deleting the Lidarr row after import creates misleading `downloadIgnored` history entries. Failed/blocked/review-required/orphaned terminal states still perform hard queue cleanup.
+
 ## Decisions you should not re-litigate
 
 These have been considered, decided, and locked in ADRs. Do not propose reversing them without a successor ADR.

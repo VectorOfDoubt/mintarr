@@ -128,7 +128,7 @@ def test_verification_get_reconciles_pending_import_from_lidarr_history(tmp_path
     assert response.get_json()["v2_import_outcome"] == "MANUAL_IMPORTED"
     assert json.loads(path.read_text())["v2_import_outcome"] == "MANUAL_IMPORTED"
     assert server._jobs["abc12345"]["status"] == "completed"
-    cleanup.assert_called_once_with("abc12345", "http://lidarr/api/v1", "lidarr-key")
+    cleanup.assert_not_called()
 
 
 def test_verification_get_marks_orphaned_pending_import_failed(tmp_path, monkeypatch, mocker):
@@ -220,7 +220,7 @@ def test_verification_get_reconciles_imported_trackfiles_only_when_sources_moved
     assert response.get_json()["v2_import_outcome"] == "MANUAL_IMPORTED"
     assert json.loads(path.read_text())["v2_import_outcome"] == "MANUAL_IMPORTED"
     assert server._jobs["abc12345"]["status"] == "completed"
-    cleanup.assert_called_once_with("abc12345", "http://lidarr/api/v1", "lidarr-key")
+    cleanup.assert_not_called()
 
 
 def test_verification_get_does_not_treat_existing_trackfiles_as_import_success(tmp_path, monkeypatch, mocker):

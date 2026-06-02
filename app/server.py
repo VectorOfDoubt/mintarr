@@ -2253,8 +2253,7 @@ def _reconcile_pending_import(jid: str, record: dict, path: Path | None = None) 
         if target is not None:
             _atomic_write_json(target, record)
         output_dir = Path(_jobs.get(jid, {}).get("output_dir") or OUTPUT_BASE / jid)
-        _mark_import_completed(jid, output_dir)
-        _cleanup_lidarr_queue(jid, api, key)
+        _complete_lidarr_import_without_queue_delete(jid, output_dir)
         return record
 
     if record.get("v2_verification_decision") in ("ACCEPT", "ACCEPT_PROVISIONAL"):
@@ -2264,8 +2263,7 @@ def _reconcile_pending_import(jid: str, record: dict, path: Path | None = None) 
             target = path or _find_verification_sidecar(jid)
             if target is not None:
                 _atomic_write_json(target, record)
-            _mark_import_completed(jid, output_dir)
-            _cleanup_lidarr_queue(jid, api, key)
+            _complete_lidarr_import_without_queue_delete(jid, output_dir)
             return record
 
     if _lidarr_has_pending_import_for_jid(jid, api, key):
@@ -2946,8 +2944,7 @@ def _trigger_lidarr_import(
         if _v2_verification_enabled():
             _write_sidecar_force(v2_result, output_dir)
             _log_decision(jid, v2_result=v2_result)
-        _mark_import_completed(jid, output_dir)
-        _cleanup_lidarr_queue(jid, api, key)
+        _complete_lidarr_import_without_queue_delete(jid, output_dir)
         return
 
     if _lidarr_command_still_pending(cmd, api, key):
@@ -2970,7 +2967,7 @@ def _trigger_lidarr_import(
             if _v2_verification_enabled():
                 _write_sidecar_force(v2_result, output_dir)
                 _log_decision(jid, v2_result=v2_result)
-            _mark_import_completed(jid, output_dir)
+            _complete_lidarr_import_without_queue_delete(jid, output_dir)
             return
         else:
             reason = "manualimport and rescue failed"
@@ -3098,7 +3095,7 @@ def _rescue_place_and_rescan(jid, files, api, key):
         _log_decision(jid, decision="RESCUED_BY_RESCAN", reason="place-files-and-rescan after manualimport-fail",
                       verdict="N/A", new_kbps=0, existing_quality="N/A", existing_kbps=0,
                       album_ids=[aid], title=_jobs.get(jid,{}).get("title",""))
-        _cleanup_lidarr_queue(jid, api, key)
+        _hide_from_lidarr(jid)
         return True
     else:
         log.warning("[%s] RESCUE: rescan did not register files in the Lidarr DB — fundamental mismatch", jid)
@@ -3133,6 +3130,17 @@ def _cleanup_lidarr_queue(jid, api, key):
         log.exception("[%s] Failed to clean up Lidarr queue after terminal handling", jid)
     finally:
         _record_job_timing(jid, "queue_cleanup_sec", time.monotonic() - started)
+
+
+def _complete_lidarr_import_without_queue_delete(jid: str, output_dir: Path | None = None) -> None:
+    """Mark a successful import without forcing Lidarr's queue item to ignored.
+
+    After ManualImport succeeds, Lidarr records trackFileImported events and usually
+    settles the tracked download itself. Deleting the queue row at that point creates
+    a misleading downloadIgnored history row in Lidarr, even though the import worked.
+    Failed/blocked terminal states should still use _cleanup_lidarr_queue.
+    """
+    _mark_import_completed(jid, output_dir)
 
 
 def _manual_import_files_from_items(
@@ -3224,9 +3232,8 @@ def _run_manual_import_only(
     )
 
     if imported_count >= import_threshold:
-        _set_worker_progress(worker_job_id, jid, "cleanup", 90, "Cleaning Lidarr queue")
-        _cleanup_lidarr_queue(jid, api, key)
-        _mark_import_completed(jid, output_dir)
+        _set_worker_progress(worker_job_id, jid, "cleanup", 90, "Finalizing Lidarr import")
+        _complete_lidarr_import_without_queue_delete(jid, output_dir)
         _set_worker_progress(worker_job_id, jid, "done", 100, "ManualImport complete")
         return "MANUAL_IMPORTED"
 
@@ -3240,7 +3247,7 @@ def _run_manual_import_only(
 
     _set_worker_progress(worker_job_id, jid, "rescue", 80, "Trying rescue import")
     if _rescue_place_and_rescan(jid, files, api, key):
-        _mark_import_completed(jid, output_dir)
+        _complete_lidarr_import_without_queue_delete(jid, output_dir)
         _set_worker_progress(worker_job_id, jid, "done", 100, "Rescue import complete")
         return "RESCUED"
 

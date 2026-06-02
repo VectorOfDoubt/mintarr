@@ -147,6 +147,7 @@ Quirks:
 - `GET /api/v1/manualimport?folder=...` may return rejections like `"Album match is not close enough: 70.1 % vs 80 %"` for valid imports of edition variants. Mintarr force-imports these via the release-family rejection allow-list.
 - The 80%-match heuristic occasionally causes Lidarr to refuse imports of files whose tracklist disagrees with the matched album release. Mintarr's release-switch logic (in `_trigger_lidarr_import`) selects a better-matching release before retrying.
 - For Soulseek imports, Mintarr runs a pre-ManualImport target-album guard. It first infers the target `albumId` from Lidarr queue/history grab context when available, then falls back to title compatibility. If Lidarr resolves the files to a different album, Mintarr aborts before `POST /api/v1/command`, marks the job import-failed, and removes the queue entry without blocklisting the release.
+- After a successful `ManualImport`, Mintarr marks its own SAB-emulated job hidden/complete but does not force-delete the Lidarr queue row. Lidarr records misleading `downloadIgnored` history rows when the queue row is deleted after files were already imported. Failed, blocked, review-required, and orphaned terminal states still use hard queue cleanup.
 - `POST /api/v1/command` returns immediately with `status="queued"` or `status="started"`. Mintarr polls via `GET /api/v1/command/<id>` until terminal (or until `_lidarr_command_still_pending` returns False).
 
 ### 6.2 Lidarr 4.x (preview)
@@ -202,6 +203,7 @@ Mintarr releases that add support for a new Lidarr major version will be noted i
 Mintarr's test suite uses mocked Lidarr responses (via `monkeypatch.setattr(server, "_trigger_lidarr_import", ...)`). Tests cover:
 
 - Successful ManualImport
+- Successful ManualImport without forced Lidarr queue deletion
 - ManualImport with release-family rejections (force-import path)
 - ManualImport with empty candidates (rescue path)
 - Rescue path success

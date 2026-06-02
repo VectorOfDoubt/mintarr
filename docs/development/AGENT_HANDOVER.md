@@ -107,7 +107,7 @@ No. Adapters depend only on `app/adapters/base.py` and `app/adapters/context.py`
 
 This section is volatile. The agent reading this should also check [`MINTARR_DOCUMENTATION_INDEX.md`](../MINTARR_DOCUMENTATION_INDEX.md) and [`ROADMAP.md`](../strategy/ROADMAP.md) for the live status.
 
-As of 2026-06-01:
+As of 2026-06-02:
 
 - **Phase 0 (open-source foundation)** is complete. The cutover playbook ran and the public Mintarr repo exists.
 - **License is locked: AGPL-3.0-only** ([ADR-0005](../architecture/adr/0005-license.md)). LICENSE file at repo root.
@@ -118,16 +118,17 @@ As of 2026-06-01:
 - **F4.3 connector config / dry-run** is implemented on `main`. It adds SQLite-backed connector modes, dry-run validation, dashboard controls, and source runtime gates for non-import connectors. The design is in [F4.3_CONNECTOR_CONFIG_DRY_RUN.md](../design/F4.3_CONNECTOR_CONFIG_DRY_RUN.md).
 - **F3.5a Soulseek completed-folder ingest** is implemented. It registers through the connector model, exposes `POST /soulseek/ingest`, and copies completed slskd folders without mutating the source.
 - **F3.5b Soulseek slskd trigger** is merged on `main`. It exposes Soulseek candidates through Mintarr Newznab when `SOULSEEK_SEARCH_ENABLED=true`, queues selected files through slskd HTTP, then runs normal Mintarr QC/import. Mintarr sends artist/album search text unchanged by default and filters returned files by supported audio suffix; use `SOULSEEK_SEARCH_SUFFIX` only if the target slskd instance benefits from an added term.
-- **F3.5b live dogfood:** Lidarr manual-grabbed a Soulseek candidate through Mintarr (`a9ead0f97861`), slskd downloaded 25 FLAC files, Mintarr QC passed (`FLAC Detective AUTHENTIC`), and Lidarr manual import completed. Caveat: the candidate was selected from a `PCD Forever (Deluxe Edition)` search but Lidarr imported the files to `PCD (2005)` based on audio metadata. Keep Soulseek manual/observed until target-album locking or metadata guard is added.
-- **Local Docker runtime cutover is complete.** As of 2026-05-31 20:16 Europe/Berlin, `mintarr` runs image `mintarr:local` on `127.0.0.1:5025->8000` using the old TidalHires mounts/env. Lidarr `indexer/test` and `downloadclient/test` pass against Mintarr. Backup is under `/home/esj006/backups/mintarr-cutover-20260531-194115`. The old `tidalhires-legacy-20260531-194210` container and temporary pre-PKCE Mintarr containers were removed after dogfood; keep the backup and old `tidalhires:local` image for now.
+- **Soulseek target-album guard is merged and deployed** (`37243e6`, PR #23). `pipeline.execute_source_grab` now threads optional `target_album_id` into `_trigger_lidarr_import`, and Soulseek imports run a pre-ManualImport metadata/title guard. If Lidarr resolves a Soulseek candidate to an incompatible album title, Mintarr marks the job import-failed and cleans the Lidarr queue before posting `ManualImport`.
+- **F3.5b live dogfood:** First Lidarr manual-grabbed Soulseek candidate (`a9ead0f97861`) downloaded 25 FLAC files and passed QC, but pre-guard Lidarr imported it into `PCD (2005)` instead of target album `PCD Forever (Deluxe Edition)`. After PR #23 deploy, the same style grab (`5a91c87eb1d1`) downloaded and verified (`FLAC Detective AUTHENTIC`), then correctly stopped at the new guard: candidate `PCD_Forever_(Deluxe_Edition)` resolved to Lidarr album `PCD`, so Mintarr aborted before `ManualImport`. Dogfood folders for `5a91c87eb1d1` were cleaned after verification.
+- **Local Docker runtime cutover is complete.** As of 2026-06-02 06:22 Europe/Berlin, `mintarr` runs image `mintarr:local` on `127.0.0.1:5025->8000` using the old TidalHires mounts/env and includes PR #23. Lidarr `indexer/test` and `downloadclient/test` passed against Mintarr during cutover; dashboard summary and Newznab search smoke passed after the PR #23 deploy. Backup is under `/home/esj006/backups/mintarr-cutover-20260531-194115`. The old `tidalhires-legacy-20260531-194210` container and temporary pre-PKCE Mintarr containers were removed after dogfood; keep the backup and old `tidalhires:local` image for now.
 - **Dogfood status after cutover:** Two pre-fix TIDAL dogfood grabs were safely blocked before import by the hard codec gate because non-PKCE sessions returned AAC/non-FLAC. Follow-up probing showed the same token returns AAC/HIGH when loaded as non-PKCE and FLAC/LOSSLESS when loaded as PKCE. The current branch patches Mintarr and the pinned `tidal-dl-ng` image build to force PKCE by default. Post-fix dogfood: `d07f571532a9` (`Andrea Bocelli - Season of Champions`) imported successfully with 8/8 FLAC tracks; `865979068122` (`Vince Gill - 50 Years From Home: Lonely's What I Do`) downloaded FLAC but stopped as `needs_review` after FLAC Detective flagged upsampled hi-res. This validates both the happy path and the review gate.
 - **v0.2.0 cleanup issues #9-#15** exist in the public GitHub repo. They cover mypy, ruff format, ruff per-file ignores, legacy design-doc migration, operator docs, frontend framework evaluation, and performance baseline.
 
 If you are picking up work, the next units in priority order are:
 
-1. Add a Soulseek target-album lock/metadata guard before enabling broad automatic Soulseek grabs
-2. Work down **v0.2.0 cleanup #9-#15** as parallel/small PRs
-3. Begin Phase 2 dashboard redesign only after ADR-0011 resolves the frontend framework question
+1. Decide whether Soulseek needs an explicit target-album-id capture path from Lidarr/Newznab before enabling broad automatic Soulseek grabs; the deployed title guard blocks the known wrong-album failure but is still heuristic.
+2. Work down **v0.2.0 cleanup #9-#15** as parallel/small PRs.
+3. Begin Phase 2 dashboard redesign only after ADR-0011 resolves the frontend framework question.
 
 Relevant docs for the current Soulseek surface:
 

@@ -168,6 +168,41 @@ def test_soulseek_album_title_guard_handles_year_suffix_and_scene_mismatch():
     )
 
 
+def test_infer_lidarr_target_album_id_from_queue(mocker):
+    api = "http://lidarr/api/v1"
+    key = "lidarr-key"
+    jid = "queue-target"
+
+    def fake_get(url, **kwargs):
+        if url == f"{api}/queue?pageSize=200":
+            return _response(payload={"records": [{"downloadId": jid, "albumId": 9829}]})
+        raise AssertionError(f"unexpected GET {url}")
+
+    mocker.patch("requests.get", side_effect=fake_get)
+
+    assert server._infer_lidarr_target_album_id(jid, api, key) == 9829
+
+
+def test_infer_lidarr_target_album_id_from_grab_history(mocker):
+    api = "http://lidarr/api/v1"
+    key = "lidarr-key"
+    jid = "history-target"
+
+    def fake_get(url, **kwargs):
+        if url == f"{api}/queue?pageSize=200":
+            return _response(payload={"records": []})
+        if url == f"{api}/history?pageSize=50&sortKey=date&sortDirection=descending":
+            return _response(payload={"records": [
+                {"downloadId": jid, "eventType": "downloadIgnored", "albumId": 20},
+                {"downloadId": jid, "eventType": "grabbed", "albumId": 9829},
+            ]})
+        raise AssertionError(f"unexpected GET {url}")
+
+    mocker.patch("requests.get", side_effect=fake_get)
+
+    assert server._infer_lidarr_target_album_id(jid, api, key) == 9829
+
+
 def test_soulseek_manualimport_album_title_mismatch_blocks_wrong_lidarr_album(tmp_path, mocker):
     jid = "a9ead0f97861"
     output_dir = tmp_path / jid
@@ -217,6 +252,10 @@ def test_soulseek_manualimport_album_title_mismatch_blocks_wrong_lidarr_album(tm
             return _response(payload={"statistics": {"trackCount": 12, "trackFileCount": 0}})
         if url == f"{api}/queue?pageSize=200":
             return _response(payload={"records": [{"id": 77, "downloadId": jid}]})
+        if url == f"{api}/history?pageSize=50&sortKey=date&sortDirection=descending":
+            return _response(payload={"records": [
+                {"eventType": "grabbed", "downloadId": jid, "albumId": 9829},
+            ]})
         raise AssertionError(f"unexpected GET {url}")
 
     def fake_post(url, **kwargs):
@@ -235,7 +274,9 @@ def test_soulseek_manualimport_album_title_mismatch_blocks_wrong_lidarr_album(tm
     _assert_queue_cleanup(delete_mock, api, key, 77)
     assert post_mock.call_count == 1
     assert server._jobs[jid]["status"] == "failed"
-    assert "Soulseek manualimport target album mismatch" in server._jobs[jid]["error"]
+    assert server._jobs[jid]["target_album_id"] == 9829
+    assert "manualimport target album mismatch" in server._jobs[jid]["error"]
+    assert "expected Lidarr albumId 9829" in server._jobs[jid]["error"]
     failed_record = log_decision.call_args_list[-1].kwargs["v2_result"]
     assert failed_record.import_outcome == "FAILED"
     assert failed_record.verification_decision == "ACCEPT"

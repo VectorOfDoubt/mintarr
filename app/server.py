@@ -1526,6 +1526,48 @@ def _manualimport_target_guard_failure(
     )
 
 
+def _lidarr_album_id_from_record(record: dict) -> int | None:
+    album_id = record.get("albumId")
+    if album_id is None and isinstance(record.get("album"), dict):
+        album_id = record["album"].get("id")
+    try:
+        return int(album_id) if album_id not in (None, "") else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _infer_lidarr_target_album_id(jid: str, api: str, key: str) -> int | None:
+    """Infer the Lidarr album targeted by the grab that produced this Mintarr jid."""
+    import requests
+
+    try:
+        q = requests.get(f"{api}/queue?pageSize=200", headers={"X-Api-Key": key}, timeout=10).json()
+        for record in q.get("records", []) or []:
+            if record.get("downloadId") == jid:
+                album_id = _lidarr_album_id_from_record(record)
+                if album_id is not None:
+                    return album_id
+    except Exception:
+        log.debug("[%s] could not infer target album from Lidarr queue", jid, exc_info=True)
+
+    try:
+        h = requests.get(
+            f"{api}/history?pageSize=50&sortKey=date&sortDirection=descending",
+            headers={"X-Api-Key": key},
+            timeout=15,
+        ).json()
+        for record in h.get("records", []) or []:
+            if record.get("downloadId") != jid or record.get("eventType") != "grabbed":
+                continue
+            album_id = _lidarr_album_id_from_record(record)
+            if album_id is not None:
+                return album_id
+    except Exception:
+        log.debug("[%s] could not infer target album from Lidarr history", jid, exc_info=True)
+
+    return None
+
+
 def _manualimport_album_complete(output_dir: Path, items: list[dict]) -> bool:
     audio_count = _count_audio_files(output_dir)
     if audio_count == 0:
@@ -2385,6 +2427,13 @@ def _trigger_lidarr_import(
     if not key:
         log.warning("[%s] No Lidarr API key — skipping auto-import", jid)
         return
+    if source_type == "soulseek" and target_album_id in (None, ""):
+        target_album_id = _infer_lidarr_target_album_id(jid, api, key)
+        if target_album_id is not None:
+            log.info("[%s] inferred Lidarr target albumId=%s from grab context", jid, target_album_id)
+            with _jobs_lock:
+                _jobs.setdefault(jid, {"id": jid})["target_album_id"] = target_album_id
+                _save_jobs()
 
     # 1. Manual-import-lookup (gir oss artist+album-mapping for filene)
     _set_worker_progress(worker_job_id, jid, "lidarr_precheck", 70, "Checking Lidarr manual import candidates")

@@ -37,7 +37,16 @@ from typing import Literal
 from urllib.parse import quote_plus, unquote_plus  # noqa: F401
 from xml.sax.saxutils import escape as xml_escape
 
+import requests
 from flask import Flask, Response, jsonify, request
+
+from adapters.tidal import (  # noqa: F401
+    classify_quality as _classify_quality,
+    get_session as _get_session,
+    release_title as _release_title,
+    search_albums as _search_albums,
+)
+from dashboard import dashboard_bp
 from sensor_registry import default_registry
 from verification import ImportOutcome, VerificationResult, apply_overrides, compute_components, decide
 
@@ -301,19 +310,6 @@ def _load_jobs():
 def _save_jobs():
     JOBS_FILE.parent.mkdir(parents=True, exist_ok=True)
     JOBS_FILE.write_text(json.dumps(_jobs, indent=2, default=str))
-
-
-# ---- TIDAL session ----
-# F3.1: TIDAL session + search helpers live in adapters/tidal.py so the
-# adapter never imports from server. server re-exports under the previous
-# underscore-prefixed names so existing callsites and test monkeypatches
-# keep working.
-from adapters.tidal import (  # noqa: F401
-    classify_quality as _classify_quality,
-    get_session as _get_session,
-    release_title as _release_title,
-    search_albums as _search_albums,
-)
 
 
 # ---- F3.2/F3.3 source routing + multi-adapter newznab ----
@@ -1243,7 +1239,8 @@ def _get_lidarr_key():
         with open(config_path) as f:
             content = f.read()
         m = re.search(r"<ApiKey>([a-f0-9]+)</ApiKey>", content)
-        if m: return m.group(1)
+        if m:
+            return m.group(1)
     except Exception:
         pass
     return os.environ.get("LIDARR_API_KEY", "")
@@ -2575,7 +2572,8 @@ def _trigger_lidarr_import(
                 worst_est = 0
                 for f in d_result.get("files", []):
                     est = f.get("estimated_mp3_bitrate") or 0
-                    if est > worst_est: worst_est = est
+                    if est > worst_est:
+                        worst_est = est
                 # Fallback if not estimated: 320 for SUSPICIOUS (could have been MP3 320 transcode), 192 for FAKE_CERTAIN
                 new_effective_kbps = worst_est if worst_est > 0 else (320 if verdict == "SUSPICIOUS" else 192)
         else:
@@ -2804,15 +2802,13 @@ def _trigger_lidarr_import(
         try:
             with _jobs_lock:
                 job = _jobs.get(jid, {})
-            album_id_from_job = job.get("album_id_lidarr") or job.get("album_id_in_lidarr")
             # Tidal album-id is in the job; needs mapping to Lidarr album-id
             # Quick lookup: use artist+title from the job title to find the Lidarr album
             title = job.get("title", "")
             # Format: "<Artist> - <Album> (<Year>) [TIDAL] [FLAC 24bit]"
-            import re as _re
-            m = _re.match(r"^(.+?) - (.+?) \((\d{4})\)", title)
+            m = re.match(r"^(.+?) - (.+?) \((\d{4})\)", title)
             if m:
-                artist_name, album_title, year = m.group(1), m.group(2), m.group(3)
+                artist_name, album_title = m.group(1), m.group(2)
                 # Search Lidarr albums by name
                 search_r = requests.get(f"{api}/search?term={requests.utils.quote(artist_name)}",
                                          headers={"X-Api-Key": key}, timeout=20)
@@ -2922,7 +2918,8 @@ def _trigger_lidarr_import(
         try:
             tfs_before = requests.get(f"{api}/trackfile?albumId={aid}", headers={"X-Api-Key": key}, timeout=10).json()
             pre_counts[aid] = len(tfs_before)
-        except Exception: pre_counts[aid] = 0
+        except Exception:
+            pre_counts[aid] = 0
 
     cmd = requests.post(f"{api}/command", json={"name": "ManualImport", "files": files, "importMode": "auto"},
                          headers={"X-Api-Key": key}, timeout=30)
@@ -3570,7 +3567,6 @@ def _render_dashboard_row(rec: dict, *, highlight_class: str = "") -> str:
 def _verification_html(rows: list[dict]) -> str:
     # --- Summary counts ---
     from collections import Counter
-    decision_counts = Counter(r.get("v2_verification_decision") for r in rows if r.get("v2_verification_decision"))
     outcome_counts = Counter(r.get("v2_import_outcome") for r in rows if r.get("v2_import_outcome"))
     total = len(rows)
 
@@ -3595,7 +3591,6 @@ def _verification_html(rows: list[dict]) -> str:
                           and not j.get("hidden_from_lidarr"))
     lidarr_queue_count = "?"
     try:
-        import requests
         api = os.environ.get("LIDARR_API_URL", "http://host.docker.internal:8686/api/v1")
         lkey = _get_lidarr_key()
         if lkey:
@@ -3606,7 +3601,6 @@ def _verification_html(rows: list[dict]) -> str:
         pass
 
     # --- Build summary cards ---
-    rr_count = decision_counts.get("REVIEW_REQUIRED", 0)
     fail_count = outcome_counts.get("FAILED", 0)
     pending_count = outcome_counts.get("PENDING", 0)
     cards = []
@@ -3902,12 +3896,17 @@ def decisions():
             with open(DECISIONS_LOG) as f:
                 for line in f:
                     line = line.strip()
-                    if not line: continue
-                    try: rec = json.loads(line)
-                    except: continue
+                    if not line:
+                        continue
+                    try:
+                        rec = json.loads(line)
+                    except Exception:
+                        continue
                     dec = rec.get("decision", "").upper()
-                    if filt == "blocked" and "BLOCK" not in dec: continue
-                    if filt == "imported" and "IMPORT" not in dec: continue
+                    if filt == "blocked" and "BLOCK" not in dec:
+                        continue
+                    if filt == "imported" and "IMPORT" not in dec:
+                        continue
                     rows.append(rec)
         except Exception:
             log.exception("Could not read decisions log")
@@ -3982,8 +3981,6 @@ def index():
     })
 
 
-# Register dashboard blueprint (V2.2 MVP++ — separate module)
-from dashboard import dashboard_bp
 app.register_blueprint(dashboard_bp)
 
 # F1: Initialize SQLite state index (idempotent — schema applied if missing)

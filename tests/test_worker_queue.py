@@ -73,7 +73,7 @@ def test_dequeue_atomic_claim(fresh_db):
 
 def test_dequeue_respects_priority_then_fifo(fresh_db):
     """Lower priority number runs first; within same priority, FIFO by created_at."""
-    id_low = state_db.enqueue_job(jid="low", type="noop", priority=10)
+    state_db.enqueue_job(jid="low", type="noop", priority=10)
     time.sleep(0.01)  # ensure created_at differs
     id_high = state_db.enqueue_job(jid="high", type="noop", priority=1)
     job = state_db.dequeue_next_job(worker_id="w1")

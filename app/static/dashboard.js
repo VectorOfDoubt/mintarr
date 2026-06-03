@@ -48,6 +48,12 @@ function init() {
   $('filter-status').addEventListener('change', refresh);
   $('filter-decision').addEventListener('change', refresh);
   $('records-search').addEventListener('input', applyRecordsSearch);
+  // Topbar search: jump to Review (via Alpine nav event) and filter records.
+  $('topbar-search').addEventListener('input', () => {
+    window.dispatchEvent(new CustomEvent('goto-section', { detail: 'review' }));
+    $('records-search').value = $('topbar-search').value;
+    applyRecordsSearch();
+  });
   // Restore filters from localStorage
   $('filter-status').value = localStorage.getItem('tidalhires_filter_status') || '';
   $('filter-decision').value = localStorage.getItem('tidalhires_filter_decision') || '';
@@ -57,6 +63,7 @@ function clearFilters() {
   $('filter-status').value = '';
   $('filter-decision').value = '';
   $('records-search').value = '';
+  $('topbar-search').value = '';
   localStorage.removeItem('tidalhires_filter_status');
   localStorage.removeItem('tidalhires_filter_decision');
   refresh();

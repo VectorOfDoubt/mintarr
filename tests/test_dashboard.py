@@ -271,6 +271,20 @@ def test_dashboard_records_search_present(monkeypatch, tmp_path):
     assert "records-search" in js
 
 
+def test_dashboard_topbar_search(monkeypatch, tmp_path):
+    """Topbar search jumps to Review (Alpine event) and drives the records filter."""
+    _patch_paths(monkeypatch, tmp_path)
+    client = server.app.test_client()
+    shell = client.get("/dashboard").get_data(as_text=True)
+    assert 'id="topbar-search"' in shell
+    # Decoupled nav: a window event flips the Alpine section, no JS<->Alpine coupling.
+    assert "@goto-section.window=" in shell
+    assert "go($event.detail)" in shell
+    js = client.get("/static/dashboard.js").get_data(as_text=True)
+    assert "topbar-search" in js
+    assert "goto-section" in js
+
+
 def test_system_partial_renders_audit_events(monkeypatch, tmp_path):
     """System Events card surfaces the recent audit feed (slice 7)."""
     _patch_paths(monkeypatch, tmp_path)

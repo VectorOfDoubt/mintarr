@@ -28,6 +28,7 @@
     <h1>TidalHires V2 Dashboard</h1>
     <div class="meta" id="meta">Loading...</div>
   </div>
+  <input id="topbar-search" type="search" placeholder="Search records…" aria-label="Search records">
   <div class="refresh">
     <span class="refresh-dot" id="refresh-dot"></span>
     <span class="meta" id="refresh-status">Updated: never</span>
@@ -65,7 +66,7 @@
     section: localStorage.getItem('mintarr_section') || 'overview',
     navOpen: false,
     go(s) { this.section = s; localStorage.setItem('mintarr_section', s); this.navOpen = false; }
-  }">
+  }" @goto-section.window="go($event.detail)">
   <nav class="sidebar" :class="{ open: navOpen }" aria-label="Primary">
     <button type="button" class="nav-toggle" @click="navOpen = !navOpen"
             :aria-expanded="navOpen ? 'true' : 'false'" aria-label="Toggle navigation">&#9776; Menu</button>

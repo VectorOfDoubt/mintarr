@@ -14,6 +14,16 @@ document.body.addEventListener('htmx:configRequest', (evt) => {
   if (apikey) evt.detail.headers['X-Api-Key'] = apikey;
 });
 
+// Auth-carrying downloads: a plain link can't set X-Api-Key, so append it on click.
+document.body.addEventListener('click', (evt) => {
+  const a = evt.target.closest('a.audit-download');
+  if (!a) return;
+  evt.preventDefault();
+  const base = a.dataset.href;
+  const url = base + (base.includes('?') ? '&' : '?') + 'apikey=' + encodeURIComponent(apikey);
+  window.open(url, '_blank');
+});
+
 if (!apikey) showAuthPrompt();
 else init();
 

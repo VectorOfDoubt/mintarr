@@ -21,7 +21,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from flask import Blueprint, jsonify, render_template, request, send_file
+from flask import Blueprint, Response, jsonify, render_template, request, send_file
 
 from dashboard_cache import get_or_compute, invalidate_prefix
 
@@ -1097,6 +1097,43 @@ def actions_for_jid(jid: str):
         return jsonify({"jid": jid, "actions": actions})
     except Exception:
         return jsonify({"jid": jid, "actions": []})
+
+
+@dashboard_bp.route("/v1/actions/download", methods=["GET"])
+def actions_download():
+    """Download the audit trail as CSV (the 'download' half of the audit viewer)."""
+    from server import require_apikey_check
+
+    auth_resp = require_apikey_check()
+    if auth_resp:
+        return auth_resp
+    import csv
+    import io
+
+    try:
+        import state_db
+
+        actions = state_db.list_actions(limit=1000)
+    except Exception:
+        actions = []
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow(["created_at", "jid", "action", "actor", "result"])
+    for a in actions:
+        writer.writerow(
+            [
+                a.get("created_at", ""),
+                a.get("jid", ""),
+                a.get("action", ""),
+                a.get("actor", ""),
+                a.get("result", ""),
+            ]
+        )
+    return Response(
+        buf.getvalue(),
+        mimetype="text/csv",
+        headers={"Content-Disposition": "attachment; filename=mintarr-audit.csv"},
+    )
 
 
 @dashboard_bp.route("/v1/actions", methods=["GET"])

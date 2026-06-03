@@ -271,6 +271,28 @@ def test_dashboard_records_search_present(monkeypatch, tmp_path):
     assert "records-search" in js
 
 
+def test_actions_download_requires_apikey():
+    client = server.app.test_client()
+    assert client.get("/dashboard/v1/actions/download").status_code == 401
+
+
+def test_actions_download_csv(monkeypatch, tmp_path):
+    """Audit trail downloads as a CSV attachment (the viewer's download half)."""
+    _patch_paths(monkeypatch, tmp_path)
+    import state_db
+
+    state_db.log_action("dl123456", "promote", "operator", "ok", {})
+    client = server.app.test_client()
+    resp = client.get(f"/dashboard/v1/actions/download?apikey={VALID_KEY}")
+    assert resp.status_code == 200
+    assert "text/csv" in resp.content_type
+    assert "attachment" in resp.headers.get("Content-Disposition", "")
+    body = resp.get_data(as_text=True)
+    assert "created_at,jid,action,actor,result" in body  # header row
+    assert "promote" in body
+    assert "dl123456" in body
+
+
 def test_dashboard_topbar_search(monkeypatch, tmp_path):
     """Topbar search jumps to Review (Alpine event) and drives the records filter."""
     _patch_paths(monkeypatch, tmp_path)

@@ -109,7 +109,15 @@
     </section>
 
     <section class="dashboard-section" x-show="section==='history'" x-cloak>
-      <div class="panel"><h2>History</h2><p class="muted">Completed-job history lands in a later Phase 2 slice.</p></div>
+      <div class="panel">
+        <h2>History</h2>
+        <div id="history-live"
+             hx-get="/dashboard/v1/history/partial"
+             hx-trigger="load, every 30s"
+             hx-swap="innerHTML">
+          <p class="muted">Loading job history…</p>
+        </div>
+      </div>
     </section>
 
     <section class="dashboard-section" x-show="section==='review'" x-cloak>

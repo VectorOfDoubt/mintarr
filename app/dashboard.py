@@ -1209,6 +1209,44 @@ def _queue_row(job: dict) -> dict:
     return job
 
 
+@dashboard_bp.route("/v1/history/partial", methods=["GET"])
+def history_partial():
+    """Server-rendered completed-job history partial for HTMX (Phase 2 slice 4).
+
+    Returns an HTML fragment of recent terminal jobs. The History section polls
+    this with `hx-trigger`. Flask remains the source of truth per ADR-0011.
+    """
+    from server import require_apikey_check
+
+    auth_resp = require_apikey_check()
+    if auth_resp:
+        return auth_resp
+    try:
+        import state_db
+
+        _total, rows = state_db.list_jobs(
+            state=list(state_db.TERMINAL_JOB_STATES), limit=50, offset=0
+        )
+        jobs = [_history_row(_job_to_payload(r)) for r in rows]
+    except Exception:
+        jobs = []
+    return render_template("partials/history.html", jobs=jobs)
+
+
+def _history_row(job: dict) -> dict:
+    """Flatten a terminal job payload into the fields the history partial renders."""
+    job["jid_short"] = (job.get("jid") or "")[:12]
+    job["result"] = job.get("result_state") or job.get("state") or ""
+    ts = job.get("finished_at") or job.get("updated_at")
+    try:
+        job["finished_str"] = (
+            datetime.fromtimestamp(float(ts)).strftime("%Y-%m-%d %H:%M") if ts else "—"
+        )
+    except (TypeError, ValueError):
+        job["finished_str"] = "—"
+    return job
+
+
 @dashboard_bp.route("/v1/jobs/<int:job_id>", methods=["GET"])
 def job_detail(job_id: int):
     from server import require_apikey_check

@@ -200,6 +200,33 @@ def test_dashboard_vendors_htmx_and_wires_queue(monkeypatch, tmp_path):
     assert "htmx:configRequest" in js
 
 
+def test_history_partial_requires_apikey():
+    client = server.app.test_client()
+    assert client.get("/dashboard/v1/history/partial").status_code == 401
+
+
+def test_history_partial_renders_html_fragment(monkeypatch, tmp_path):
+    """The HTMX history partial returns an HTML fragment of terminal jobs."""
+    _patch_paths(monkeypatch, tmp_path)
+    client = server.app.test_client()
+    resp = client.get(f"/dashboard/v1/history/partial?apikey={VALID_KEY}")
+    assert resp.status_code == 200
+    assert "text/html" in resp.content_type
+    body = resp.get_data(as_text=True)
+    assert "recent job" in body
+    assert "No completed jobs yet." in body  # fresh state_db
+    assert "<html" not in body  # fragment, not a full document
+
+
+def test_dashboard_wires_history_section(monkeypatch, tmp_path):
+    """History section is HTMX-driven like Queue (#50/slice 4)."""
+    _patch_paths(monkeypatch, tmp_path)
+    client = server.app.test_client()
+    shell = client.get("/dashboard").get_data(as_text=True)
+    assert 'hx-get="/dashboard/v1/history/partial"' in shell
+    assert 'id="history-live"' in shell
+
+
 def test_dashboard_summary_returns_expected_shape(monkeypatch, tmp_path):
     _patch_paths(monkeypatch, tmp_path)
     output_dir = tmp_path / "output" / "sum12345"

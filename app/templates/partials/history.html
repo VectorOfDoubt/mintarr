@@ -1,0 +1,25 @@
+{# Completed-job history partial, polled by HTMX (Phase 2 slice 4). Server-
+   rendered; Flask owns the data. Rendered by GET /dashboard/v1/history/partial. #}
+<div class="queue-summary muted">
+  {{ jobs | length }} recent job{{ '' if jobs | length == 1 else 's' }}
+</div>
+{% if jobs %}
+<table class="file-evidence">
+  <thead><tr>
+    <th>Job</th><th>Type</th><th>Result</th><th>Finished</th><th>JID</th>
+  </tr></thead>
+  <tbody>
+  {% for j in jobs %}
+    <tr>
+      <td>{{ j.id }}</td>
+      <td>{{ j.type or '' }}</td>
+      <td><span class="result-{{ j.result }}">{{ j.result }}</span></td>
+      <td>{{ j.finished_str }}</td>
+      <td class="jid">{{ j.jid_short }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="muted">No completed jobs yet.</p>
+{% endif %}

@@ -13,6 +13,7 @@
     var root = document.documentElement;
     root.setAttribute("data-theme", dark ? "dark" : "light");
     root.setAttribute("data-theme-pref", pref);
+    root.setAttribute("data-density", localStorage.getItem("mintarr_density") || "comfortable");
   })();
 </script>
 <title>TidalHires V2 Dashboard</title>
@@ -161,7 +162,49 @@
     </section>
 
     <section class="dashboard-section" x-show="section==='settings'" x-cloak>
-      <div class="panel"><h2>Settings</h2><p class="muted">Settings cards land in a later Phase 2 slice.</p></div>
+      <div class="settings-grid">
+        <div class="panel" x-data="{
+            theme: document.documentElement.getAttribute('data-theme-pref') || 'auto',
+            density: localStorage.getItem('mintarr_density') || 'comfortable',
+            applyTheme() {
+              localStorage.setItem('mintarr_theme', this.theme);
+              var dark = this.theme === 'dark'
+                || (this.theme === 'auto'
+                    && window.matchMedia('(prefers-color-scheme: dark)').matches);
+              document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+              document.documentElement.setAttribute('data-theme-pref', this.theme);
+            },
+            applyDensity() {
+              localStorage.setItem('mintarr_density', this.density);
+              document.documentElement.setAttribute('data-density', this.density);
+            }
+          }">
+          <h2>UI</h2>
+          <div class="setting-row">
+            <label for="set-theme">Theme</label>
+            <select id="set-theme" x-model="theme" @change="applyTheme()">
+              <option value="auto">Auto (system)</option>
+              <option value="light">Light</option>
+              <option value="dark">Dark</option>
+            </select>
+          </div>
+          <div class="setting-row">
+            <label for="set-density">Table density</label>
+            <select id="set-density" x-model="density" @change="applyDensity()">
+              <option value="comfortable">Comfortable</option>
+              <option value="compact">Compact</option>
+            </select>
+          </div>
+          <p class="muted">Interface preferences are stored in your browser.</p>
+        </div>
+
+        <div class="panel"><h2>General</h2><p class="muted">Lands in a later slice.</p></div>
+        <div class="panel"><h2>Source connectors</h2><p class="muted">Managed under the Connectors section; a dedicated card lands in a later slice.</p></div>
+        <div class="panel"><h2>Verifier connectors</h2><p class="muted">Lands in a later slice.</p></div>
+        <div class="panel"><h2>Output connectors</h2><p class="muted">Lands in a later slice.</p></div>
+        <div class="panel"><h2>Quality policies</h2><p class="muted">Lands in a later slice.</p></div>
+        <div class="panel"><h2>Notifications</h2><p class="muted">Lands in a later slice.</p></div>
+      </div>
     </section>
 
     <section class="dashboard-section" x-show="section==='system'" x-cloak>

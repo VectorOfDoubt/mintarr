@@ -260,6 +260,25 @@ def test_dashboard_wires_system_section(monkeypatch, tmp_path):
     assert 'id="system-live"' in shell
 
 
+def test_dashboard_settings_ui_card(monkeypatch, tmp_path):
+    """Settings UI card is an Alpine form persisting prefs client-side (slice 6)."""
+    _patch_paths(monkeypatch, tmp_path)
+    client = server.app.test_client()
+    shell = client.get("/dashboard").get_data(as_text=True)
+    assert 'class="settings-grid"' in shell
+    # Theme + density controls bound with x-model and applied on change.
+    assert 'id="set-theme"' in shell
+    assert 'id="set-density"' in shell
+    assert 'x-model="theme"' in shell
+    assert 'x-model="density"' in shell
+    assert "applyDensity()" in shell
+    # Density is bootstrapped before paint (no flash), alongside theme.
+    assert 'setAttribute("data-density"' in shell
+    # Compact density has a stylesheet hook.
+    css = client.get("/static/dashboard.css").get_data(as_text=True)
+    assert '[data-density="compact"]' in css
+
+
 def test_dashboard_summary_returns_expected_shape(monkeypatch, tmp_path):
     _patch_paths(monkeypatch, tmp_path)
     output_dir = tmp_path / "output" / "sum12345"

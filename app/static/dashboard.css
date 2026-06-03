@@ -215,6 +215,20 @@ main { flex: 1 1 auto; min-width: 0; padding: 16px 24px; }
   padding: 4px 0; color: var(--text-secondary);
 }
 .sys-kv span:last-child { color: var(--text-primary); font-family: var(--font-mono); }
+.settings-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 12px;
+}
+.settings-grid .panel { margin: 0; }
+.setting-row {
+  display: flex; justify-content: space-between; align-items: center;
+  gap: 12px; padding: 6px 0;
+}
+.setting-row select { min-width: 130px; }
+[data-density="compact"] table.file-evidence td,
+[data-density="compact"] #records-table td,
+[data-density="compact"] #records-table th { padding-top: 2px; padding-bottom: 2px; }
 .panel {
   background: var(--bg-surface);
   border: 1px solid var(--border-subtle);

@@ -82,6 +82,8 @@ _RECOVERY_INTERVAL_SEC = 30.0
 
 _RETRY_BACKOFF_SEC: dict[str, list[int]] = {
     "tidal_grab": [60, 300, 900],
+    "sab_usenet_grab": [60, 300, 900],
+    "qbittorrent_torrent_grab": [60, 300, 900],
     "promote_import": [60, 300, 900],
     "retry_import": [60, 300, 900],
 }

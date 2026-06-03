@@ -110,13 +110,13 @@ For the underlying positioning and what is *not* in any phase, see [VISION.md](V
 
 **Goal:** Mintarr supports the realistic source mix of a self-hosted music collector.
 
-**Status:** partial (TIDAL, LocalFolder shipped; Soulseek designed)
+**Status:** partial (TIDAL, LocalFolder, Soulseek, SAB completed-folder, and qBittorrent completed-folder shipped)
 
 **Scope:**
 
-- **F3.5a Soulseek/slskd completed-folder ingest** — design locked ([F3.5a completed-folder ingest design](../design/F3.5_SOULSEEK_COMPLETED_INGEST.md))
-- **F3.5b Soulseek/slskd HTTP search and download** — deferred until slskd API contract is verified against the installed version
-- **SAB/qBit completed-category ingest** — design and implementation as a single source connector family. Scope is locked by [ADR-0012](../architecture/adr/0012-qc-import-gate-scope.md): Mintarr gates operator-routed completed folders (it does not manage download clients, and the universal "QC everything Lidarr imports" gate is a deferred future phase)
+- **F3.5a Soulseek/slskd completed-folder ingest** — implemented ([F3.5a completed-folder ingest design](../design/F3.5_SOULSEEK_COMPLETED_INGEST.md))
+- **F3.5b Soulseek/slskd HTTP search and download** — implemented ([F3.5B Soulseek slskd trigger](../design/F3.5B_SOULSEEK_SLSKD_TRIGGER.md))
+- **SAB/qBit completed-category ingest** — implemented as `sab_usenet` and `qbittorrent_torrent` completed-folder source connectors ([Phase 4 SAB/qBit completed ingest](../design/PHASE4_SAB_QBIT_COMPLETED_INGEST.md)). Scope is locked by [ADR-0012](../architecture/adr/0012-qc-import-gate-scope.md): Mintarr gates operator-routed completed folders; it does not manage download clients, and the universal "QC everything Lidarr imports" gate is a deferred future phase.
 - **CD-rip / private-tracker torrent evidence lane** — design pending; depends on Phase 1 connector model
 - **YouTube fallback connector (Tubifarry-style)** — design pending; explicitly tagged as never-an-upgrade-source
 

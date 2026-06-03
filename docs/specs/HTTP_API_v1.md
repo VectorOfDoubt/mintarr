@@ -1,7 +1,7 @@
 # HTTP API — v1
 
 > **Type:** Spec / contract
-> **Version:** 1.0.4 — runtime-validated 2026-06-01
+> **Version:** 1.0.5 — runtime-validated 2026-06-03
 > **Status:** Locked. Editorial fixes allowed; semantic changes require `HTTP_API_v2.md` per [ADR-0004](../architecture/adr/0004-api-versioning-semver.md).
 > **Audience:** Anyone calling Mintarr's HTTP endpoints. External dashboards, alternative front-ends, monitoring scripts, automation tools. Lidarr-facing endpoints (Newznab, SAB compat) follow those external protocols and are documented here for completeness only — they are not Mintarr-versioned.
 > **Goal:** Phase 3 work replaces this hand-written spec with an auto-generated OpenAPI document. Until then, this file is authoritative.
@@ -33,7 +33,7 @@ Endpoints group into five categories:
 |---|---|---|
 | Lidarr-facing | `/api`, `/newznab/api`, `/sabnzbd/api`, `/download/` | External protocols (Newznab, SAB) — not Mintarr-versioned |
 | Health | `/health` | Liveness check |
-| Source ingest | `/local/ingest`, `/soulseek/ingest` | Manual operator triggers per source |
+| Source ingest | `/local/ingest`, `/soulseek/ingest`, `/sab/ingest`, `/qbit/ingest` | Manual operator triggers per source |
 | Dashboard | `/dashboard`, `/dashboard/v1/...` | Web UI and JSON API for it |
 | Legacy verification | `/verification`, `/decisions`, `/jobs` | Pre-dashboard V2 inspection/action endpoints retained for compatibility |
 | NZB pointer | `/download/<int>.nzb`, `/download/<source>/<id>.nzb` | NZB generation for SAB roundtrip |
@@ -211,6 +211,36 @@ Validation:
 - Partial download markers and folders that change during the settle window return `409`.
 - Disabled adapter or non-`import` connector mode returns `503`.
 - Duplicate active paths return the existing job (dedupe by normalized rel-path hash).
+
+### 5.3 `POST /sab/ingest`
+
+Trigger a SABnzbd completed-folder grab for an operator-routed completed
+category under `SAB_USENET_DOWNLOAD_ROOT`.
+
+Request and response shape are the same as `/soulseek/ingest`.
+
+Validation:
+
+- `path` must be relative to `SAB_USENET_DOWNLOAD_ROOT`.
+- Absolute paths, traversal, symlinked paths, and non-directory paths return `400`.
+- Partial marker files/folders and folders that change during the settle window return `409`.
+- Disabled adapter or non-`import` connector mode returns `503`.
+- Duplicate active paths return the existing job.
+
+### 5.4 `POST /qbit/ingest`
+
+Trigger a qBittorrent completed-folder grab for an operator-routed completed
+category under `QBITTORRENT_TORRENT_DOWNLOAD_ROOT`.
+
+Request and response shape are the same as `/soulseek/ingest`.
+
+Validation:
+
+- `path` must be relative to `QBITTORRENT_TORRENT_DOWNLOAD_ROOT`.
+- Absolute paths, traversal, symlinked paths, and non-directory paths return `400`.
+- Partial marker files/folders and folders that change during the settle window return `409`.
+- Disabled adapter or non-`import` connector mode returns `503`.
+- Duplicate active paths return the existing job.
 
 ## 6. Dashboard endpoints
 

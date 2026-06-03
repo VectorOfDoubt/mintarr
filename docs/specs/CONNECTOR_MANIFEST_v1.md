@@ -70,7 +70,8 @@ class ConnectorManifest:
     default_enabled: bool
     """Whether new installations have this connector enabled by default.
     Hard-gate verifiers (ffprobe, flac_t, flac_detective) set this True.
-    Optional connectors (Soulseek, beets/Picard) set this False."""
+    Optional connectors (Soulseek, sab_usenet, qbittorrent_torrent,
+    beets/Picard) set this False."""
 
     required: bool
     """True if disabling this connector while ANY source connector is in

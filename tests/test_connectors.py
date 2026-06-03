@@ -153,6 +153,37 @@ def test_built_in_optional_metadata_verifier_manifest():
     assert "read_only_prepass" in manifest.capabilities
 
 
+def test_built_in_completed_folder_source_manifests():
+    import connectors
+    from connectors import ConnectorKind
+
+    manifests = {
+        connector.manifest.id: connector.manifest
+        for connector in connectors.built_in_connectors()
+    }
+
+    sab = manifests["sab_usenet"]
+    assert sab.kind == ConnectorKind.SOURCE
+    assert sab.default_enabled is False
+    assert sab.required is False
+    assert sab.install_profile is None
+    assert sab.required_env == ("SAB_USENET_ENABLED", "SAB_USENET_DOWNLOAD_ROOT")
+    assert "completed_folder_ingest" in sab.capabilities
+    assert "usenet_category_ingest" in sab.capabilities
+
+    qbit = manifests["qbittorrent_torrent"]
+    assert qbit.kind == ConnectorKind.SOURCE
+    assert qbit.default_enabled is False
+    assert qbit.required is False
+    assert qbit.install_profile is None
+    assert qbit.required_env == (
+        "QBITTORRENT_TORRENT_ENABLED",
+        "QBITTORRENT_TORRENT_DOWNLOAD_ROOT",
+    )
+    assert "completed_folder_ingest" in qbit.capabilities
+    assert "torrent_category_ingest" in qbit.capabilities
+
+
 def test_get_connectors_endpoint_requires_api_key():
     client = server.app.test_client()
     assert client.get("/dashboard/v1/connectors").status_code == 401

@@ -51,6 +51,10 @@ def _reset_state_db():
     try:
         import adapters
         import connectors
+        from adapters.completed_folder import (
+            QBittorrentCompletedAdapter,
+            SabUsenetCompletedAdapter,
+        )
         from adapters.tidal import TidalAdapter
         from adapters.local_folder import LocalFolderAdapter
         from adapters.soulseek import SoulseekCompletedAdapter
@@ -59,6 +63,8 @@ def _reset_state_db():
         adapters.register(TidalAdapter())
         adapters.register(LocalFolderAdapter())
         adapters.register(SoulseekCompletedAdapter())
+        adapters.register(SabUsenetCompletedAdapter())
+        adapters.register(QBittorrentCompletedAdapter())
         connectors.reset_registry()
         connectors.register_builtin_connectors(warn_missing_required=False)
     except Exception:

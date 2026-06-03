@@ -72,6 +72,9 @@ if len(API_KEY) < MIN_API_KEY_LEN:
     )
 DOWNLOAD_BASE = Path(os.environ.get("DOWNLOAD_BASE", "/downloads"))
 OUTPUT_BASE = Path(os.environ.get("OUTPUT_BASE", "/output"))  # SAB-style complete-mappe
+LIDARR_COMPLETE_ROOT = os.environ.get(
+    "MINTARR_LIDARR_COMPLETE_ROOT", "/downloads/TidalHiRes/complete"
+).rstrip("/")
 TIDAL_DL_NG_CONFIG = os.environ.get(
     "TIDAL_DL_NG_CONFIG", "/root/.config/tidal_dl_ng-dev"
 )
@@ -99,6 +102,17 @@ def _redact_request_values(values) -> dict:
             "<redacted>" if key.lower() in SENSITIVE_REQUEST_KEYS else values.get(key)
         )
     return redacted
+
+
+def _lidarr_complete_path(jid: str) -> str:
+    return f"{LIDARR_COMPLETE_ROOT}/{jid}"
+
+
+def _lidarr_path_to_output_path(path: str) -> Path:
+    prefix = f"{LIDARR_COMPLETE_ROOT}/"
+    if path.startswith(prefix):
+        return OUTPUT_BASE / path[len(prefix) :]
+    return Path(path)
 
 
 def _sab_queue_slot(jid: str, job: dict) -> dict:
@@ -486,6 +500,17 @@ def _addurl_canonicalize(adapter, raw_id: str, name: str):
         title = adapter.title_for_candidate_id(source_id)
         return (source_id, f"soulseek:{_hr(source_id)}", title, 0)
 
+    if hasattr(adapter, "normalize_candidate_id"):
+        from adapters.completed_folder import hash_rel as _hr
+
+        source_id = adapter.normalize_candidate_id(raw_id)
+        return (
+            source_id,
+            f"{adapter.name}:{_hr(source_id)}",
+            f"[{adapter.name.upper()}] {source_id}",
+            0,
+        )
+
     # Generic fallback for future adapters
     return (raw_id, f"{adapter.name}:{raw_id}", f"[{adapter.name.upper()}] {raw_id}", 0)
 
@@ -495,6 +520,8 @@ def _canonicalize_source_id(adapter, source_id: str) -> str:
     if adapter.name == "local":
         return adapter.normalize_candidate_id(source_id)
     if adapter.name == "soulseek":
+        return adapter.normalize_candidate_id(source_id)
+    if adapter.name in {"sab_usenet", "qbittorrent_torrent"}:
         return adapter.normalize_candidate_id(source_id)
     if adapter.name == "tidal":
         return str(int(source_id))  # validates int-shape
@@ -1193,6 +1220,141 @@ def soulseek_ingest():
     return jsonify({"status": True, "nzo_ids": [jid], "job_id": job_id})
 
 
+def _completed_folder_ingest(adapter_name: str, label: str):
+    """Enqueue a completed-folder source-grab job for an operator-routed folder."""
+    import adapters
+    from adapters.completed_folder import hash_rel
+    import state_db
+
+    body = request.get_json(silent=True) or {}
+    raw_path = body.get("path")
+    if not isinstance(raw_path, str):
+        return jsonify({"status": False, "error": "path must be a string"}), 400
+    rel = raw_path.strip()
+    if not rel:
+        return jsonify({"status": False, "error": "path required"}), 400
+
+    adapter = adapters.get_adapter(adapter_name)
+    if adapter is None or not adapter.is_enabled():
+        return jsonify(
+            {"status": False, "error": f"{adapter_name} adapter not enabled"}
+        ), 503
+    if not _adapter_import_mode_enabled(adapter.name):
+        return jsonify(
+            {"status": False, "error": f"{adapter_name} adapter not in import mode"}
+        ), 503
+    normalize_candidate_id = getattr(adapter, "normalize_candidate_id", None)
+    if not callable(normalize_candidate_id):
+        return jsonify(
+            {"status": False, "error": f"{adapter_name} adapter unsupported"}
+        ), 503
+
+    try:
+        rel = normalize_candidate_id(rel)
+    except RuntimeError as exc:
+        message = str(exc)
+        status = (
+            409 if "not settled" in message or "partial" in message.lower() else 400
+        )
+        return jsonify({"status": False, "error": message}), status
+
+    dedupe_key = f"{adapter_name}:{hash_rel(rel)}"
+    try:
+        existing = state_db.find_active_job_by_dedupe(dedupe_key)
+    except Exception:
+        log.exception("[%s_ingest] dedupe check failed (continuing)", adapter_name)
+        existing = None
+    if existing and existing.get("jid"):
+        return jsonify(
+            {
+                "status": True,
+                "nzo_ids": [existing["jid"]],
+                "job_id": existing.get("id"),
+            }
+        )
+
+    jid = uuid.uuid4().hex[:12]
+    title = f"[{label}] {rel}"
+    with _jobs_lock:
+        _jobs[jid] = {
+            "id": jid,
+            "category": "music",
+            "status": "queued",
+            "title": title,
+            "size": 0,
+            "percent": 0,
+            "source_type": adapter_name,
+            "source_id": rel,
+            "created_at": time.time(),
+        }
+        _save_jobs()
+
+    try:
+        job_id = state_db.enqueue_job(
+            jid=jid,
+            type=f"{adapter_name}_grab",
+            payload={"source_id": rel, "title": title},
+            dedupe_key=dedupe_key,
+            source_type=adapter_name,
+            source_id=rel,
+        )
+    except Exception:
+        log.exception("[%s_ingest] state_db.enqueue_job failed", adapter_name)
+        job_id = None
+    if job_id is None:
+        with _jobs_lock:
+            _jobs.pop(jid, None)
+            _save_jobs()
+        return jsonify({"status": False, "error": "queue unavailable"}), 503
+
+    try:
+        queued_job = state_db.get_job(job_id)
+    except Exception:
+        queued_job = None
+    if queued_job and queued_job.get("jid") and queued_job.get("jid") != jid:
+        existing_jid = queued_job["jid"]
+        with _jobs_lock:
+            _jobs.pop(jid, None)
+            _save_jobs()
+        log.info(
+            "[%s_ingest] enqueue dedupe hit — returning existing jid=%s for path=%r",
+            adapter_name,
+            existing_jid,
+            rel,
+        )
+        return jsonify(
+            {
+                "status": True,
+                "nzo_ids": [existing_jid],
+                "job_id": queued_job.get("id"),
+            }
+        )
+
+    log.info(
+        "[%s] /%s/ingest enqueued %s_grab job_id=%s path=%r",
+        jid,
+        adapter_name,
+        adapter_name,
+        job_id,
+        rel,
+    )
+    return jsonify({"status": True, "nzo_ids": [jid], "job_id": job_id})
+
+
+@app.route("/sab/ingest", methods=["POST"])
+@require_apikey
+def sab_usenet_ingest():
+    """Enqueue a sab_usenet_grab job under SAB_USENET_DOWNLOAD_ROOT."""
+    return _completed_folder_ingest("sab_usenet", "SAB")
+
+
+@app.route("/qbit/ingest", methods=["POST"])
+@require_apikey
+def qbittorrent_torrent_ingest():
+    """Enqueue a qbittorrent_torrent_grab job under QBITTORRENT_TORRENT_DOWNLOAD_ROOT."""
+    return _completed_folder_ingest("qbittorrent_torrent", "qBittorrent")
+
+
 # ---- Download worker ----
 def _mark_download_cancelled(jid: str, work_dir: Path | None = None) -> None:
     with _jobs_lock:
@@ -1382,6 +1544,18 @@ def _execute_local_grab_job(job: dict) -> tuple[str | None, dict | None]:
 def _execute_soulseek_grab_job(job: dict) -> tuple[str | None, dict | None]:
     """Thin wrapper around generic source-grab executor for Soulseek completed folders."""
     return _execute_source_grab_job(job, "soulseek")
+
+
+def _execute_sab_usenet_grab_job(job: dict) -> tuple[str | None, dict | None]:
+    """Thin wrapper around generic source-grab executor for SABnzbd completed folders."""
+    return _execute_source_grab_job(job, "sab_usenet")
+
+
+def _execute_qbittorrent_torrent_grab_job(
+    job: dict,
+) -> tuple[str | None, dict | None]:
+    """Thin wrapper around generic source-grab executor for qBittorrent folders."""
+    return _execute_source_grab_job(job, "qbittorrent_torrent")
 
 
 def _run_download_job(jid: str, album_id: int, worker_job_id: int | None = None):
@@ -2453,7 +2627,7 @@ def _count_missing_manualimport_sources(files: list[dict]) -> int:
     missing = 0
     for item in files:
         path = str(item.get("path") or "")
-        src_path = Path(path.replace("/downloads/TidalHiRes/complete/", "/output/"))
+        src_path = _lidarr_path_to_output_path(path)
         if not src_path.exists():
             missing += 1
     return missing
@@ -2821,7 +2995,7 @@ def _trigger_lidarr_import(
         70,
         "Checking Lidarr manual import candidates",
     )
-    lidarr_path = f"/downloads/TidalHiRes/complete/{jid}"
+    lidarr_path = _lidarr_complete_path(jid)
 
     def _lookup():
         try:
@@ -3355,9 +3529,9 @@ def _trigger_lidarr_import(
                 title=_jobs.get(jid, {}).get("title", ""),
             )
 
-    # Lidarr's path to our output in /downloads/TidalHiRes/complete/<jid>/
-    # (same bind mount; Lidarr sees it as /downloads via remote path mapping)
-    lidarr_path = f"/downloads/TidalHiRes/complete/{jid}"
+    # Lidarr's path to our output (same bind mount as OUTPUT_BASE, translated
+    # through MINTARR_LIDARR_COMPLETE_ROOT).
+    lidarr_path = _lidarr_complete_path(jid)
 
     # Fetch manual-import candidates.
     manualimport_started = time.monotonic()
@@ -3450,8 +3624,8 @@ def _trigger_lidarr_import(
                                             files.append(
                                                 {
                                                     "path": str(fp).replace(
-                                                        "/output/",
-                                                        "/downloads/TidalHiRes/complete/",
+                                                        f"{OUTPUT_BASE}/",
+                                                        f"{LIDARR_COMPLETE_ROOT}/",
                                                     ),
                                                     "artistId": artist_id,
                                                     "albumId": ab["id"],
@@ -3807,11 +3981,11 @@ def _rescue_place_and_rescan(jid, files, api, key):
     # Copy all files; all paths are container paths.
     moved = 0
     for f in files:
-        # f["path"] is the Lidarr container's path to our output: /downloads/TidalHiRes/complete/<jid>/Albums/...
-        # Inside the Mintarr container this is the same mount: /output/<jid>/Albums/...
+        # f["path"] is Lidarr's container path to our output; translate it back
+        # to Mintarr's OUTPUT_BASE before copying for rescue.
         src_container_lidarr = f["path"]
-        src_container_tidalhires = src_container_lidarr.replace(
-            "/downloads/TidalHiRes/complete/", "/output/"
+        src_container_tidalhires = str(
+            _lidarr_path_to_output_path(src_container_lidarr)
         )
         src_p = _P(src_container_tidalhires)
         if not src_p.exists():
@@ -4012,7 +4186,7 @@ def _run_manual_import_only(
     if not key:
         return "FAILED"
 
-    lidarr_path = f"/downloads/TidalHiRes/complete/{jid}"
+    lidarr_path = _lidarr_complete_path(jid)
     r = requests.get(
         f"{api}/manualimport",
         params={"folder": lidarr_path},
@@ -4961,6 +5135,10 @@ except Exception:
 # F3.1/F3.4: Register source adapters. Common pipeline dispatches by adapter.name.
 try:
     import adapters
+    from adapters.completed_folder import (
+        QBittorrentCompletedAdapter,
+        SabUsenetCompletedAdapter,
+    )
     from adapters.tidal import TidalAdapter
     from adapters.local_folder import LocalFolderAdapter
     from adapters.soulseek import SoulseekCompletedAdapter
@@ -4971,6 +5149,10 @@ try:
         adapters.register(LocalFolderAdapter())
     if adapters.get_adapter("soulseek") is None:
         adapters.register(SoulseekCompletedAdapter())
+    if adapters.get_adapter("sab_usenet") is None:
+        adapters.register(SabUsenetCompletedAdapter())
+    if adapters.get_adapter("qbittorrent_torrent") is None:
+        adapters.register(QBittorrentCompletedAdapter())
 except Exception:
     log.exception("adapter registration failed — source grabs may not work")
 
@@ -4997,6 +5179,10 @@ if not (
         worker.register_executor("tidal_grab", _execute_tidal_grab_job)
         worker.register_executor("local_grab", _execute_local_grab_job)
         worker.register_executor("soulseek_grab", _execute_soulseek_grab_job)
+        worker.register_executor("sab_usenet_grab", _execute_sab_usenet_grab_job)
+        worker.register_executor(
+            "qbittorrent_torrent_grab", _execute_qbittorrent_torrent_grab_job
+        )
         worker.register_executor("promote_import", _execute_promote_import_job)
         worker.register_executor("retry_import", _execute_retry_import_job)
         worker.start_worker()

@@ -74,8 +74,14 @@ One of `LIDARR_API_KEY` or `LIDARR_CONFIG_XML` must be set. The XML extraction i
 |---|---|---|
 | `DOWNLOAD_BASE` | Work area for active downloads | `/downloads` |
 | `OUTPUT_BASE` | Output area for verified files (Lidarr reads from here) | `/output` |
+| `MINTARR_LIDARR_COMPLETE_ROOT` | Lidarr-visible path that maps to `OUTPUT_BASE` for ManualImport | `/downloads/TidalHiRes/complete` |
 
 Both should be mounted volumes. `DOWNLOAD_BASE` is transient (safe to wipe between container restarts); `OUTPUT_BASE` holds files actively being processed.
+
+`MINTARR_LIDARR_COMPLETE_ROOT` must match Lidarr's view of the same files that
+Mintarr sees under `OUTPUT_BASE`. Keep the default if your existing remote path
+mapping already maps `/output/<jid>` to `/downloads/TidalHiRes/complete/<jid>`
+inside Lidarr.
 
 ### 3.4 External services
 
@@ -154,6 +160,36 @@ Soulseek index benefits from an added search term. slskd-backed candidates are
 stored in `SOULSEEK_CANDIDATE_CACHE` and exposed to Lidarr as short tokens so
 download URLs stay below web-server request-line limits.
 
+### 4.4 SABnzbd completed folder
+
+| Variable | Purpose | Default |
+|---|---|---|
+| `SAB_USENET_ENABLED` | Master toggle for SAB completed-folder ingest | `false` |
+| `SAB_USENET_DOWNLOAD_ROOT` | Mounted SAB completed/category root | unset |
+| `SAB_USENET_MAX_FILES` | Maximum files per candidate folder | `300` |
+| `SAB_USENET_MAX_BYTES` | Maximum total bytes per candidate (0 = unlimited) | `0` |
+| `SAB_USENET_SETTLE_SECONDS` | File-size/mtime stable window before copy | `10` |
+
+Point this at a completed SAB category/folder that the operator explicitly
+routes to Mintarr. Mintarr reads and copies; it does not configure SABnzbd and
+does not own SAB's queue. Manual ingest uses `POST /sab/ingest` with a relative
+path under the mounted root.
+
+### 4.5 qBittorrent completed folder
+
+| Variable | Purpose | Default |
+|---|---|---|
+| `QBITTORRENT_TORRENT_ENABLED` | Master toggle for qBittorrent completed-folder ingest | `false` |
+| `QBITTORRENT_TORRENT_DOWNLOAD_ROOT` | Mounted qBittorrent completed/category root | unset |
+| `QBITTORRENT_TORRENT_MAX_FILES` | Maximum files per candidate folder | `300` |
+| `QBITTORRENT_TORRENT_MAX_BYTES` | Maximum total bytes per candidate (0 = unlimited) | `0` |
+| `QBITTORRENT_TORRENT_SETTLE_SECONDS` | File-size/mtime stable window before copy | `10` |
+
+Point this at a completed qBittorrent category/folder that the operator
+explicitly routes to Mintarr. Mintarr reads and copies; it does not configure
+qBittorrent, stop torrents, remove torrents, or own qBittorrent's queue. Manual
+ingest uses `POST /qbit/ingest` with a relative path under the mounted root.
+
 ## 5. Volume mounts
 
 Mintarr expects these volume mounts:
@@ -166,6 +202,8 @@ Mintarr expects these volume mounts:
 | `/root/.config/tidal_dl_ng-dev` | TIDAL adapter config (token.json) | Bind |
 | `/local-ingest` | LocalFolder source files | Bind |
 | `/soulseek-ingest` | Soulseek completed-download root | Bind |
+| `/sab-ingest` | SABnzbd completed/category root | Bind |
+| `/qbit-ingest` | qBittorrent completed/category root | Bind |
 | `/lidarr-config` | Lidarr config (read-only, for API key extraction) | Bind, read-only |
 | `/music` | Lidarr music library (only required if `MINTARR_RESCUE_RESCAN_ENABLED=true`) | Bind |
 
@@ -306,6 +344,7 @@ LIDARR_CONFIG_XML=             # use one of LIDARR_API_KEY or LIDARR_CONFIG_XML
 # Storage
 DOWNLOAD_BASE=/downloads
 OUTPUT_BASE=/output
+MINTARR_LIDARR_COMPLETE_ROOT=/downloads/TidalHiRes/complete
 
 # External services
 FLAC_API_URL=http://host.docker.internal:8889/analyze
@@ -340,6 +379,20 @@ SOULSEEK_MIN_TRACKS=2
 SOULSEEK_DOWNLOAD_TIMEOUT=3600
 SOULSEEK_POLL_SECONDS=5
 
+# SAB completed-folder adapter
+SAB_USENET_ENABLED=false
+SAB_USENET_DOWNLOAD_ROOT=
+SAB_USENET_MAX_FILES=300
+SAB_USENET_MAX_BYTES=0
+SAB_USENET_SETTLE_SECONDS=10
+
+# qBittorrent completed-folder adapter
+QBITTORRENT_TORRENT_ENABLED=false
+QBITTORRENT_TORRENT_DOWNLOAD_ROOT=
+QBITTORRENT_TORRENT_MAX_FILES=300
+QBITTORRENT_TORRENT_MAX_BYTES=0
+QBITTORRENT_TORRENT_SETTLE_SECONDS=10
+
 # Auth / SSO
 MINTARR_REMOTE_USER_HEADER=Remote-User
 MINTARR_REMOTE_USER_TRUSTED=false
@@ -357,4 +410,4 @@ TZ=UTC
 
 ---
 
-> Last updated: 2026-06-01
+> Last updated: 2026-06-03

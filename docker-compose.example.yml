@@ -35,6 +35,9 @@ services:
       # advertises to Lidarr in download URLs. Keep these in sync with the
       # ports mapping below.
       - BASE_URL=http://host.docker.internal:5025
+      # Lidarr-visible path for Mintarr's /output mount. Keep this aligned
+      # with Lidarr remote-path mapping for ManualImport.
+      - MINTARR_LIDARR_COMPLETE_ROOT=/downloads/TidalHiRes/complete
 
       # --- Source adapters ---
       # TIDAL adapter — points at a directory containing token.json.
@@ -52,6 +55,18 @@ services:
       # - SLSKD_API_KEY=<slskd-api-key>
       # - SOULSEEK_SEARCH_SUFFIX=
       # - SOULSEEK_CANDIDATE_CACHE=/config/soulseek_candidates.json
+
+      # SABnzbd completed-folder ingest — point at an operator-routed
+      # completed category mounted at /sab-ingest.
+      # - SAB_USENET_ENABLED=true
+      # - SAB_USENET_DOWNLOAD_ROOT=/sab-ingest
+      # - SAB_USENET_SETTLE_SECONDS=10
+
+      # qBittorrent completed-folder ingest — point at an operator-routed
+      # completed category mounted at /qbit-ingest.
+      # - QBITTORRENT_TORRENT_ENABLED=true
+      # - QBITTORRENT_TORRENT_DOWNLOAD_ROOT=/qbit-ingest
+      # - QBITTORRENT_TORRENT_SETTLE_SECONDS=10
 
       # --- Verification policy ---
       # Enables the V2 verification pipeline. Default is true; set to false
@@ -129,6 +144,19 @@ services:
       # - type: bind
       #   source: <HOST_PATH_TO_SLSKD_COMPLETED>
       #   target: /soulseek-ingest
+
+      # SABnzbd completed/category root. Enable with SAB_USENET_ENABLED=true
+      # and POST /sab/ingest with a relative Artist/Album path.
+      # - type: bind
+      #   source: <HOST_PATH_TO_SAB_COMPLETED_CATEGORY>
+      #   target: /sab-ingest
+
+      # qBittorrent completed/category root. Enable with
+      # QBITTORRENT_TORRENT_ENABLED=true and POST /qbit/ingest with a
+      # relative Artist/Album path.
+      # - type: bind
+      #   source: <HOST_PATH_TO_QBIT_COMPLETED_CATEGORY>
+      #   target: /qbit-ingest
 
 # --- Companion services (often run separately) ---
 #

@@ -81,8 +81,8 @@ Connectors
     soulseek_slskd
     private_tracker_cd_rip
     tubifarry_youtube_fallback
-    future sab_usenet
-    future qbittorrent_torrent
+    sab_usenet
+    qbittorrent_torrent
 
   Verifier connectors
     ffprobe
@@ -155,8 +155,8 @@ Examples:
 | `local_folder` | implemented | manual/CD-rip style ingest |
 | `soulseek_slskd` | F3.5 design | completed-folder first, HTTP search later |
 | `private_tracker_cd_rip` | future | torrent/CD evidence lane |
-| `sab_usenet` | future | completed-download/category ingest |
-| `qbittorrent_torrent` | future | completed-category ingest |
+| `sab_usenet` | implemented | completed-download/category ingest under ADR-0012 scoped-gate rules |
+| `qbittorrent_torrent` | implemented | completed-category ingest under ADR-0012 scoped-gate rules |
 | `tubifarry_youtube` | future/fallback | never treated as lossless upgrade |
 
 Source connector invariants:

@@ -261,11 +261,11 @@ If the import succeeded, the album lands in Lidarr's library. If V2 BLOCKed it (
 
 - [CONFIGURATION.md](CONFIGURATION.md) — every environment variable + connector setting
 - [BACKUP_RESTORE.md](BACKUP_RESTORE.md) — back up `/config` periodically
-- `TROUBLESHOOTING.md` — common issues (planned for v0.2.0)
-- `OBSERVABILITY.md` — structured logging, Prometheus metrics (planned for v0.2.0)
+- [TROUBLESHOOTING.md](TROUBLESHOOTING.md) — common issues and debugging flow
+- [OBSERVABILITY.md](OBSERVABILITY.md) — logs, dashboard status, sidecars, and planned metrics
 
 If you hit something this document doesn't cover, that's a documentation bug — open an issue.
 
 ---
 
-> Last updated: 2026-06-01
+> Last updated: 2026-06-03

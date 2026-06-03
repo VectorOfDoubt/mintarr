@@ -1,8 +1,8 @@
 # Mintarr — Documentation Index
 
 > **Type:** Meta-document. Lists every planned Mintarr document, its status, owner and dependencies.
-> **Version:** 0.12 — 2026-06-01
-> **Status:** Public-repo tracker. Documentation set drafted. License AGPL-3.0-only. Language Python 3.12+ (ADR-0010). Cutover strategy: clean new repo, no inherited history ([MINTARR_CUTOVER_PLAYBOOK.md](architecture/MINTARR_CUTOVER_PLAYBOOK.md)). HTTP_API_v1 and SIDECAR_FORMAT_v2 runtime-validated and locked. F4.1-F4.3 landed post-cutover; F3.5a Soulseek completed-folder ingest is implemented.
+> **Version:** 0.13 — 2026-06-03
+> **Status:** Public-repo tracker. Documentation set drafted. License AGPL-3.0-only. Language Python 3.12+ (ADR-0010). Cutover strategy: clean new repo, no inherited history ([MINTARR_CUTOVER_PLAYBOOK.md](architecture/MINTARR_CUTOVER_PLAYBOOK.md)). HTTP_API_v1 and SIDECAR_FORMAT_v2 runtime-validated and locked. F4.1-F4.3 landed post-cutover; F3.5a Soulseek completed-folder ingest is implemented. v0.2.0 docs skeletons for troubleshooting, observability, and use cases are drafted.
 > **Audience:** Project maintainers (Eivind, Claude, Codex) coordinating doc work.
 
 ---
@@ -201,9 +201,9 @@ Legend:
 | `CONFIGURATION.md` | drafted | Claude | P1 | All env vars catalogued with defaults; volume mount reference; networking; CF scoring recommendations. |
 | `docker-compose.example.yml` | drafted (in `mintarr/`) | Claude | P0 | Portable example compose. Local host paths and private service topology must not be published as defaults. |
 | `UPGRADE_GUIDE.md` | drafted | Claude | P1 | tidalhires→mintarr migration; SemVer migration policy; rollback; Lidarr coordination. |
-| `TROUBLESHOOTING.md` | planned | Codex | P2 | Common issues + fixes. Grows from issue tracker. |
+| `TROUBLESHOOTING.md` | drafted | Codex | P2 | Common issues + fixes. Grows from issue tracker, dogfood runs, and operator reports. |
 | `BACKUP_RESTORE.md` | drafted | Claude | P1 | Live + cold backup procedures; selective restore; disaster recovery; verification routine. |
-| `OBSERVABILITY.md` | planned | Claude | P2 | Structured logging fields, Prometheus metrics catalog, Grafana templates. |
+| `OBSERVABILITY.md` | drafted | Codex | P2 | Current logs/dashboard/sidecar surfaces plus planned structured logging, Prometheus metrics catalog, and Grafana templates. |
 
 ### 6.6 Development (`docs/development/`)
 
@@ -239,7 +239,7 @@ Per-feature design docs. Numbered F-series (F3.1, F3.4, F4.1, etc). Each one fol
 
 | Path | Status | Owner | Prio | Notes |
 |---|---|---|---|---|
-| `USE_CASES.md` | planned | Eivind | P2 | Who uses Mintarr, how. Grows from real deployments. |
+| `USE_CASES.md` | drafted | Codex | P2 | Who uses Mintarr, how. Grows from real deployments. |
 | `COMPARISON.md` | drafted | Claude | P2 | Side-by-side vs Lidarr alone, Beets, Picard, slskd/Soularr, custom scripts. Includes "when Mintarr is the wrong choice". |
 | `FAQ.md` | drafted (stub) | Claude | P2 | Question stub organised by topic. Grows from issues/Discussions. |
 
@@ -326,5 +326,6 @@ When Codex and Claude work in parallel, they coordinate via this index — the *
 | 0.10 | 2026-05-31 | **Strategic-direction batch: ADR-0010 + Phase 8 + VISION-orchestration-clarification.** ADR-0010 locks Python 3.12+ as implementation language (preempts future "rewrite in C# for arr-stack" or "translate to Rust" proposals). ROADMAP adds Phase 8 "Mintarr Audio Lab" — additive in-house sensors complementing (not replacing) external verifiers. VISION clarifies that Mintarr orchestrates verifier tools in v1; in-house sensors are future-direction, not current state. No cutover-blocker impact; these align expectations for post-cutover work. |
 | 0.11 | 2026-05-31 | **Codex strategic-direction review.** ADR-0010 wording tightened after codebase validation: application runtime is ~7.4k Python LOC, public contract/cutover scripts are Python while private Windows incident helpers may remain PowerShell, Phase 8 reference fixed, and Python ecosystem examples corrected. ADR table duplicate removed. No structural disagreement with ADR-0010, Phase 8, or VISION orchestration wording. |
 | 0.12 | 2026-06-01 | **Post-cutover implementation tracker update.** F4.1-F4.3 are reflected as landed public-repo work. F3.5a Soulseek completed-folder ingest is tracked as implemented with runtime docs and API spec updates. |
+| 0.13 | 2026-06-03 | **v0.2.0 docs skeletons drafted.** Added TROUBLESHOOTING.md, OBSERVABILITY.md, and USE_CASES.md; MkDocs nav and INSTALL next-step links now resolve. |
 
-> Last updated: 2026-06-01
+> Last updated: 2026-06-03

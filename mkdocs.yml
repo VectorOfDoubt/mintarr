@@ -141,6 +141,8 @@ nav:
       - Configuration: operations/CONFIGURATION.md
       - Upgrade guide: operations/UPGRADE_GUIDE.md
       - Backup and restore: operations/BACKUP_RESTORE.md
+      - Troubleshooting: operations/TROUBLESHOOTING.md
+      - Observability: operations/OBSERVABILITY.md
 
   - Development:
       - Setup: development/DEVELOPMENT.md
@@ -152,6 +154,7 @@ nav:
       - Agent handover: development/AGENT_HANDOVER.md
 
   - Community:
+      - Use cases: community/USE_CASES.md
       - Comparison: community/COMPARISON.md
       - FAQ: community/FAQ.md
 

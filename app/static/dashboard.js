@@ -47,6 +47,7 @@ function init() {
   setInterval(updateRefreshIndicator, 1000);
   $('filter-status').addEventListener('change', refresh);
   $('filter-decision').addEventListener('change', refresh);
+  $('records-search').addEventListener('input', applyRecordsSearch);
   // Restore filters from localStorage
   $('filter-status').value = localStorage.getItem('tidalhires_filter_status') || '';
   $('filter-decision').value = localStorage.getItem('tidalhires_filter_decision') || '';
@@ -55,9 +56,21 @@ function init() {
 function clearFilters() {
   $('filter-status').value = '';
   $('filter-decision').value = '';
+  $('records-search').value = '';
   localStorage.removeItem('tidalhires_filter_status');
   localStorage.removeItem('tidalhires_filter_decision');
   refresh();
+}
+
+// Client-side filter over the already-loaded records rows. Server-side search
+// across all records is future work (needs a search endpoint).
+function applyRecordsSearch() {
+  const q = ($('records-search').value || '').trim().toLowerCase();
+  const rows = $('records-body').querySelectorAll('tr');
+  rows.forEach(row => {
+    if (row.querySelector('td[colspan]')) return; // "no records" placeholder
+    row.style.display = (!q || row.textContent.toLowerCase().includes(q)) ? '' : 'none';
+  });
 }
 
 async function refresh() {
@@ -381,6 +394,7 @@ function renderRecords(recs) {
       <td>${deeplink}</td>
     </tr>`;
   }).join('');
+  applyRecordsSearch();
 }
 
 async function openDrawer(jid) {

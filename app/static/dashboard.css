@@ -231,6 +231,7 @@ main { flex: 1 1 auto; min-width: 0; padding: 16px 24px; }
   gap: 12px; padding: 6px 0;
 }
 .setting-row select { min-width: 130px; }
+#records-search { min-width: 200px; }
 [data-density="compact"] table.file-evidence td,
 [data-density="compact"] #records-table td,
 [data-density="compact"] #records-table th { padding-top: 2px; padding-bottom: 2px; }

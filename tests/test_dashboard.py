@@ -260,6 +260,17 @@ def test_dashboard_wires_system_section(monkeypatch, tmp_path):
     assert 'id="system-live"' in shell
 
 
+def test_dashboard_records_search_present(monkeypatch, tmp_path):
+    """Review has a client-side records search (frontend-only, no endpoint)."""
+    _patch_paths(monkeypatch, tmp_path)
+    client = server.app.test_client()
+    shell = client.get("/dashboard").get_data(as_text=True)
+    assert 'id="records-search"' in shell
+    js = client.get("/static/dashboard.js").get_data(as_text=True)
+    assert "function applyRecordsSearch()" in js
+    assert "records-search" in js
+
+
 def test_system_partial_renders_audit_events(monkeypatch, tmp_path):
     """System Events card surfaces the recent audit feed (slice 7)."""
     _patch_paths(monkeypatch, tmp_path)

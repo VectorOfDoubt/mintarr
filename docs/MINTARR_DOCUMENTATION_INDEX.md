@@ -183,6 +183,7 @@ Legend:
 | `adr/0009-runtime-hardening-conventions.md` | locked | Codex/Eivind | P0 | Locks cutover hardening conventions: authenticated/redacted fallback routes, `MINTARR_*` aliases before legacy removal, and server-injected dashboard config. |
 | `adr/0010-python-implementation-language.md` | locked | Claude/Eivind | P0 | Locks Python 3.12+ as implementation language. Prevents future rewrite-to-C#-or-Rust proposals without explicit successor ADR. |
 | `adr/0011-frontend-framework.md` | locked | Claude/Codex | P2 | Locks Phase 2 dashboard on server-rendered Flask with HTMX + Alpine.js, no Node toolchain, and no SPA framework. |
+| `adr/0012-qc-import-gate-scope.md` | locked | Claude/Eivind | P1 | Scopes Mintarr as the QC import gate for Mintarr-routed sources only (own lanes + operator-routed completed folders); Lidarr-client discovery is onboarding, universal gate deferred to a future ADR. |
 
 ### 6.4 Specs (`docs/specs/`)
 
@@ -335,5 +336,6 @@ When Codex and Claude work in parallel, they coordinate via this index — the *
 | 0.15 | 2026-06-03 | **F-series design migration batch 1.** Migrated and rebranded F2 worker queue, F3 source adapters, F3.2/F3.3 Newznab routing, and F3.4 LocalFolder from legacy private docs into public `docs/design/`. |
 | 0.16 | 2026-06-03 | **Quality roadmap migration batch 2.** Migrated and rebranded `QUALITY_STACK_ROADMAP.md` from the legacy private docs into public `docs/design/`. |
 | 0.17 | 2026-06-03 | **F4.4 connector install guidance implemented.** Added secret-safe install guidance payloads for connectors and dashboard/operator documentation for missing service/env/mount setup. |
+| 0.18 | 2026-06-03 | **ADR-0012 QC import-gate scope locked.** Mintarr is the QC import gate for Mintarr-routed sources only (its own lanes + operator-routed completed folders); reading Lidarr's download-client config is onboarding/discovery, not a coverage guarantee, and the universal "QC everything Lidarr imports" gate is a deferred future phase. |
 
 > Last updated: 2026-06-03

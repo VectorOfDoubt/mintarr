@@ -116,7 +116,7 @@ For the underlying positioning and what is *not* in any phase, see [VISION.md](V
 
 - **F3.5a Soulseek/slskd completed-folder ingest** — design locked ([F3.5a completed-folder ingest design](../design/F3.5_SOULSEEK_COMPLETED_INGEST.md))
 - **F3.5b Soulseek/slskd HTTP search and download** — deferred until slskd API contract is verified against the installed version
-- **SAB/qBit completed-category ingest** — design and implementation as a single source connector family
+- **SAB/qBit completed-category ingest** — design and implementation as a single source connector family. Scope is locked by [ADR-0012](../architecture/adr/0012-qc-import-gate-scope.md): Mintarr gates operator-routed completed folders (it does not manage download clients, and the universal "QC everything Lidarr imports" gate is a deferred future phase)
 - **CD-rip / private-tracker torrent evidence lane** — design pending; depends on Phase 1 connector model
 - **YouTube fallback connector (Tubifarry-style)** — design pending; explicitly tagged as never-an-upgrade-source
 

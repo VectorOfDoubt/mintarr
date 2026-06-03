@@ -129,6 +129,7 @@ nav:
           - "ADR-0009 Runtime hardening conventions": architecture/adr/0009-runtime-hardening-conventions.md
           - "ADR-0010 Python implementation language": architecture/adr/0010-python-implementation-language.md
           - "ADR-0011 Frontend framework": architecture/adr/0011-frontend-framework.md
+          - "ADR-0012 QC import-gate scope": architecture/adr/0012-qc-import-gate-scope.md
 
   - Specs:
       - "Adapter Protocol v1": specs/ADAPTER_PROTOCOL_v1.md

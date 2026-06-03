@@ -32,9 +32,11 @@ Rules for every vendored asset:
 | Asset | Version | File | SRI (`sha384`) |
 |---|---|---|---|
 | Alpine.js | 3.14.1 | `app/static/vendor/alpine-3.14.1.min.js` | `l8f0VcPi/M1iHPv8egOnY/15TDwqgbOR1anMIJWvU6nLRgZVLTLSaNqi/TOoT5Fh` |
+| HTMX | 2.0.3 | `app/static/vendor/htmx-2.0.3.min.js` | `0895/pl2MU10Hqc6jd4RvrthNlDiE9U1tWmX7WRESftEDRosgxNsQG/Ze9YMRzHq` |
 
-HTMX: **not vendored yet.** Add when the first HTMX-driven partial (e.g. live
-worker status or the queue table) is implemented.
+HTMX was added in Phase 2 slice 3 for the live Queue partial (server-rendered
+fragment polled via `hx-trigger`). HTMX requests authenticate via an
+`htmx:configRequest` hook in `dashboard.js` that adds the stored `X-Api-Key`.
 
 ## 3. Adding or upgrading an asset
 

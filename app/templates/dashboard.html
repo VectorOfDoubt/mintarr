@@ -16,6 +16,7 @@
   })();
 </script>
 <title>TidalHires V2 Dashboard</title>
+<script defer src="{{ url_for('static', filename='vendor/htmx-2.0.3.min.js') }}" integrity="sha384-0895/pl2MU10Hqc6jd4RvrthNlDiE9U1tWmX7WRESftEDRosgxNsQG/Ze9YMRzHq"></script>
 <script defer src="{{ url_for('static', filename='vendor/alpine-3.14.1.min.js') }}" integrity="sha384-l8f0VcPi/M1iHPv8egOnY/15TDwqgbOR1anMIJWvU6nLRgZVLTLSaNqi/TOoT5Fh"></script>
 <link rel="stylesheet" href="{{ url_for('static', filename='dashboard.css') }}">
 </head>
@@ -96,7 +97,15 @@
     </section>
 
     <section class="dashboard-section" x-show="section==='queue'" x-cloak>
-      <div class="panel"><h2>Queue</h2><p class="muted">Live worker queue lands in a later Phase 2 slice.</p></div>
+      <div class="panel">
+        <h2>Queue</h2>
+        <div id="queue-live"
+             hx-get="/dashboard/v1/queue/partial"
+             hx-trigger="load, every 5s"
+             hx-swap="innerHTML">
+          <p class="muted">Loading worker queue…</p>
+        </div>
+      </div>
     </section>
 
     <section class="dashboard-section" x-show="section==='history'" x-cloak>

@@ -164,6 +164,42 @@ def test_dashboard_sidebar_shell_present(monkeypatch, tmp_path):
     assert ".nav-toggle" in css
 
 
+def test_queue_partial_requires_apikey():
+    client = server.app.test_client()
+    assert client.get("/dashboard/v1/queue/partial").status_code == 401
+
+
+def test_queue_partial_renders_html_fragment(monkeypatch, tmp_path):
+    """The HTMX queue partial returns an HTML fragment, not JSON (#50/slice 3)."""
+    _patch_paths(monkeypatch, tmp_path)
+    client = server.app.test_client()
+    resp = client.get(f"/dashboard/v1/queue/partial?apikey={VALID_KEY}")
+    assert resp.status_code == 200
+    assert "text/html" in resp.content_type
+    body = resp.get_data(as_text=True)
+    assert "queue depth" in body
+    # A fresh state_db has no active jobs.
+    assert "No active worker jobs." in body
+    assert "<html" not in body  # fragment, not a full document
+
+
+def test_dashboard_vendors_htmx_and_wires_queue(monkeypatch, tmp_path):
+    """HTMX is vendored (no Node) and drives the live Queue section."""
+    _patch_paths(monkeypatch, tmp_path)
+    client = server.app.test_client()
+    asset = client.get("/static/vendor/htmx-2.0.3.min.js")
+    assert asset.status_code == 200
+    assert "javascript" in asset.content_type
+    shell = client.get("/dashboard").get_data(as_text=True)
+    assert "vendor/htmx-2.0.3.min.js" in shell
+    assert 'integrity="sha384-' in shell
+    assert 'hx-get="/dashboard/v1/queue/partial"' in shell
+    assert "hx-trigger=" in shell
+    # HTMX requests carry the stored API key.
+    js = client.get("/static/dashboard.js").get_data(as_text=True)
+    assert "htmx:configRequest" in js
+
+
 def test_dashboard_summary_returns_expected_shape(monkeypatch, tmp_path):
     _patch_paths(monkeypatch, tmp_path)
     output_dir = tmp_path / "output" / "sum12345"

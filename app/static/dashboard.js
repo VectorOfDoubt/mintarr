@@ -9,6 +9,11 @@ let lastConnectors = [];
 
 const $ = (id) => document.getElementById(id);
 
+// HTMX-driven surfaces (Phase 2 slice 3+) authenticate with the stored key.
+document.body.addEventListener('htmx:configRequest', (evt) => {
+  if (apikey) evt.detail.headers['X-Api-Key'] = apikey;
+});
+
 if (!apikey) showAuthPrompt();
 else init();
 

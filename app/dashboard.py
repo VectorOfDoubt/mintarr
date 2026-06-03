@@ -1170,6 +1170,45 @@ def jobs_list():
         return jsonify({"total": 0, "returned": 0, "offset": 0, "jobs": []})
 
 
+@dashboard_bp.route("/v1/queue/partial", methods=["GET"])
+def queue_partial():
+    """Server-rendered worker-queue partial for HTMX polling (Phase 2 slice 3).
+
+    Returns an HTML fragment (not JSON) showing active jobs. The Queue section
+    in the dashboard polls this with `hx-trigger`. Flask remains the source of
+    truth per ADR-0011.
+    """
+    from server import require_apikey_check
+
+    auth_resp = require_apikey_check()
+    if auth_resp:
+        return auth_resp
+    active_states = ["queued", "running", "cancelling"]
+    try:
+        import state_db
+
+        _total, rows = state_db.list_jobs(state=active_states, limit=100, offset=0)
+        depth, _ = state_db.list_jobs(state=["queued"], limit=1, offset=0)
+        jobs = [_queue_row(_job_to_payload(r)) for r in rows]
+    except Exception:
+        jobs, depth = [], 0
+    return render_template("partials/queue.html", jobs=jobs, queue_depth=depth)
+
+
+def _queue_row(job: dict) -> dict:
+    """Flatten a job payload into the fields the queue partial renders."""
+    progress = job.get("progress") or {}
+    try:
+        pct = int(progress.get("percent") or 0)
+    except (TypeError, ValueError):
+        pct = 0
+    job["pct"] = max(0, min(100, pct))
+    job["stage"] = progress.get("stage") or job.get("state") or ""
+    job["message"] = progress.get("message") or ""
+    job["jid_short"] = (job.get("jid") or "")[:12]
+    return job
+
+
 @dashboard_bp.route("/v1/jobs/<int:job_id>", methods=["GET"])
 def job_detail(job_id: int):
     from server import require_apikey_check

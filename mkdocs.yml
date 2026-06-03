@@ -161,7 +161,15 @@ nav:
 
   - Design:
       - "Connector / plugin architecture": design/CONNECTOR_PLUGIN_ARCHITECTURE.md
+      - "F2 Worker queue": design/F2_WORKER_QUEUE_DESIGN.md
+      - "F3 Source adapters": design/F3_SOURCE_ADAPTERS_DESIGN.md
+      - "F3.2/F3.3 Newznab routing": design/F3.2_F3.3_NEWZNAB_ROUTING_DESIGN.md
+      - "F3.4 LocalFolder": design/F3.4_LOCAL_FOLDER_DESIGN.md
+      - "F3.5 Soulseek completed ingest": design/F3.5_SOULSEEK_COMPLETED_INGEST.md
+      - "F3.5B Soulseek slskd trigger": design/F3.5B_SOULSEEK_SLSKD_TRIGGER.md
       - "F4.1 Static connector registry": design/F4.1_STATIC_CONNECTOR_REGISTRY.md
+      - "F4.2 Integrations dashboard": design/F4.2_INTEGRATIONS_DASHBOARD.md
+      - "F4.3 Connector config dry-run": design/F4.3_CONNECTOR_CONFIG_DRY_RUN.md
 
   - Documentation Index: MINTARR_DOCUMENTATION_INDEX.md
 

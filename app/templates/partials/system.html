@@ -1,0 +1,33 @@
+{# System overview partial, polled by HTMX (Phase 2 slice 5). Server-rendered
+   from the cached summary. Rendered by GET /dashboard/v1/system/partial. #}
+<div class="system-grid">
+  <div class="panel">
+    <h2>Status</h2>
+    <ul class="health-list">
+      {% for name, status in stack.items() %}
+      <li>
+        <span class="health-name">{{ name.replace('_', ' ') }}</span>
+        <span class="health-badge health-{{ status }}">{{ status }}</span>
+      </li>
+      {% else %}
+      <li class="muted">Stack health unavailable.</li>
+      {% endfor %}
+    </ul>
+  </div>
+
+  <div class="panel">
+    <h2>Workers</h2>
+    <div class="sys-kv"><span>Active jobs</span><span>{{ workers.active_jobs }}</span></div>
+    <div class="sys-kv"><span>SAB-emulated queue</span><span>{{ workers.sab_emulated }}</span></div>
+    <div class="sys-kv">
+      <span>Lidarr queue</span>
+      <span>{{ workers.lidarr_queue if workers.lidarr_queue is not none else '—' }}</span>
+    </div>
+  </div>
+
+  <div class="panel"><h2>Tasks</h2><p class="muted">Scheduled tasks land in a later slice.</p></div>
+  <div class="panel"><h2>Logs</h2><p class="muted">Log viewer lands in a later slice.</p></div>
+  <div class="panel"><h2>Backup</h2><p class="muted">Backup / restore lands in a later slice.</p></div>
+  <div class="panel"><h2>Updates</h2><p class="muted">Update status lands in a later slice.</p></div>
+  <div class="panel"><h2>Events</h2><p class="muted">Event feed lands in a later slice.</p></div>
+</div>

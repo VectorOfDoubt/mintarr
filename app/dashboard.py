@@ -1247,6 +1247,36 @@ def _history_row(job: dict) -> dict:
     return job
 
 
+@dashboard_bp.route("/v1/system/partial", methods=["GET"])
+def system_partial():
+    """Server-rendered System overview partial for HTMX (Phase 2 slice 5).
+
+    Reuses the cached summary (stack health + worker/queue counts) so polling
+    does not re-hit Lidarr each tick. Flask stays the source of truth.
+    """
+    from server import require_apikey_check
+
+    auth_resp = require_apikey_check()
+    if auth_resp:
+        return auth_resp
+    try:
+        import server
+
+        data = get_or_compute(("summary",), 10.0, lambda: _build_summary(server))
+        stack = data.get("stack_health") or {}
+        queue = data.get("queue") or {}
+        counts = data.get("counts") or {}
+        workers = {
+            "active_jobs": counts.get("active_jobs", 0),
+            "sab_emulated": queue.get("sab_emulated", 0),
+            "lidarr_queue": queue.get("lidarr_queue_total"),
+        }
+    except Exception:
+        stack = {}
+        workers = {"active_jobs": 0, "sab_emulated": 0, "lidarr_queue": None}
+    return render_template("partials/system.html", stack=stack, workers=workers)
+
+
 @dashboard_bp.route("/v1/jobs/<int:job_id>", methods=["GET"])
 def job_detail(job_id: int):
     from server import require_apikey_check

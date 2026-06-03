@@ -165,7 +165,12 @@
     </section>
 
     <section class="dashboard-section" x-show="section==='system'" x-cloak>
-      <div class="panel"><h2>System</h2><p class="muted">System cards land in a later Phase 2 slice.</p></div>
+      <div id="system-live"
+           hx-get="/dashboard/v1/system/partial"
+           hx-trigger="load, every 15s"
+           hx-swap="innerHTML">
+        <p class="muted">Loading system status…</p>
+      </div>
     </section>
   </main>
 </div>

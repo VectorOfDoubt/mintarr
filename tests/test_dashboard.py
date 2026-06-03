@@ -227,6 +227,39 @@ def test_dashboard_wires_history_section(monkeypatch, tmp_path):
     assert 'id="history-live"' in shell
 
 
+def test_system_partial_requires_apikey():
+    client = server.app.test_client()
+    assert client.get("/dashboard/v1/system/partial").status_code == 401
+
+
+def test_system_partial_renders_status_and_workers(monkeypatch, tmp_path):
+    """The System partial surfaces stack health + worker cards (slice 5)."""
+    _patch_paths(monkeypatch, tmp_path)
+    from dashboard_cache import clear
+
+    clear()
+    client = server.app.test_client()
+    resp = client.get(f"/dashboard/v1/system/partial?apikey={VALID_KEY}")
+    assert resp.status_code == 200
+    assert "text/html" in resp.content_type
+    body = resp.get_data(as_text=True)
+    assert "Status" in body
+    assert "Workers" in body
+    assert "Active jobs" in body
+    assert "health-badge" in body  # stack components rendered with a status badge
+    assert "tidalhires" in body
+    assert "<html" not in body  # fragment, not a full document
+
+
+def test_dashboard_wires_system_section(monkeypatch, tmp_path):
+    """System section is HTMX-driven (slice 5)."""
+    _patch_paths(monkeypatch, tmp_path)
+    client = server.app.test_client()
+    shell = client.get("/dashboard").get_data(as_text=True)
+    assert 'hx-get="/dashboard/v1/system/partial"' in shell
+    assert 'id="system-live"' in shell
+
+
 def test_dashboard_summary_returns_expected_shape(monkeypatch, tmp_path):
     _patch_paths(monkeypatch, tmp_path)
     output_dir = tmp_path / "output" / "sum12345"

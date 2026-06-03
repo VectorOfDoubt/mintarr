@@ -190,6 +190,31 @@ main { flex: 1 1 auto; min-width: 0; padding: 16px 24px; }
 }
 .filter-bar button:hover { border-color: var(--accent-primary); }
 [x-cloak] { display: none !important; }
+.system-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 12px;
+}
+.system-grid .panel { margin: 0; }
+.health-list { list-style: none; margin: 0; padding: 0; }
+.health-list li {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 4px 0;
+}
+.health-name { text-transform: capitalize; }
+.health-badge {
+  font-size: 12px; padding: 1px 8px; border-radius: var(--radius-sm);
+  text-transform: capitalize;
+}
+.health-ok { color: var(--status-success); background: var(--status-success-bg); }
+.health-degraded, .health-blocked { color: var(--status-warning); background: var(--status-warning-bg); }
+.health-unreachable, .health-missing { color: var(--status-danger); background: var(--status-danger-bg); }
+.health-unknown { color: var(--status-neutral); background: var(--status-neutral-bg); }
+.sys-kv {
+  display: flex; justify-content: space-between;
+  padding: 4px 0; color: var(--text-secondary);
+}
+.sys-kv span:last-child { color: var(--text-primary); font-family: var(--font-mono); }
 .panel {
   background: var(--bg-surface);
   border: 1px solid var(--border-subtle);

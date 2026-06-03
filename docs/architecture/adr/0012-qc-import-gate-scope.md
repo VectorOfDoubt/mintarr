@@ -8,7 +8,7 @@
 
 ## Context
 
-Mintarr's purpose is to be the pre-import quality-control gate Lidarr lacks ([ADR-0008](0008-strategic-positioning.md)). Today it gates the sources it fully controls: TIDAL and Soulseek (where Mintarr is the indexer + SAB-compatible download client to Lidarr) and LocalFolder. The source-connector model already carries a hard invariant — **"no source bypasses shared QC"** ([CONNECTOR_PLUGIN_ARCHITECTURE §6.1](../../design/CONNECTOR_PLUGIN_ARCHITECTURE.md)) — and the roadmap already lists `sab_usenet` and `qbittorrent_torrent` as future *completed-folder / category ingest* source connectors ([ROADMAP Phase 4](../../strategy/ROADMAP.md)).
+Mintarr's purpose is to be the pre-import quality-control gate Lidarr lacks ([ADR-0008](0008-strategic-positioning.md)). Today it gates the sources it fully controls: TIDAL and Soulseek (where Mintarr is the indexer + SAB-compatible download client to Lidarr) and LocalFolder. The source-connector model already carries the invariant **"no source bypasses shared QC"** ([CONNECTOR_PLUGIN_ARCHITECTURE §6.1](../../design/CONNECTOR_PLUGIN_ARCHITECTURE.md)) — hard for the Mintarr-routed source jobs that enter the shared pipeline, but not an external-system guarantee: nothing in Mintarr can prevent Lidarr from importing content Lidarr grabbed on its own. The roadmap already lists `sab_usenet` and `qbittorrent_torrent` as future *completed-folder / category ingest* source connectors ([ROADMAP Phase 4](../../strategy/ROADMAP.md)).
 
 A reasonable and tempting reading of "QC filter in front of Lidarr" is: **everything Lidarr imports should be quality-controlled**, including releases Lidarr itself grabs from other indexers (Prowlarr → qBittorrent / SABnzbd) and imports on its own. That "universal gate" is strategically attractive but technically far more entangled, because Lidarr owns the grab→import lifecycle for that content: making Mintarr the gate there forces Mintarr to either become the download client Lidarr talks to, or to intercept Lidarr's own grab/import cycle — pulling in queue reconciliation (the same dangling-queue-row class of problem PR #32 fixed for Mintarr's own lane), torrent seeding semantics, category mapping, and a "who owns import status?" split-brain.
 
@@ -27,7 +27,7 @@ For these, the source-connector invariant holds at the positioning level: **no M
 
 Three things are explicitly locked alongside:
 
-- **Lidarr download-client discovery via API is onboarding, not a guarantee.** Mintarr may read Lidarr's download-client and remote-path-mapping APIs to *help the operator choose* which completed folders/categories to route to Mintarr. This is discovery/mapping assistance. It does **not** mean Mintarr manages those clients, and it does **not** imply that everything Lidarr imports is QC'd.
+- **Lidarr download-client discovery via API is onboarding, not a guarantee.** Mintarr may read Lidarr's download-client and remote-path-mapping APIs (`GET /api/v1/downloadclient`, `GET /api/v1/remotepathmapping`) to *infer or prefill candidate mappings* the operator then confirms. This is discovery/mapping assistance — and only inferential: category and on-disk path are typically inside the client's generic `fields[]`, and remote-path-mappings translate client paths to Lidarr-local paths without by themselves guaranteeing a complete Mintarr-watchable folder. It does **not** mean Mintarr manages those clients, and it does **not** imply that everything Lidarr imports is QC'd.
 
 - **The universal gate is a future phase, not now.** Guaranteeing QC for *everything Lidarr imports* — including content Lidarr grabs from other indexers and imports itself — is deferred to a successor ADR, to be revisited only after the scoped model is stable in operation. Mintarr does not silently intercept Lidarr's own grab/import lifecycle in this scope.
 
@@ -41,11 +41,11 @@ Three things are explicitly locked alongside:
 
 ### It honours who owns the import lifecycle
 
-The clean, already-proven case is the one where Mintarr owns the whole path (its own lanes, today). Extending that to operator-routed completed folders keeps the same ownership shape: Mintarr is the importer, so the Lidarr ManualImport + queue handling it already does ([PR #32 lineage](../../development/AGENT_HANDOVER.md)) applies unchanged. The universal gate breaks this shape — for Lidarr-grabbed content, Lidarr is the grabber and tracker, so inserting Mintarr means reconciling Lidarr's queue for *every* external grab and resolving torrent-vs-usenet asymmetry (Mintarr is a SAB client to Lidarr, not a torrent client). Deferring that is a risk decision, not a loss of ambition.
+The clean, already-proven case is the one where Mintarr owns the whole path (its own lanes, today). Extending that to operator-routed completed folders keeps the same ownership shape, **after the completed-folder connector copies the source into Mintarr's managed output mount** — once files are under Mintarr's output path, the existing Lidarr ManualImport flow ([PR #32 lineage](../../development/AGENT_HANDOVER.md)) is reused. Two code realities follow (see Implementation notes): Phase 4 must preserve or parameterize the current `/output/<jid>` → Lidarr-visible path mapping, and queue cleanup stays best-effort for Mintarr-owned `downloadId`s only. The universal gate breaks this shape — for Lidarr-grabbed content, Lidarr is the grabber and tracker, so inserting Mintarr means reconciling Lidarr's queue for *every* external grab and resolving torrent-vs-usenet asymmetry (Mintarr is a SAB client to Lidarr, not a torrent client). Deferring that is a risk decision, not a loss of ambition.
 
 ### Discovery is high-value and cheap; conflating it with a guarantee is the trap
 
-Reading Lidarr's client config to pre-populate "which folders should Mintarr watch?" is a genuine onboarding win and stays read-only on Lidarr's side. The failure mode to avoid is letting that discovery imply coverage it does not provide ("Mintarr knows about my qBit, therefore my qBit imports are safe"). Locking discovery as *mapping assistance only* prevents that false sense of safety.
+Reading Lidarr's client config to *infer* "which folders should Mintarr watch?" is a genuine onboarding win and stays read-only on Lidarr's side (Mintarr has no `/downloadclient` or `/remotepathmapping` client code today — that is new, additive work). The failure mode to avoid is letting that discovery imply coverage it does not provide ("Mintarr knows about my qBit, therefore my qBit imports are safe"). Locking discovery as *mapping assistance only* prevents that false sense of safety.
 
 ### It keeps the roadmap coherent
 
@@ -90,6 +90,17 @@ Re-open (likely as a successor ADR for the universal gate) when:
 3. **A clean lifecycle handshake is demonstrated** for intercepting Lidarr-grabbed content (queue reconciliation + seeding + torrent/usenet handling) that does not require Mintarr to manage download clients in violation of [ADR-0008](0008-strategic-positioning.md).
 
 Until then, ADR-0012 stands: scoped gate now, universal gate as a future, separately-decided phase.
+
+## Implementation notes (for Phase 4)
+
+These are feasibility constraints surfaced by a repo-grounded review ([issue #53](https://github.com/eivindsjursen-lab/mintarr/issues/53)); they bind the `sab_usenet` / `qbittorrent_torrent` design, not this ADR's decision:
+
+- **Path mapping.** `server.py` currently hardcodes Lidarr's import folder (`/downloads/TidalHiRes/complete/<jid>`) and string-rewrites ManualImport paths to `/output/`. Phase 4 must preserve or parameterize the `/output/<jid>` → Lidarr-visible mapping rather than assume it.
+- **Connectors copy, then enqueue normal jobs.** Completed-folder connectors must enqueue ordinary `source_grab` pipeline jobs and copy the source into Mintarr-managed work/output — they must **not** call Lidarr ManualImport directly from adapter code. This is what keeps the QC invariant enforced for these lanes.
+- **Use the Soulseek validation pattern, not LocalFolder's.** qBit/SAB completed folders need the Soulseek-style settle window + partial-marker rejection, not LocalFolder's lighter manual-drop assumption.
+- **Queue cleanup is Mintarr-owned only.** `_cleanup_lidarr_queue()` removes queue rows by `downloadId == jid`; an operator-routed external grab may have no such row, and Mintarr must not try to own the external client's queue row (that would be universal-gate territory).
+- **New Lidarr client helpers.** Discovery needs `/api/v1/downloadclient` + `/api/v1/remotepathmapping` client methods plus client-specific `fields[]` parsing; none exist today.
+- **Manifest semantics.** Per ConnectorManifest v1, `dry_run` is verifier-only; these source connectors remain `disabled` / `import`, matching current config semantics.
 
 ## Out of scope for this ADR
 

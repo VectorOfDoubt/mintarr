@@ -41,7 +41,9 @@ def test_compute_components_detective_scores(verdict, expected):
         (False, False, False, {"ffprobe": 0, "flac_t": 0, "complete": 0}),
     ],
 )
-def test_compute_components_objective_components(ffprobe_ok, flac_t_ok, complete_album, expected):
+def test_compute_components_objective_components(
+    ffprobe_ok, flac_t_ok, complete_album, expected
+):
     components = compute_components(ffprobe_ok, flac_t_ok, "AUTHENTIC", complete_album)
 
     for key, value in expected.items():
@@ -57,9 +59,18 @@ def test_compute_components_max_score_is_100():
 @pytest.mark.parametrize(
     ("kwargs", "expected_override"),
     [
-        ({"codec_mismatch": True, "flac_t_failed": False, "validator_error": False}, "codec_mismatch"),
-        ({"codec_mismatch": False, "flac_t_failed": True, "validator_error": False}, "flac_t_fail"),
-        ({"codec_mismatch": False, "flac_t_failed": False, "validator_error": True}, "validator_error"),
+        (
+            {"codec_mismatch": True, "flac_t_failed": False, "validator_error": False},
+            "codec_mismatch",
+        ),
+        (
+            {"codec_mismatch": False, "flac_t_failed": True, "validator_error": False},
+            "flac_t_fail",
+        ),
+        (
+            {"codec_mismatch": False, "flac_t_failed": False, "validator_error": True},
+            "validator_error",
+        ),
     ],
 )
 def test_apply_overrides_hard_overrides_force_zero(kwargs, expected_override):
@@ -144,7 +155,9 @@ def test_apply_overrides_returns_plain_sum_without_overrides():
     assert overrides == []
 
 
-@pytest.mark.parametrize("override", ["codec_mismatch", "flac_t_fail", "validator_error"])
+@pytest.mark.parametrize(
+    "override", ["codec_mismatch", "flac_t_fail", "validator_error"]
+)
 def test_decide_hard_overrides_block(override):
     assert decide(100, 0, 3000, "AUTHENTIC", [override]) == "BLOCK"
 
@@ -269,7 +282,9 @@ def test_verification_result_decisions_log_contains_legacy_and_v2_fields():
 
 
 def test_legacy_decision_rescued_takes_precedence():
-    record = _result(import_outcome="RESCUED", verification_decision="BLOCK").to_decisions_log()
+    record = _result(
+        import_outcome="RESCUED", verification_decision="BLOCK"
+    ).to_decisions_log()
 
     assert record["decision"] == "RESCUED_BY_RESCAN"
 
@@ -284,7 +299,9 @@ def test_legacy_decision_rescued_takes_precedence():
     ],
 )
 def test_legacy_decision_label_mappings(verification_decision, verdict, expected):
-    record = _result(verification_decision=verification_decision, verdict=verdict).to_decisions_log()
+    record = _result(
+        verification_decision=verification_decision, verdict=verdict
+    ).to_decisions_log()
 
     assert record["decision"] == expected
 
@@ -331,8 +348,14 @@ def test_completeness_rule_backwards_compatible_without_track_counts():
 def test_completeness_overrides_suspicious_no_kbps_upgrade():
     """existing=5/10 + new=10/10 + SUSPICIOUS no kbps upgrade → ACCEPT_PROVISIONAL."""
     decision = decide(
-        60, 320, 320, "SUSPICIOUS", [],
-        existing_track_count=5, new_track_count=10, expected_track_count=10,
+        60,
+        320,
+        320,
+        "SUSPICIOUS",
+        [],
+        existing_track_count=5,
+        new_track_count=10,
+        expected_track_count=10,
     )
     assert decision == "ACCEPT_PROVISIONAL"
 
@@ -345,8 +368,14 @@ def test_completeness_overrides_lossless_protection_when_incomplete():
     matters more than per-track quality (per maintainer rule 2026-05-23).
     """
     decision = decide(
-        60, 1411, 3000, "SUSPICIOUS", [],
-        existing_track_count=5, new_track_count=10, expected_track_count=10,
+        60,
+        1411,
+        3000,
+        "SUSPICIOUS",
+        [],
+        existing_track_count=5,
+        new_track_count=10,
+        expected_track_count=10,
     )
     assert decision == "ACCEPT_PROVISIONAL"
 
@@ -354,8 +383,14 @@ def test_completeness_overrides_lossless_protection_when_incomplete():
 def test_completeness_overrides_low_score_when_incomplete():
     """Low score (<20) gets ACCEPT_PROVISIONAL when completeness improves."""
     decision = decide(
-        15, 320, 320, "WARNING", [],
-        existing_track_count=3, new_track_count=10, expected_track_count=10,
+        15,
+        320,
+        320,
+        "WARNING",
+        [],
+        existing_track_count=3,
+        new_track_count=10,
+        expected_track_count=10,
     )
     assert decision == "ACCEPT_PROVISIONAL"
 
@@ -363,8 +398,14 @@ def test_completeness_overrides_low_score_when_incomplete():
 def test_completeness_fake_certain_with_existing_goes_to_review():
     """FAKE_CERTAIN + existing>0 normally BLOCK, but completeness routes to REVIEW."""
     decision = decide(
-        0, 1411, 0, "FAKE_CERTAIN", [],
-        existing_track_count=5, new_track_count=10, expected_track_count=10,
+        0,
+        1411,
+        0,
+        "FAKE_CERTAIN",
+        [],
+        existing_track_count=5,
+        new_track_count=10,
+        expected_track_count=10,
     )
     assert decision == "REVIEW_REQUIRED"
 
@@ -372,8 +413,14 @@ def test_completeness_fake_certain_with_existing_goes_to_review():
 def test_completeness_does_not_override_fake_hi_res():
     """fake_hi_res always REVIEW_REQUIRED — completeness does not change that."""
     decision = decide(
-        100, 320, 3000, "AUTHENTIC", ["fake_hi_res"],
-        existing_track_count=5, new_track_count=10, expected_track_count=10,
+        100,
+        320,
+        3000,
+        "AUTHENTIC",
+        ["fake_hi_res"],
+        existing_track_count=5,
+        new_track_count=10,
+        expected_track_count=10,
     )
     assert decision == "REVIEW_REQUIRED"
 
@@ -382,8 +429,14 @@ def test_completeness_does_not_override_hard_overrides():
     """codec_mismatch / flac_t_fail / validator_error alltid BLOCK uavhengig."""
     for hard in ("codec_mismatch", "flac_t_fail", "validator_error"):
         decision = decide(
-            0, 320, 320, "AUTHENTIC", [hard],
-            existing_track_count=5, new_track_count=10, expected_track_count=10,
+            0,
+            320,
+            320,
+            "AUTHENTIC",
+            [hard],
+            existing_track_count=5,
+            new_track_count=10,
+            expected_track_count=10,
         )
         assert decision == "BLOCK", f"{hard} should still BLOCK"
 
@@ -391,8 +444,14 @@ def test_completeness_does_not_override_hard_overrides():
 def test_completeness_no_advantage_when_existing_complete():
     """existing=10/10 + new=10/10 + SUSPICIOUS no kbps upgrade → BLOCK (no completeness gain)."""
     decision = decide(
-        60, 320, 320, "SUSPICIOUS", [],
-        existing_track_count=10, new_track_count=10, expected_track_count=10,
+        60,
+        320,
+        320,
+        "SUSPICIOUS",
+        [],
+        existing_track_count=10,
+        new_track_count=10,
+        expected_track_count=10,
     )
     assert decision == "BLOCK"
 
@@ -400,8 +459,14 @@ def test_completeness_no_advantage_when_existing_complete():
 def test_completeness_partial_improvement_does_not_trigger():
     """existing=5/10 + new=7/10 (still incomplete) → no completeness rule, existing logic."""
     decision = decide(
-        60, 320, 320, "SUSPICIOUS", [],
-        existing_track_count=5, new_track_count=7, expected_track_count=10,
+        60,
+        320,
+        320,
+        "SUSPICIOUS",
+        [],
+        existing_track_count=5,
+        new_track_count=7,
+        expected_track_count=10,
     )
     assert decision == "BLOCK"  # neither kbps upgrade nor full completeness
 
@@ -410,8 +475,14 @@ def test_completeness_when_existing_already_zero_kbps():
     """existing_kbps=0 (nothing pre-existing) — completeness rule redundant, score-based."""
     # AUTHENTIC + high score + nothing existing → ACCEPT regardless of track counts
     decision = decide(
-        85, 0, 3000, "AUTHENTIC", [],
-        existing_track_count=0, new_track_count=10, expected_track_count=10,
+        85,
+        0,
+        3000,
+        "AUTHENTIC",
+        [],
+        existing_track_count=0,
+        new_track_count=10,
+        expected_track_count=10,
     )
     assert decision == "ACCEPT"
 
@@ -419,7 +490,13 @@ def test_completeness_when_existing_already_zero_kbps():
 def test_completeness_deluxe_edition_extra_tracks():
     """new=12 tracks vs expected=10 (deluxe edition) — counts as complete upgrade if existing<10."""
     decision = decide(
-        60, 1411, 3000, "SUSPICIOUS", [],
-        existing_track_count=5, new_track_count=12, expected_track_count=10,
+        60,
+        1411,
+        3000,
+        "SUSPICIOUS",
+        [],
+        existing_track_count=5,
+        new_track_count=12,
+        expected_track_count=10,
     )
     assert decision == "ACCEPT_PROVISIONAL"

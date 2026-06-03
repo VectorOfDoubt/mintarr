@@ -38,7 +38,13 @@ def test_rescue_place_and_rescan_can_be_disabled(monkeypatch, mocker):
 
     ok = server._rescue_place_and_rescan(
         "abc12345",
-        [{"albumId": 20, "artistId": 10, "path": "/downloads/TidalHiRes/complete/abc12345/01.flac"}],
+        [
+            {
+                "albumId": 20,
+                "artistId": 10,
+                "path": "/downloads/TidalHiRes/complete/abc12345/01.flac",
+            }
+        ],
         "http://lidarr/api/v1",
         "lidarr-key",
     )
@@ -66,7 +72,14 @@ def test_download_job_stays_processing_until_lidarr_import(tmp_path, mocker):
             (album_dir / "01.flac").write_bytes(b"flac")
         return SimpleNamespace(returncode=0, stderr="", stdout="")
 
-    def fake_trigger(import_jid, output_dir, worker_job_id=None, *, source_type="tidal", target_album_id=None):
+    def fake_trigger(
+        import_jid,
+        output_dir,
+        worker_job_id=None,
+        *,
+        source_type="tidal",
+        target_album_id=None,
+    ):
         observed.update(server._jobs[import_jid])
         observed["trigger_output_dir"] = str(output_dir)
         observed["worker_job_id"] = worker_job_id
@@ -146,7 +159,9 @@ def test_manualimport_success_does_not_delete_lidarr_queue(tmp_path, mocker):
 
     get_mock = mocker.patch("requests.get", side_effect=fake_get)
     post_mock = mocker.patch("requests.post", side_effect=fake_post)
-    delete_mock = mocker.patch("requests.delete", return_value=_response(status_code=204))
+    delete_mock = mocker.patch(
+        "requests.delete", return_value=_response(status_code=204)
+    )
 
     server._trigger_lidarr_import(jid, output_dir)
 
@@ -175,7 +190,9 @@ def test_infer_lidarr_target_album_id_from_queue(mocker):
 
     def fake_get(url, **kwargs):
         if url == f"{api}/queue?pageSize=200":
-            return _response(payload={"records": [{"downloadId": jid, "albumId": 9829}]})
+            return _response(
+                payload={"records": [{"downloadId": jid, "albumId": 9829}]}
+            )
         raise AssertionError(f"unexpected GET {url}")
 
     mocker.patch("requests.get", side_effect=fake_get)
@@ -192,10 +209,18 @@ def test_infer_lidarr_target_album_id_from_grab_history(mocker):
         if url == f"{api}/queue?pageSize=200":
             return _response(payload={"records": []})
         if url == f"{api}/history?pageSize=50&sortKey=date&sortDirection=descending":
-            return _response(payload={"records": [
-                {"downloadId": jid, "eventType": "downloadIgnored", "albumId": 20},
-                {"downloadId": jid, "eventType": "grabbed", "albumId": 9829},
-            ]})
+            return _response(
+                payload={
+                    "records": [
+                        {
+                            "downloadId": jid,
+                            "eventType": "downloadIgnored",
+                            "albumId": 20,
+                        },
+                        {"downloadId": jid, "eventType": "grabbed", "albumId": 9829},
+                    ]
+                }
+            )
         raise AssertionError(f"unexpected GET {url}")
 
     mocker.patch("requests.get", side_effect=fake_get)
@@ -203,7 +228,9 @@ def test_infer_lidarr_target_album_id_from_grab_history(mocker):
     assert server._infer_lidarr_target_album_id(jid, api, key) == 9829
 
 
-def test_soulseek_manualimport_album_title_mismatch_blocks_wrong_lidarr_album(tmp_path, mocker):
+def test_soulseek_manualimport_album_title_mismatch_blocks_wrong_lidarr_album(
+    tmp_path, mocker
+):
     jid = "a9ead0f97861"
     output_dir = tmp_path / jid
     output_dir.mkdir()
@@ -249,13 +276,19 @@ def test_soulseek_manualimport_album_title_mismatch_blocks_wrong_lidarr_album(tm
         if url == f"{api}/trackfile?albumId=20":
             return _response(payload=[])
         if url == f"{api}/album/20":
-            return _response(payload={"statistics": {"trackCount": 12, "trackFileCount": 0}})
+            return _response(
+                payload={"statistics": {"trackCount": 12, "trackFileCount": 0}}
+            )
         if url == f"{api}/queue?pageSize=200":
             return _response(payload={"records": [{"id": 77, "downloadId": jid}]})
         if url == f"{api}/history?pageSize=50&sortKey=date&sortDirection=descending":
-            return _response(payload={"records": [
-                {"eventType": "grabbed", "downloadId": jid, "albumId": 9829},
-            ]})
+            return _response(
+                payload={
+                    "records": [
+                        {"eventType": "grabbed", "downloadId": jid, "albumId": 9829},
+                    ]
+                }
+            )
         raise AssertionError(f"unexpected GET {url}")
 
     def fake_post(url, **kwargs):
@@ -267,7 +300,9 @@ def test_soulseek_manualimport_album_title_mismatch_blocks_wrong_lidarr_album(tm
 
     mocker.patch("requests.get", side_effect=fake_get)
     post_mock = mocker.patch("requests.post", side_effect=fake_post)
-    delete_mock = mocker.patch("requests.delete", return_value=_response(status_code=204))
+    delete_mock = mocker.patch(
+        "requests.delete", return_value=_response(status_code=204)
+    )
 
     server._trigger_lidarr_import(jid, output_dir, source_type="soulseek")
 
@@ -299,7 +334,11 @@ def test_soulseek_manualimport_album_title_match_allows_import(tmp_path, mocker)
         {
             "path": f"/downloads/TidalHiRes/complete/{jid}/01.flac",
             "artist": {"id": 10},
-            "album": {"id": 9829, "title": "PCD Forever (Deluxe Edition)", "currentRelease": {"id": 30}},
+            "album": {
+                "id": 9829,
+                "title": "PCD Forever (Deluxe Edition)",
+                "currentRelease": {"id": 30},
+            },
             "albumReleaseId": 30,
             "tracks": [{"id": 101}],
             "quality": {"quality": {"name": "FLAC 24bit"}},
@@ -308,7 +347,11 @@ def test_soulseek_manualimport_album_title_match_allows_import(tmp_path, mocker)
         {
             "path": f"/downloads/TidalHiRes/complete/{jid}/02.flac",
             "artist": {"id": 10},
-            "album": {"id": 9829, "title": "PCD Forever (Deluxe Edition)", "currentRelease": {"id": 30}},
+            "album": {
+                "id": 9829,
+                "title": "PCD Forever (Deluxe Edition)",
+                "currentRelease": {"id": 30},
+            },
             "albumReleaseId": 30,
             "tracks": [{"id": 102}],
             "quality": {"quality": {"name": "FLAC 24bit"}},
@@ -333,7 +376,9 @@ def test_soulseek_manualimport_album_title_match_allows_import(tmp_path, mocker)
                 return _response(payload=[])
             return _response(payload=[{"id": 1}, {"id": 2}])
         if url == f"{api}/album/9829":
-            return _response(payload={"statistics": {"trackCount": 25, "trackFileCount": 0}})
+            return _response(
+                payload={"statistics": {"trackCount": 25, "trackFileCount": 0}}
+            )
         if url == f"{api}/queue?pageSize=200":
             return _response(payload={"records": [{"id": 78, "downloadId": jid}]})
         raise AssertionError(f"unexpected GET {url}")
@@ -347,7 +392,9 @@ def test_soulseek_manualimport_album_title_match_allows_import(tmp_path, mocker)
 
     mocker.patch("requests.get", side_effect=fake_get)
     post_mock = mocker.patch("requests.post", side_effect=fake_post)
-    delete_mock = mocker.patch("requests.delete", return_value=_response(status_code=204))
+    delete_mock = mocker.patch(
+        "requests.delete", return_value=_response(status_code=204)
+    )
 
     server._trigger_lidarr_import(jid, output_dir, source_type="soulseek")
 
@@ -400,10 +447,14 @@ def test_manualimport_replace_success_uses_history_without_rescue(tmp_path, mock
         if url == f"{api}/trackfile?albumId=20":
             return _response(payload=[{"id": 1}, {"id": 2}])
         if url == f"{api}/history?pageSize=100&sortKey=date&sortDirection=descending":
-            return _response(payload={"records": [
-                {"downloadId": jid, "eventType": "trackFileImported"},
-                {"downloadId": jid, "eventType": "trackFileImported"},
-            ]})
+            return _response(
+                payload={
+                    "records": [
+                        {"downloadId": jid, "eventType": "trackFileImported"},
+                        {"downloadId": jid, "eventType": "trackFileImported"},
+                    ]
+                }
+            )
         if url == f"{api}/queue?pageSize=200":
             return _response(payload={"records": [{"id": 44, "downloadId": jid}]})
         raise AssertionError(f"unexpected GET {url}")
@@ -417,7 +468,9 @@ def test_manualimport_replace_success_uses_history_without_rescue(tmp_path, mock
 
     mocker.patch("requests.get", side_effect=fake_get)
     mocker.patch("requests.post", side_effect=fake_post)
-    delete_mock = mocker.patch("requests.delete", return_value=_response(status_code=204))
+    delete_mock = mocker.patch(
+        "requests.delete", return_value=_response(status_code=204)
+    )
 
     server._trigger_lidarr_import(jid, output_dir)
 
@@ -490,7 +543,9 @@ def test_manualimport_moved_files_counts_as_success_without_history(tmp_path, mo
 
     mocker.patch("requests.get", side_effect=fake_get)
     mocker.patch("requests.post", side_effect=fake_post)
-    delete_mock = mocker.patch("requests.delete", return_value=_response(status_code=204))
+    delete_mock = mocker.patch(
+        "requests.delete", return_value=_response(status_code=204)
+    )
 
     server._trigger_lidarr_import(jid, output_dir)
 
@@ -516,7 +571,9 @@ def test_all_rejected_manualimport_marks_failed_and_cleans_queue(tmp_path, mocke
             "album": {"id": 20, "currentRelease": {"id": 30}},
             "tracks": [{"id": 101}],
             "quality": {"quality": {"name": "FLAC 24bit"}},
-            "rejections": [{"reason": "Couldn't find similar album", "type": "permanent"}],
+            "rejections": [
+                {"reason": "Couldn't find similar album", "type": "permanent"}
+            ],
         },
     ]
 
@@ -541,7 +598,9 @@ def test_all_rejected_manualimport_marks_failed_and_cleans_queue(tmp_path, mocke
 
     mocker.patch("requests.get", side_effect=fake_get)
     mocker.patch("requests.post", side_effect=fake_post)
-    delete_mock = mocker.patch("requests.delete", return_value=_response(status_code=204))
+    delete_mock = mocker.patch(
+        "requests.delete", return_value=_response(status_code=204)
+    )
 
     server._trigger_lidarr_import(jid, output_dir)
 
@@ -567,12 +626,16 @@ def test_all_rejected_manualimport_marks_failed_and_cleans_queue(tmp_path, mocke
     assert failed_record.verification_decision == "ACCEPT"
 
 
-def test_release_family_rejections_are_force_imported_after_verification(tmp_path, mocker):
+def test_release_family_rejections_are_force_imported_after_verification(
+    tmp_path, mocker
+):
     jid = "93b7fc24259a"
     output_dir = tmp_path / jid
     output_dir.mkdir()
     for idx in range(2):
-        (output_dir / f"{idx + 1:02d} - Track {idx + 1} (2026 Remaster).flac").write_bytes(b"flac")
+        (
+            output_dir / f"{idx + 1:02d} - Track {idx + 1} (2026 Remaster).flac"
+        ).write_bytes(b"flac")
 
     api = "http://lidarr/api/v1"
     key = "lidarr-key"
@@ -586,7 +649,10 @@ def test_release_family_rejections_are_force_imported_after_verification(tmp_pat
             "tracks": [{"id": 101, "title": "Track 1"}],
             "quality": {"quality": {"name": "FLAC 24bit"}},
             "rejections": [
-                {"reason": "Album match is not close enough: 56.3 % vs 80 %", "type": "permanent"},
+                {
+                    "reason": "Album match is not close enough: 56.3 % vs 80 %",
+                    "type": "permanent",
+                },
                 {"reason": "Has unmatched tracks", "type": "permanent"},
             ],
         },
@@ -598,7 +664,10 @@ def test_release_family_rejections_are_force_imported_after_verification(tmp_pat
             "tracks": [{"id": 102, "title": "Track 2"}],
             "quality": {"quality": {"name": "FLAC 24bit"}},
             "rejections": [
-                {"reason": "Album match is not close enough: 56.3 % vs 80 %", "type": "permanent"},
+                {
+                    "reason": "Album match is not close enough: 56.3 % vs 80 %",
+                    "type": "permanent",
+                },
                 {"reason": "Has unmatched tracks", "type": "permanent"},
             ],
         },
@@ -637,7 +706,9 @@ def test_release_family_rejections_are_force_imported_after_verification(tmp_pat
 
     mocker.patch("requests.get", side_effect=fake_get)
     post_mock = mocker.patch("requests.post", side_effect=fake_post)
-    delete_mock = mocker.patch("requests.delete", return_value=_response(status_code=204))
+    delete_mock = mocker.patch(
+        "requests.delete", return_value=_response(status_code=204)
+    )
 
     server._trigger_lidarr_import(jid, output_dir)
 
@@ -690,7 +761,9 @@ def test_validator_fail_closed_cleans_lidarr_queue(tmp_path, mocker):
 
     mocker.patch("requests.get", side_effect=fake_get)
     mocker.patch("requests.post", side_effect=fake_post)
-    delete_mock = mocker.patch("requests.delete", return_value=_response(status_code=204))
+    delete_mock = mocker.patch(
+        "requests.delete", return_value=_response(status_code=204)
+    )
 
     server._trigger_lidarr_import(jid, output_dir)
 
@@ -749,7 +822,9 @@ def test_rescue_failed_marks_failed_and_cleans_queue(tmp_path, mocker):
 
     mocker.patch("requests.get", side_effect=fake_get)
     mocker.patch("requests.post", side_effect=fake_post)
-    delete_mock = mocker.patch("requests.delete", return_value=_response(status_code=204))
+    delete_mock = mocker.patch(
+        "requests.delete", return_value=_response(status_code=204)
+    )
 
     server._trigger_lidarr_import(jid, output_dir)
 

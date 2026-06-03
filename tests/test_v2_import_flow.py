@@ -47,9 +47,18 @@ def test_compute_verification_accepts_complete_authentic_album(tmp_path):
     assert result.score == 100
     assert result.verification_decision == "ACCEPT"
     assert result.import_outcome == "PENDING"
-    assert result.components == {"ffprobe": 25, "flac_t": 25, "detective": 35, "complete": 15}
+    assert result.components == {
+        "ffprobe": 25,
+        "flac_t": 25,
+        "detective": 35,
+        "complete": 15,
+    }
     assert result.overrides == []
-    assert [s["name"] for s in result.sensors] == ["ffprobe", "flac_t", "flac_detective"]
+    assert [s["name"] for s in result.sensors] == [
+        "ffprobe",
+        "flac_t",
+        "flac_detective",
+    ]
     assert result.sensors[0]["status"] == "pass"
     assert result.sensors[1]["status"] == "pass"
     assert result.sensors[2]["evidence"]["overall_verdict"] == "AUTHENTIC"
@@ -215,15 +224,19 @@ def test_compute_verification_persists_flac_detective_file_evidence(tmp_path):
         detective_result={
             "overall_verdict": "AUTHENTIC",
             "file_count": 1,
-            "files": [{
-                "filepath": f"/output/{jid}/01.flac",
-                "verdict": "AUTHENTIC",
-                "sample_rate": 96000,
-                "bit_depth": 24,
-                "cutoff_freq": 47900.4,
-                "is_fake_high_res": True,
-                "wrapper_overrides": ["override:fake_hires_cutoff_at_nyquist(47900/48000)"],
-            }],
+            "files": [
+                {
+                    "filepath": f"/output/{jid}/01.flac",
+                    "verdict": "AUTHENTIC",
+                    "sample_rate": 96000,
+                    "bit_depth": 24,
+                    "cutoff_freq": 47900.4,
+                    "is_fake_high_res": True,
+                    "wrapper_overrides": [
+                        "override:fake_hires_cutoff_at_nyquist(47900/48000)"
+                    ],
+                }
+            ],
         },
         existing_kbps=0,
         existing_label="nothing",
@@ -232,21 +245,23 @@ def test_compute_verification_persists_flac_detective_file_evidence(tmp_path):
         title="Artist - Album",
     )
 
-    assert result.files == [{
-        "filename": "01.flac",
-        "size_bytes": None,
-        "sample_rate": 96000,
-        "bit_depth": 24,
-        "duration_sec": None,
-        "estimated_kbps": None,
-        "detective_verdict": "AUTHENTIC",
-        "cutoff_hz": 47900,
-        "nyquist_hz": 48000,
-        "is_fake_high_res": True,
-        "estimated_mp3_bitrate": None,
-        "wrapper_overrides": ["override:fake_hires_cutoff_at_nyquist(47900/48000)"],
-        "error": None,
-    }]
+    assert result.files == [
+        {
+            "filename": "01.flac",
+            "size_bytes": None,
+            "sample_rate": 96000,
+            "bit_depth": 24,
+            "duration_sec": None,
+            "estimated_kbps": None,
+            "detective_verdict": "AUTHENTIC",
+            "cutoff_hz": 47900,
+            "nyquist_hz": 48000,
+            "is_fake_high_res": True,
+            "estimated_mp3_bitrate": None,
+            "wrapper_overrides": ["override:fake_hires_cutoff_at_nyquist(47900/48000)"],
+            "error": None,
+        }
+    ]
     assert result.sensors[2]["status"] == "warn"
     assert result.sensors[2]["evidence"]["fake_hi_res"] is True
     assert result.sensors[2]["evidence"]["wrapper_overrides"] == [
@@ -262,9 +277,16 @@ def test_v2_enabled_fake_without_existing_goes_review_required(tmp_path, mocker)
 
     api = "http://lidarr/api/v1"
     key = "lidarr-key"
-    server._jobs[jid] = {"id": jid, "status": "completed", "title": "Test Album", "percent": 100}
+    server._jobs[jid] = {
+        "id": jid,
+        "status": "completed",
+        "title": "Test Album",
+        "percent": 100,
+    }
 
-    mocker.patch.dict(os.environ, {"LIDARR_API_URL": api, "V2_VERIFICATION_ENABLED": "true"})
+    mocker.patch.dict(
+        os.environ, {"LIDARR_API_URL": api, "V2_VERIFICATION_ENABLED": "true"}
+    )
     mocker.patch.object(server, "_get_lidarr_key", return_value=key)
     mocker.patch.object(server, "_save_jobs")
     log_decision = mocker.patch.object(server, "_log_decision")
@@ -280,12 +302,20 @@ def test_v2_enabled_fake_without_existing_goes_review_required(tmp_path, mocker)
 
     def fake_post(url, **kwargs):
         if url == "http://host.docker.internal:8889/analyze":
-            return _response(payload={"overall_verdict": "FAKE_CERTAIN", "file_count": 1, "files": []})
+            return _response(
+                payload={
+                    "overall_verdict": "FAKE_CERTAIN",
+                    "file_count": 1,
+                    "files": [],
+                }
+            )
         raise AssertionError(f"unexpected POST {url}")
 
     mocker.patch("requests.get", side_effect=fake_get)
     mocker.patch("requests.post", side_effect=fake_post)
-    delete_mock = mocker.patch("requests.delete", return_value=_response(status_code=204))
+    delete_mock = mocker.patch(
+        "requests.delete", return_value=_response(status_code=204)
+    )
 
     server._trigger_lidarr_import(jid, output_dir)
 
@@ -297,7 +327,9 @@ def test_v2_enabled_fake_without_existing_goes_review_required(tmp_path, mocker)
     delete_mock.assert_called_once()
 
 
-def test_v2_block_skips_manualimport_for_authentic_partial_codec_mismatch(tmp_path, mocker):
+def test_v2_block_skips_manualimport_for_authentic_partial_codec_mismatch(
+    tmp_path, mocker
+):
     jid = "7fbd72dd"
     output_dir = tmp_path / jid
     output_dir.mkdir()
@@ -313,7 +345,9 @@ def test_v2_block_skips_manualimport_for_authentic_partial_codec_mismatch(tmp_pa
         "codec_gate_skipped": 7,
     }
 
-    mocker.patch.dict(os.environ, {"LIDARR_API_URL": api, "V2_VERIFICATION_ENABLED": "true"})
+    mocker.patch.dict(
+        os.environ, {"LIDARR_API_URL": api, "V2_VERIFICATION_ENABLED": "true"}
+    )
     mocker.patch.object(server, "OUTPUT_BASE", tmp_path)
     mocker.patch.object(server, "BLOCKED_DECISIONS_DIR", tmp_path / "blocked")
     mocker.patch.object(server, "_get_lidarr_key", return_value=key)
@@ -326,25 +360,35 @@ def test_v2_block_skips_manualimport_for_authentic_partial_codec_mismatch(tmp_pa
         if url == f"{api}/trackfile?albumId=20":
             return _response(payload=[{"id": 1}])
         if url == f"{api}/history?pageSize=50&sortKey=date&sortDirection=descending":
-            return _response(payload={"records": [{"id": 123, "downloadId": jid, "eventType": "grabbed"}]})
+            return _response(
+                payload={
+                    "records": [{"id": 123, "downloadId": jid, "eventType": "grabbed"}]
+                }
+            )
         if url == f"{api}/queue?pageSize=200":
             return _response(payload={"records": [{"id": 44, "downloadId": jid}]})
         raise AssertionError(f"unexpected GET {url}")
 
     def fake_post(url, **kwargs):
         if url == "http://host.docker.internal:8889/analyze":
-            return _response(payload={"overall_verdict": "AUTHENTIC", "file_count": 1, "files": []})
+            return _response(
+                payload={"overall_verdict": "AUTHENTIC", "file_count": 1, "files": []}
+            )
         if url == f"{api}/history/failed/123":
             return _response(status_code=200, payload={})
         raise AssertionError(f"unexpected POST {url}")
 
     post_mock = mocker.patch("requests.post", side_effect=fake_post)
     mocker.patch("requests.get", side_effect=fake_get)
-    delete_mock = mocker.patch("requests.delete", return_value=_response(status_code=204))
+    delete_mock = mocker.patch(
+        "requests.delete", return_value=_response(status_code=204)
+    )
 
     server._trigger_lidarr_import(jid, output_dir)
 
-    command_posts = [call for call in post_mock.call_args_list if call.args[0] == f"{api}/command"]
+    command_posts = [
+        call for call in post_mock.call_args_list if call.args[0] == f"{api}/command"
+    ]
     assert command_posts == []
     assert server._jobs[jid]["status"] == "failed"
     assert server._jobs[jid]["hidden_from_lidarr"] is True

@@ -43,7 +43,9 @@ _LIDARR_COMMAND_ACTIVE_STATES = {"queued", "started"}
 
 # ---------- Status derivation per STRATEGY §3 ----------
 def derive_status(rec: dict) -> str:
-    state = rec.get("verification_state") or (rec.get("lifecycle") or {}).get("state", "")
+    state = rec.get("verification_state") or (rec.get("lifecycle") or {}).get(
+        "state", ""
+    )
     decision = rec.get("v2_verification_decision", "")
     outcome = rec.get("v2_import_outcome", "")
     if state == "discarded":
@@ -69,7 +71,9 @@ def derive_status(rec: dict) -> str:
 
 # ---------- Available actions per STRATEGY §4.5 ----------
 def available_actions(rec: dict) -> list[str]:
-    state = rec.get("verification_state") or (rec.get("lifecycle") or {}).get("state", "")
+    state = rec.get("verification_state") or (rec.get("lifecycle") or {}).get(
+        "state", ""
+    )
     decision = rec.get("v2_verification_decision", "")
     outcome = rec.get("v2_import_outcome", "")
     if state in ("discarded", "expired"):
@@ -170,9 +174,7 @@ def status_reason(rec: dict) -> str:
                     "All were stopped by the codec gate, so no FLAC files remained for import."
                 )
             if skipped > 0:
-                return (
-                    f"Blocked by policy: {skipped} downloaded file(s) failed the FLAC/ALAC codec gate."
-                )
+                return f"Blocked by policy: {skipped} downloaded file(s) failed the FLAC/ALAC codec gate."
             return "Blocked by policy: downloaded files did not match the expected FLAC/ALAC codec."
         if reason:
             return f"Blocked by policy: {reason}."
@@ -213,13 +215,19 @@ def _lidarr_command_age_sec(command: dict, now: float) -> int | None:
     return max(0, int(now - base))
 
 
-def _lidarr_command_blocking_reason(command: dict, age_sec: int | None, has_started_rescan: bool) -> str | None:
+def _lidarr_command_blocking_reason(
+    command: dict, age_sec: int | None, has_started_rescan: bool
+) -> str | None:
     status = str(command.get("status") or "").lower()
     if status not in _LIDARR_COMMAND_ACTIVE_STATES:
         return None
 
     name = str(command.get("name") or "")
-    if name in {"ManualImport", "ProcessMonitoredDownloads"} and status == "queued" and has_started_rescan:
+    if (
+        name in {"ManualImport", "ProcessMonitoredDownloads"}
+        and status == "queued"
+        and has_started_rescan
+    ):
         return f"{name} is queued behind a started RescanFolders command."
     threshold = _LIDARR_COMMAND_THRESHOLDS_SEC.get(name)
     if threshold is not None and age_sec is not None and age_sec >= threshold:
@@ -254,17 +262,19 @@ def _build_lidarr_command_health(server_mod, api: str, lkey: str) -> dict:
             continue
         age_sec = _lidarr_command_age_sec(command, now)
         reason = _lidarr_command_blocking_reason(command, age_sec, has_started_rescan)
-        active.append({
-            "id": command.get("id"),
-            "name": command.get("name"),
-            "status": status,
-            "message": command.get("message"),
-            "queued": command.get("queued"),
-            "started": command.get("started"),
-            "age_sec": age_sec,
-            "blocking": reason is not None,
-            "blocking_reason": reason,
-        })
+        active.append(
+            {
+                "id": command.get("id"),
+                "name": command.get("name"),
+                "status": status,
+                "message": command.get("message"),
+                "queued": command.get("queued"),
+                "started": command.get("started"),
+                "age_sec": age_sec,
+                "blocking": reason is not None,
+                "blocking_reason": reason,
+            }
+        )
 
     blocking_count = sum(1 for item in active if item["blocking"])
     return {
@@ -283,16 +293,26 @@ def _build_summary(server_mod) -> dict:
     # still acceptable at current scale; switch to DB counts if it bottlenecks.
     rows = server_mod._verification_records()
     rows = [server_mod._decision_with_current_verification_state(r) for r in rows]
-    decisions = Counter(r.get("v2_verification_decision") for r in rows if r.get("v2_verification_decision"))
+    decisions = Counter(
+        r.get("v2_verification_decision")
+        for r in rows
+        if r.get("v2_verification_decision")
+    )
     statuses = Counter(derive_status(r) for r in rows)
     total_records = len(rows)
 
     with server_mod._jobs_lock:
-        active = sum(1 for j in server_mod._jobs.values()
-                     if j.get("status") in ("queued", "downloading", "processing"))
-        sab_queue = sum(1 for j in server_mod._jobs.values()
-                        if j.get("status") in ("queued", "downloading", "processing")
-                        and not j.get("hidden_from_lidarr"))
+        active = sum(
+            1
+            for j in server_mod._jobs.values()
+            if j.get("status") in ("queued", "downloading", "processing")
+        )
+        sab_queue = sum(
+            1
+            for j in server_mod._jobs.values()
+            if j.get("status") in ("queued", "downloading", "processing")
+            and not j.get("hidden_from_lidarr")
+        )
 
     # Lidarr health (best-effort, fail-open)
     lidarr_status = "unknown"
@@ -307,10 +327,15 @@ def _build_summary(server_mod) -> dict:
     try:
         import os
         import requests
-        api = os.environ.get("LIDARR_API_URL", "http://host.docker.internal:8686/api/v1")
+
+        api = os.environ.get(
+            "LIDARR_API_URL", "http://host.docker.internal:8686/api/v1"
+        )
         lkey = server_mod._get_lidarr_key()
         if lkey:
-            r = requests.get(f"{api}/queue?pageSize=1", headers={"X-Api-Key": lkey}, timeout=3)
+            r = requests.get(
+                f"{api}/queue?pageSize=1", headers={"X-Api-Key": lkey}, timeout=3
+            )
             if r.ok:
                 lidarr_status = "ok"
                 lidarr_queue = r.json().get("totalRecords", 0)
@@ -353,6 +378,7 @@ def _build_summary(server_mod) -> dict:
 def _check_flac_detective() -> str:
     import os
     import requests
+
     url = os.environ.get("FLAC_API_URL", "http://host.docker.internal:8889/analyze")
     try:
         # /health is on root, /analyze is what we use — derive health-url
@@ -410,7 +436,9 @@ def _record_timings_with_ts(server_mod) -> list[tuple[float, dict]]:
         for jid, job in server_mod._jobs.items():
             timings = (job or {}).get("timings") or {}
             if timings:
-                ts = float(job.get("completed_at") or job.get("created_at") or time.time())
+                ts = float(
+                    job.get("completed_at") or job.get("created_at") or time.time()
+                )
                 by_jid[str(jid)] = (ts, dict(timings))
     return list(by_jid.values())
 
@@ -418,9 +446,17 @@ def _record_timings_with_ts(server_mod) -> list[tuple[float, dict]]:
 def _build_timings(server_mod, window: str = "7d", stage: str | None = None) -> dict:
     now = time.time()
     cutoff = now - _timing_window_seconds(window)
-    samples = [(ts, timings) for ts, timings in _record_timings_with_ts(server_mod) if ts >= cutoff]
+    samples = [
+        (ts, timings)
+        for ts, timings in _record_timings_with_ts(server_mod)
+        if ts >= cutoff
+    ]
     previous_cutoff = cutoff - _timing_window_seconds(window)
-    previous = [(ts, timings) for ts, timings in _record_timings_with_ts(server_mod) if previous_cutoff <= ts < cutoff]
+    previous = [
+        (ts, timings)
+        for ts, timings in _record_timings_with_ts(server_mod)
+        if previous_cutoff <= ts < cutoff
+    ]
 
     stage_values: dict[str, list[float]] = {}
     for _, timings in samples:
@@ -443,28 +479,39 @@ def _build_timings(server_mod, window: str = "7d", stage: str | None = None) -> 
     return {
         "window": window,
         "sample_count": len(samples),
-        "stages": {name: _stage_stats(values) for name, values in sorted(stage_values.items())},
+        "stages": {
+            name: _stage_stats(values) for name, values in sorted(stage_values.items())
+        },
         "regression_flag": regression,
         "regression_reason": (
             f"pre_import_total_sec median {current_median}s is >1.5x previous {previous_median}s"
-            if regression else None
+            if regression
+            else None
         ),
     }
 
 
 def _lidarr_web_base() -> str:
     import os
+
     return os.environ.get("LIDARR_WEB_URL", "http://127.0.0.1:8686").rstrip("/")
 
 
-def _lidarr_api_request(server_mod, path: str, *, params: dict | None = None, timeout: int = 5):
+def _lidarr_api_request(
+    server_mod, path: str, *, params: dict | None = None, timeout: int = 5
+):
     import os
     import requests
-    api = os.environ.get("LIDARR_API_URL", "http://host.docker.internal:8686/api/v1").rstrip("/")
+
+    api = os.environ.get(
+        "LIDARR_API_URL", "http://host.docker.internal:8686/api/v1"
+    ).rstrip("/")
     key = server_mod._get_lidarr_key()
     if not key:
         raise RuntimeError("lidarr api key unavailable")
-    return requests.get(f"{api}{path}", params=params, headers={"X-Api-Key": key}, timeout=timeout)
+    return requests.get(
+        f"{api}{path}", params=params, headers={"X-Api-Key": key}, timeout=timeout
+    )
 
 
 def _history_reason(item: dict) -> str | None:
@@ -504,35 +551,51 @@ def _build_lidarr_context(server_mod, jid: str) -> tuple[dict, int]:
             current = album.get("currentRelease") or next(
                 (rel for rel in releases if rel.get("monitored")), {}
             )
-            albums.append({
-                "id": album.get("id") or aid,
-                "title": album.get("title") or album.get("albumTitle"),
-                "artist_name": (album.get("artist") or {}).get("artistName") or album.get("artistName"),
-                "track_count": album.get("trackCount") or stats.get("trackCount") or stats.get("totalTrackCount") or current.get("trackCount"),
-                "track_file_count": album.get("trackFileCount") or stats.get("trackFileCount"),
-                "monitored": album.get("monitored"),
-                "quality_profile_id": album.get("qualityProfileId") or album.get("profileId"),
-                "release_title": current.get("title"),
-                "release_track_count": current.get("trackCount"),
-                "url": f"{_lidarr_web_base()}/album/{album.get('id') or aid}",
-            })
+            albums.append(
+                {
+                    "id": album.get("id") or aid,
+                    "title": album.get("title") or album.get("albumTitle"),
+                    "artist_name": (album.get("artist") or {}).get("artistName")
+                    or album.get("artistName"),
+                    "track_count": album.get("trackCount")
+                    or stats.get("trackCount")
+                    or stats.get("totalTrackCount")
+                    or current.get("trackCount"),
+                    "track_file_count": album.get("trackFileCount")
+                    or stats.get("trackFileCount"),
+                    "monitored": album.get("monitored"),
+                    "quality_profile_id": album.get("qualityProfileId")
+                    or album.get("profileId"),
+                    "release_title": current.get("title"),
+                    "release_track_count": current.get("trackCount"),
+                    "url": f"{_lidarr_web_base()}/album/{album.get('id') or aid}",
+                }
+            )
 
-        q = _lidarr_api_request(server_mod, "/queue", params={"pageSize": 200}, timeout=5)
+        q = _lidarr_api_request(
+            server_mod, "/queue", params={"pageSize": 200}, timeout=5
+        )
         if q.ok:
             for entry in q.json().get("records", []):
-                entry_album_id = entry.get("albumId") or (entry.get("album") or {}).get("id")
+                entry_album_id = entry.get("albumId") or (entry.get("album") or {}).get(
+                    "id"
+                )
                 download_id = str(entry.get("downloadId") or "")
                 if entry_album_id in id_set or download_id.lower() == jid.lower():
-                    queue_entries.append({
-                        "id": entry.get("id"),
-                        "title": entry.get("title"),
-                        "download_id": download_id,
-                        "status": entry.get("status"),
-                        "tracked_download_status": entry.get("trackedDownloadStatus"),
-                        "tracked_download_state": entry.get("trackedDownloadState"),
-                        "timeleft": entry.get("timeleft"),
-                        "sizeleft": entry.get("sizeleft"),
-                    })
+                    queue_entries.append(
+                        {
+                            "id": entry.get("id"),
+                            "title": entry.get("title"),
+                            "download_id": download_id,
+                            "status": entry.get("status"),
+                            "tracked_download_status": entry.get(
+                                "trackedDownloadStatus"
+                            ),
+                            "tracked_download_state": entry.get("trackedDownloadState"),
+                            "timeleft": entry.get("timeleft"),
+                            "sizeleft": entry.get("sizeleft"),
+                        }
+                    )
 
         h = _lidarr_api_request(
             server_mod,
@@ -543,17 +606,21 @@ def _build_lidarr_context(server_mod, jid: str) -> tuple[dict, int]:
         if h.ok:
             records = h.json().get("records", [])
             for item in records:
-                item_album_id = item.get("albumId") or (item.get("album") or {}).get("id")
+                item_album_id = item.get("albumId") or (item.get("album") or {}).get(
+                    "id"
+                )
                 download_id = str(item.get("downloadId") or "")
                 if item_album_id in id_set or download_id.lower() == jid.lower():
-                    history_items.append({
-                        "ts": item.get("date"),
-                        "event_type": item.get("eventType"),
-                        "indexer": item.get("indexer"),
-                        "download_id": download_id,
-                        "successful": _history_success(item),
-                        "reason": _history_reason(item),
-                    })
+                    history_items.append(
+                        {
+                            "ts": item.get("date"),
+                            "event_type": item.get("eventType"),
+                            "indexer": item.get("indexer"),
+                            "download_id": download_id,
+                            "successful": _history_success(item),
+                            "reason": _history_reason(item),
+                        }
+                    )
                 if len(history_items) >= 10:
                     break
     except Exception:
@@ -607,7 +674,13 @@ def _media_review_info(server_mod, jid: str, derived_status: str) -> dict:
     """Whether dashboard audio/spectrum review should be offered for a record."""
     audio_file = _first_audio_file(server_mod, jid)
     files_present = audio_file is not None
-    terminal_without_review = {"imported", "promoted", "discarded", "expired", "blocked"}
+    terminal_without_review = {
+        "imported",
+        "promoted",
+        "discarded",
+        "expired",
+        "blocked",
+    }
     review_relevant = derived_status not in terminal_without_review
 
     if not review_relevant:
@@ -639,17 +712,45 @@ def _media_artifact(server_mod, jid: str, kind: str) -> tuple[Path | None, str |
     if kind == "audio":
         target = media_dir / f"{jid}.sample.mp3"
         cmd = [
-            "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
-            "-ss", "0", "-t", "20", "-i", str(source),
-            "-vn", "-ac", "2", "-ar", "44100", "-b:a", "192k", str(target),
+            "ffmpeg",
+            "-y",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-ss",
+            "0",
+            "-t",
+            "20",
+            "-i",
+            str(source),
+            "-vn",
+            "-ac",
+            "2",
+            "-ar",
+            "44100",
+            "-b:a",
+            "192k",
+            str(target),
         ]
     elif kind == "spectrum":
         target = media_dir / f"{jid}.spectrum.v2.png"
         cmd = [
-            "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
-            "-ss", "0", "-t", "45", "-i", str(source),
-            "-lavfi", "showspectrumpic=s=1280x480:legend=enabled",
-            "-frames:v", "1", str(target),
+            "ffmpeg",
+            "-y",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-ss",
+            "0",
+            "-t",
+            "45",
+            "-i",
+            str(source),
+            "-lavfi",
+            "showspectrumpic=s=1280x480:legend=enabled",
+            "-frames:v",
+            "1",
+            str(target),
         ]
     else:
         return None, "unknown media kind"
@@ -668,10 +769,12 @@ def _media_artifact(server_mod, jid: str, kind: str) -> tuple[Path | None, str |
 @dashboard_bp.route("/v1/summary", methods=["GET"])
 def summary():
     from server import require_apikey_check
+
     auth_resp = require_apikey_check()
     if auth_resp:
         return auth_resp
     import server
+
     data = get_or_compute(("summary",), 10.0, lambda: _build_summary(server))
     return jsonify(data)
 
@@ -679,16 +782,19 @@ def summary():
 @dashboard_bp.route("/v1/connectors", methods=["GET"])
 def connectors():
     from server import require_apikey_check
+
     auth_resp = require_apikey_check()
     if auth_resp:
         return auth_resp
     import connectors as connector_registry
+
     return jsonify(connector_registry.registry_payload())
 
 
 @dashboard_bp.route("/v1/connectors/<connector_id>/config", methods=["POST"])
 def connector_config(connector_id: str):
     from server import require_apikey_check
+
     auth_resp = require_apikey_check()
     if auth_resp:
         return auth_resp
@@ -707,9 +813,15 @@ def connector_config(connector_id: str):
         connectors=connector_registry.all_connectors(),
     )
     if proposed is None and errors == ["unknown connector"]:
-        return jsonify({"connector_id": connector_id, "valid": False, "errors": errors}), 404
+        return jsonify(
+            {"connector_id": connector_id, "valid": False, "errors": errors}
+        ), 404
     if errors:
-        status = 400 if any(error.startswith("invalid connector mode") for error in errors) else 409
+        status = (
+            400
+            if any(error.startswith("invalid connector mode") for error in errors)
+            else 409
+        )
         state_db.log_action(
             f"connector:{connector_id}",
             "connector_config_dry_run" if dry_run else "connector_config",
@@ -717,13 +829,15 @@ def connector_config(connector_id: str):
             f"http_{status}",
             {"mode": mode, "enabled": enabled, "dry_run": dry_run, "errors": errors},
         )
-        return jsonify({
-            "connector_id": connector_id,
-            "dry_run": dry_run,
-            "valid": False,
-            "config": proposed,
-            "errors": errors,
-        }), status
+        return jsonify(
+            {
+                "connector_id": connector_id,
+                "dry_run": dry_run,
+                "valid": False,
+                "config": proposed,
+                "errors": errors,
+            }
+        ), status
 
     assert proposed is not None
     if dry_run:
@@ -734,22 +848,26 @@ def connector_config(connector_id: str):
             "ok",
             {"mode": proposed["mode"], "enabled": proposed["enabled"]},
         )
-        return jsonify({
-            "connector_id": connector_id,
-            "dry_run": True,
-            "valid": True,
-            "config": proposed,
-            "errors": [],
-        })
+        return jsonify(
+            {
+                "connector_id": connector_id,
+                "dry_run": True,
+                "valid": True,
+                "config": proposed,
+                "errors": [],
+            }
+        )
 
     saved = connector_registry.persist_connector_config(proposed)
     if saved is None:
-        return jsonify({
-            "connector_id": connector_id,
-            "dry_run": False,
-            "valid": False,
-            "errors": ["failed to persist connector config"],
-        }), 500
+        return jsonify(
+            {
+                "connector_id": connector_id,
+                "dry_run": False,
+                "valid": False,
+                "errors": ["failed to persist connector config"],
+            }
+        ), 500
     state_db.log_action(
         f"connector:{connector_id}",
         "connector_config",
@@ -759,13 +877,15 @@ def connector_config(connector_id: str):
     )
     invalidate_prefix("summary")
     invalidate_prefix("connectors")
-    return jsonify({
-        "connector_id": connector_id,
-        "dry_run": False,
-        "valid": True,
-        "config": saved,
-        "errors": [],
-    })
+    return jsonify(
+        {
+            "connector_id": connector_id,
+            "dry_run": False,
+            "valid": True,
+            "config": saved,
+            "errors": [],
+        }
+    )
 
 
 # ---------- /dashboard/v1/records ----------
@@ -773,8 +893,10 @@ def _build_records_from_db(server_mod, filters: dict) -> dict | None:
     """F1.6: try DB-backed query first. Returns None to signal fallback to sidecar-scan."""
     import json as _json
     import time as _time
+
     try:
         import state_db
+
         decisions = filters["decision"].split(",") if filters.get("decision") else None
         outcomes = filters["outcome"].split(",") if filters.get("outcome") else None
         states = filters["state"].split(",") if filters.get("state") else None
@@ -783,8 +905,13 @@ def _build_records_from_db(server_mod, filters: dict) -> dict | None:
         offset = int(filters.get("offset", 0))
         limit = min(int(filters.get("limit", 100)), 500)
         total, rows = state_db.list_records(
-            decision=decisions, outcome=outcomes, state=states, status=statuses,
-            limit=limit, offset=offset, sort=filters.get("sort", "ts_desc"),
+            decision=decisions,
+            outcome=outcomes,
+            state=states,
+            status=statuses,
+            limit=limit,
+            offset=offset,
+            sort=filters.get("sort", "ts_desc"),
         )
         # If DB is empty, return None so caller falls back to sidecar scan
         # (handles case where backfill not yet run)
@@ -797,8 +924,12 @@ def _build_records_from_db(server_mod, filters: dict) -> dict | None:
         out = []
         for r in rows:
             ts = r.get("created_at")
-            ts_iso = _time.strftime("%Y-%m-%dT%H:%M:%SZ", _time.gmtime(ts)) if ts else None
-            album_ids = _json.loads(r["album_ids_json"]) if r.get("album_ids_json") else []
+            ts_iso = (
+                _time.strftime("%Y-%m-%dT%H:%M:%SZ", _time.gmtime(ts)) if ts else None
+            )
+            album_ids = (
+                _json.loads(r["album_ids_json"]) if r.get("album_ids_json") else []
+            )
             # Adapter: bygg sidecar-like dict slik at status_reason() + derive_status virker
             sidecar_like = {
                 "v2_verification_decision": r.get("verification_decision"),
@@ -817,12 +948,14 @@ def _build_records_from_db(server_mod, filters: dict) -> dict | None:
             try:
                 _, sidecar = server_mod._read_verification_sidecar(str(r.get("jid")))
                 if sidecar:
-                    sidecar_like.update({
-                        "v2_overrides": sidecar.get("v2_overrides") or [],
-                        "reason": sidecar.get("reason") or "",
-                        "sensors": sidecar.get("sensors") or [],
-                        "files": sidecar.get("files") or [],
-                    })
+                    sidecar_like.update(
+                        {
+                            "v2_overrides": sidecar.get("v2_overrides") or [],
+                            "reason": sidecar.get("reason") or "",
+                            "sensors": sidecar.get("sensors") or [],
+                            "files": sidecar.get("files") or [],
+                        }
+                    )
             except Exception:
                 pass
             # Berik med job-runtime info hvis tilgjengelig (job_error/warning)
@@ -831,23 +964,25 @@ def _build_records_from_db(server_mod, filters: dict) -> dict | None:
                 sidecar_like["job_error"] = job.get("error")
             if job.get("warning"):
                 sidecar_like["job_warning"] = job.get("warning")
-            out.append({
-                "jid": r["jid"],
-                "ts": ts,
-                "ts_iso": ts_iso,
-                "title": r.get("title"),
-                "verification_decision": r.get("verification_decision"),
-                "import_outcome": r.get("import_outcome"),
-                "lifecycle_state": r.get("lifecycle_state"),
-                "score": r.get("score"),
-                "verdict": r.get("verdict"),
-                "overrides": sidecar_like.get("v2_overrides") or [],
-                "needs_action": r.get("derived_status") == "needs_review",
-                "derived_status": r.get("derived_status"),
-                "status_reason": status_reason(sidecar_like),
-                "album_ids": album_ids,
-                "_source": "db",
-            })
+            out.append(
+                {
+                    "jid": r["jid"],
+                    "ts": ts,
+                    "ts_iso": ts_iso,
+                    "title": r.get("title"),
+                    "verification_decision": r.get("verification_decision"),
+                    "import_outcome": r.get("import_outcome"),
+                    "lifecycle_state": r.get("lifecycle_state"),
+                    "score": r.get("score"),
+                    "verdict": r.get("verdict"),
+                    "overrides": sidecar_like.get("v2_overrides") or [],
+                    "needs_action": r.get("derived_status") == "needs_review",
+                    "derived_status": r.get("derived_status"),
+                    "status_reason": status_reason(sidecar_like),
+                    "album_ids": album_ids,
+                    "_source": "db",
+                }
+            )
         return {"total": total, "returned": len(out), "offset": offset, "records": out}
     except Exception:
         # Defensive: DB-query failures fall back to sidecar scanning.
@@ -874,8 +1009,12 @@ def _build_records(server_mod, filters: dict) -> dict:
         rows = [r for r in rows if r.get("v2_import_outcome") in wanted]
     if filters.get("state"):
         wanted = set(filters["state"].split(","))
-        rows = [r for r in rows
-                if (r.get("verification_state") or (r.get("lifecycle") or {}).get("state")) in wanted]
+        rows = [
+            r
+            for r in rows
+            if (r.get("verification_state") or (r.get("lifecycle") or {}).get("state"))
+            in wanted
+        ]
     if filters.get("status"):
         wanted = set(filters["status"].split(","))
         rows = [r for r in rows if derive_status(r) in wanted]
@@ -892,7 +1031,7 @@ def _build_records(server_mod, filters: dict) -> dict:
     total = len(rows)
     offset = int(filters.get("offset", 0))
     limit = min(int(filters.get("limit", 100)), 500)
-    rows = rows[offset:offset + limit]
+    rows = rows[offset : offset + limit]
 
     out = []
     for r in rows:
@@ -902,33 +1041,41 @@ def _build_records(server_mod, filters: dict) -> dict:
             enriched["job_error"] = job.get("error")
         if job.get("warning"):
             enriched["job_warning"] = job.get("warning")
-        out.append({
-            "jid": r.get("jid"),
-            "ts": r.get("ts"),
-            "ts_iso": r.get("ts_iso"),
-            "title": r.get("title"),
-            "verification_decision": r.get("v2_verification_decision"),
-            "import_outcome": r.get("v2_import_outcome"),
-            "lifecycle_state": r.get("verification_state") or (r.get("lifecycle") or {}).get("state"),
-            "score": r.get("v2_score"),
-            "verdict": r.get("verdict"),
-            "overrides": r.get("v2_overrides") or [],
-            "needs_action": derive_status(r) == "needs_review",
-            "derived_status": derive_status(r),
-            "status_reason": status_reason(enriched),
-            "album_ids": r.get("album_ids") or [],
-        })
+        out.append(
+            {
+                "jid": r.get("jid"),
+                "ts": r.get("ts"),
+                "ts_iso": r.get("ts_iso"),
+                "title": r.get("title"),
+                "verification_decision": r.get("v2_verification_decision"),
+                "import_outcome": r.get("v2_import_outcome"),
+                "lifecycle_state": r.get("verification_state")
+                or (r.get("lifecycle") or {}).get("state"),
+                "score": r.get("v2_score"),
+                "verdict": r.get("verdict"),
+                "overrides": r.get("v2_overrides") or [],
+                "needs_action": derive_status(r) == "needs_review",
+                "derived_status": derive_status(r),
+                "status_reason": status_reason(enriched),
+                "album_ids": r.get("album_ids") or [],
+            }
+        )
     return {"total": total, "returned": len(out), "offset": offset, "records": out}
 
 
 @dashboard_bp.route("/v1/records", methods=["GET"])
 def records():
     from server import require_apikey_check
+
     auth_resp = require_apikey_check()
     if auth_resp:
         return auth_resp
     import server
-    filters = {k: request.args.get(k) for k in ("decision", "outcome", "state", "status", "sort", "offset", "limit")}
+
+    filters = {
+        k: request.args.get(k)
+        for k in ("decision", "outcome", "state", "status", "sort", "offset", "limit")
+    }
     filters = {k: v for k, v in filters.items() if v is not None}
     key = ("records", tuple(sorted(filters.items())))
     data = get_or_compute(key, 5.0, lambda: _build_records(server, filters))
@@ -940,11 +1087,13 @@ def records():
 def actions_for_jid(jid: str):
     """Audit timeline for a single record — promote/discard/retry history."""
     from server import require_apikey_check
+
     auth_resp = require_apikey_check()
     if auth_resp:
         return auth_resp
     try:
         import state_db
+
         actions = state_db.list_actions(jid=jid, limit=50)
         return jsonify({"jid": jid, "actions": actions})
     except Exception:
@@ -955,11 +1104,13 @@ def actions_for_jid(jid: str):
 def actions_global():
     """Global action timeline (for dashboard activity feed)."""
     from server import require_apikey_check
+
     auth_resp = require_apikey_check()
     if auth_resp:
         return auth_resp
     try:
         import state_db
+
         limit = min(int(request.args.get("limit", 50)), 200)
         actions = state_db.list_actions(limit=limit)
         return jsonify({"actions": actions, "returned": len(actions)})
@@ -977,6 +1128,7 @@ def _job_to_payload(job: dict) -> dict:
         raw = out.get(k)
         try:
             import json as _json
+
             out[k[:-5]] = _json.loads(raw) if raw else None
         except Exception:
             out[k[:-5]] = None
@@ -988,11 +1140,13 @@ def _job_to_payload(job: dict) -> dict:
 def jobs_list():
     """List worker jobs with optional state/type/jid filtering."""
     from server import require_apikey_check
+
     auth_resp = require_apikey_check()
     if auth_resp:
         return auth_resp
     try:
         import state_db
+
         state = request.args.get("state")
         type_ = request.args.get("type")
         jid = request.args.get("jid")
@@ -1002,14 +1156,17 @@ def jobs_list():
             state=state.split(",") if state else None,
             type=type_.split(",") if type_ else None,
             jid=jid,
-            limit=limit, offset=offset,
+            limit=limit,
+            offset=offset,
         )
-        return jsonify({
-            "total": total,
-            "returned": len(rows),
-            "offset": offset,
-            "jobs": [_job_to_payload(r) for r in rows],
-        })
+        return jsonify(
+            {
+                "total": total,
+                "returned": len(rows),
+                "offset": offset,
+                "jobs": [_job_to_payload(r) for r in rows],
+            }
+        )
     except Exception:
         return jsonify({"total": 0, "returned": 0, "offset": 0, "jobs": []})
 
@@ -1017,11 +1174,13 @@ def jobs_list():
 @dashboard_bp.route("/v1/jobs/<int:job_id>", methods=["GET"])
 def job_detail(job_id: int):
     from server import require_apikey_check
+
     auth_resp = require_apikey_check()
     if auth_resp:
         return auth_resp
     try:
         import state_db
+
         job = state_db.get_job(job_id)
         if not job:
             return jsonify({"error": "job not found", "id": job_id}), 404
@@ -1034,22 +1193,29 @@ def job_detail(job_id: int):
 def job_cancel(job_id: int):
     """Request cancellation — worker checks between stages."""
     from server import require_apikey_check
+
     auth_resp = require_apikey_check()
     if auth_resp:
         return auth_resp
     try:
         import state_db
+
         job = state_db.get_job(job_id)
         if not job:
             return jsonify({"error": "job not found", "id": job_id}), 404
         if job["state"] not in ("queued", "running", "cancelling"):
-            return jsonify({
-                "error": "cannot cancel terminal job",
-                "id": job_id, "state": job["state"],
-            }), 409
+            return jsonify(
+                {
+                    "error": "cannot cancel terminal job",
+                    "id": job_id,
+                    "state": job["state"],
+                }
+            ), 409
         ok = state_db.request_job_cancel(job_id)
         current = state_db.get_job(job_id) or job
-        return jsonify({"id": job_id, "cancel_requested": ok, "state": current.get("state")})
+        return jsonify(
+            {"id": job_id, "cancel_requested": ok, "state": current.get("state")}
+        )
     except Exception:
         return jsonify({"error": "internal error"}), 500
 
@@ -1111,10 +1277,12 @@ def _build_record_detail(server_mod, jid: str) -> dict | None:
 @dashboard_bp.route("/v1/record/<jid>", methods=["GET"])
 def record_detail(jid: str):
     from server import require_apikey_check
+
     auth_resp = require_apikey_check()
     if auth_resp:
         return auth_resp
     import server
+
     data = _build_record_detail(server, jid)
     if data is None:
         return jsonify({"error": "record not found", "jid": jid}), 404
@@ -1125,14 +1293,18 @@ def record_detail(jid: str):
 @dashboard_bp.route("/v1/timings", methods=["GET"])
 def timings():
     from server import require_apikey_check
+
     auth_resp = require_apikey_check()
     if auth_resp:
         return auth_resp
     import server
+
     window = request.args.get("window", "7d")
     stage = request.args.get("stage")
     key = ("timings", window, stage or "")
-    data = get_or_compute(key, 60.0, lambda: _build_timings(server, window=window, stage=stage))
+    data = get_or_compute(
+        key, 60.0, lambda: _build_timings(server, window=window, stage=stage)
+    )
     return jsonify(data)
 
 
@@ -1140,15 +1312,23 @@ def timings():
 @dashboard_bp.route("/v1/audio-sample/<jid>", methods=["GET"])
 def audio_sample(jid: str):
     from server import require_apikey_check
+
     auth_resp = require_apikey_check()
     if auth_resp:
         return auth_resp
     import server
+
     detail = _build_record_detail(server, jid)
     if detail is None:
         return jsonify({"error": "record not found", "jid": jid}), 404
     if not detail.get("media", {}).get("available"):
-        return jsonify({"error": detail.get("media", {}).get("reason") or "audio sample unavailable", "jid": jid}), 404
+        return jsonify(
+            {
+                "error": detail.get("media", {}).get("reason")
+                or "audio sample unavailable",
+                "jid": jid,
+            }
+        ), 404
     path, error = _media_artifact(server, jid, "audio")
     if path is None:
         return jsonify({"error": error or "audio sample unavailable", "jid": jid}), 404
@@ -1158,15 +1338,23 @@ def audio_sample(jid: str):
 @dashboard_bp.route("/v1/spectrum/<jid>", methods=["GET"])
 def spectrum(jid: str):
     from server import require_apikey_check
+
     auth_resp = require_apikey_check()
     if auth_resp:
         return auth_resp
     import server
+
     detail = _build_record_detail(server, jid)
     if detail is None:
         return jsonify({"error": "record not found", "jid": jid}), 404
     if not detail.get("media", {}).get("available"):
-        return jsonify({"error": detail.get("media", {}).get("reason") or "spectrum unavailable", "jid": jid}), 404
+        return jsonify(
+            {
+                "error": detail.get("media", {}).get("reason")
+                or "spectrum unavailable",
+                "jid": jid,
+            }
+        ), 404
     path, error = _media_artifact(server, jid, "spectrum")
     if path is None:
         return jsonify({"error": error or "spectrum unavailable", "jid": jid}), 404
@@ -1177,10 +1365,12 @@ def spectrum(jid: str):
 @dashboard_bp.route("/v1/lidarr-context/<jid>", methods=["GET"])
 def lidarr_context(jid: str):
     from server import require_apikey_check
+
     auth_resp = require_apikey_check()
     if auth_resp:
         return auth_resp
     import server
+
     key = ("lidarr-context", jid)
     data, status = get_or_compute(key, 30.0, lambda: _build_lidarr_context(server, jid))
     return jsonify(data), status
@@ -1190,11 +1380,13 @@ def lidarr_context(jid: str):
 @dashboard_bp.route("/v1/action/<jid>", methods=["POST"])
 def action(jid: str):
     from server import require_apikey_check
+
     auth_resp = require_apikey_check()
     if auth_resp:
         return auth_resp
 
     import server
+
     body = request.get_json(silent=True) or {}
     requested = body.get("action", "")
 
@@ -1204,16 +1396,19 @@ def action(jid: str):
 
     allowed = available_actions(sidecar)
     if requested not in allowed:
-        return jsonify({
-            "error": "action not allowed for current state",
-            "requested": requested,
-            "allowed": allowed,
-        }), 409
+        return jsonify(
+            {
+                "error": "action not allowed for current state",
+                "requested": requested,
+                "allowed": allowed,
+            }
+        ), 409
 
     # Delegate to existing route functions via Flask view_functions.
     # They are already @require_apikey-decorated; the current request has apikey so
     # the decorator passes on the nested call.
     from flask import current_app
+
     view_map = {
         "promote": "verification_promote",
         "discard": "verification_discard",
@@ -1237,7 +1432,10 @@ def action(jid: str):
     # F1: Log action to state_db for audit timeline (fail-open)
     try:
         import state_db
-        status_code = getattr(response, "status_code", 200) if response is not None else 200
+
+        status_code = (
+            getattr(response, "status_code", 200) if response is not None else 200
+        )
         if isinstance(response, tuple) and len(response) >= 2:
             status_code = response[1]
         result_label = "ok" if 200 <= status_code < 300 else f"http_{status_code}"
@@ -1259,7 +1457,9 @@ def action(jid: str):
 @dashboard_bp.route("/", methods=["GET"])
 def dashboard_page():
     """Server-rendered HTML shell. JS handles interactivity per UI_SPEC."""
-    html = _DASHBOARD_HTML.replace("__LIDARR_WEB_BASE__", json.dumps(_lidarr_web_base()))
+    html = _DASHBOARD_HTML.replace(
+        "__LIDARR_WEB_BASE__", json.dumps(_lidarr_web_base())
+    )
     return Response(html, mimetype="text/html")
 
 

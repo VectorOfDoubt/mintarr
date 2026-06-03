@@ -79,6 +79,7 @@ def execute_source_grab(
         raw = adapter.download_raw(candidate_id, ctx)
     except Exception as exc:
         import worker
+
         if isinstance(exc, worker.JobCancelled):
             raise
         log.exception("[%s] %s download_raw failed", jid, adapter.name)
@@ -90,7 +91,9 @@ def execute_source_grab(
             )
             server._save_jobs()
         raise
-    server._record_job_timing(jid, "tidal_download_sec", time.monotonic() - download_started)
+    server._record_job_timing(
+        jid, "tidal_download_sec", time.monotonic() - download_started
+    )
     ctx.check_cancelled()
 
     # === Phase 2: normalize_audio (common) ===================================
@@ -109,8 +112,12 @@ def execute_source_grab(
 
     # === Phase 4: import_to_lidarr (common) ==================================
     prepared = prepare_output_directory(raw.files_dir, ctx)
-    server._record_job_timing(jid, "postprocess_sec", time.monotonic() - normalize_started)
-    server._record_job_timing(jid, "pre_import_total_sec", time.monotonic() - job_started)
+    server._record_job_timing(
+        jid, "postprocess_sec", time.monotonic() - normalize_started
+    )
+    server._record_job_timing(
+        jid, "pre_import_total_sec", time.monotonic() - job_started
+    )
     ctx.set_progress(
         stage="ready_for_import",
         percent=65,
@@ -137,7 +144,10 @@ def execute_source_grab(
         server._save_jobs()
     log.info(
         "[%s] Done — %d files, %d MB in %s",
-        jid, prepared.file_count, prepared.total_bytes // (1024 * 1024), prepared.output_dir,
+        jid,
+        prepared.file_count,
+        prepared.total_bytes // (1024 * 1024),
+        prepared.output_dir,
     )
 
     import_to_lidarr(
@@ -159,7 +169,9 @@ def normalize_audio(raw_dir: Path, ctx: PipelineContext) -> NormalizeStats:
     direct_flac_files = list(raw_dir.rglob("*.flac"))
     log.info(
         "[%s] Normalize start: %d .m4a + %d .flac",
-        ctx.jid, len(m4a_files), len(direct_flac_files),
+        ctx.jid,
+        len(m4a_files),
+        len(direct_flac_files),
     )
     ctx.set_progress(
         stage="postprocess",
@@ -177,15 +189,29 @@ def normalize_audio(raw_dir: Path, ctx: PipelineContext) -> NormalizeStats:
             # Codec gate: ffprobe must confirm audio stream is FLAC or ALAC.
             # Otherwise ffmpeg copy/re-encode would silently produce lossy.
             probe = subprocess.run(
-                ["ffprobe", "-v", "error", "-select_streams", "a:0",
-                 "-show_entries", "stream=codec_name", "-of", "csv=p=0", str(m)],
-                capture_output=True, text=True, timeout=30,
+                [
+                    "ffprobe",
+                    "-v",
+                    "error",
+                    "-select_streams",
+                    "a:0",
+                    "-show_entries",
+                    "stream=codec_name",
+                    "-of",
+                    "csv=p=0",
+                    str(m),
+                ],
+                capture_output=True,
+                text=True,
+                timeout=30,
             )
             codec = (probe.stdout or "").strip().lower()
             if codec not in ("flac", "alac"):
                 log.warning(
                     "[%s] CODEC GATE: skip %s — codec=%r (expected flac/alac)",
-                    ctx.jid, m.name, codec,
+                    ctx.jid,
+                    m.name,
+                    codec,
                 )
                 stats.codec_gate_skipped += 1
                 m.unlink(missing_ok=True)
@@ -194,18 +220,50 @@ def normalize_audio(raw_dir: Path, ctx: PipelineContext) -> NormalizeStats:
             # ffmpeg copy first (bit-perfect FLAC stream from MP4 container).
             # Fallback to re-encode (still lossless since codec=flac/alac).
             r = subprocess.run(
-                ["ffmpeg", "-y", "-loglevel", "error", "-i", str(m),
-                 "-vn", "-c:a", "copy", str(flac_path)],
-                capture_output=True, text=True, timeout=300,
+                [
+                    "ffmpeg",
+                    "-y",
+                    "-loglevel",
+                    "error",
+                    "-i",
+                    str(m),
+                    "-vn",
+                    "-c:a",
+                    "copy",
+                    str(flac_path),
+                ],
+                capture_output=True,
+                text=True,
+                timeout=300,
             )
-            if r.returncode != 0 or not flac_path.exists() or flac_path.stat().st_size < 1024:
+            if (
+                r.returncode != 0
+                or not flac_path.exists()
+                or flac_path.stat().st_size < 1024
+            ):
                 r2 = subprocess.run(
-                    ["ffmpeg", "-y", "-loglevel", "error", "-i", str(m),
-                     "-vn", "-c:a", "flac", "-compression_level", "5", str(flac_path)],
-                    capture_output=True, text=True, timeout=600,
+                    [
+                        "ffmpeg",
+                        "-y",
+                        "-loglevel",
+                        "error",
+                        "-i",
+                        str(m),
+                        "-vn",
+                        "-c:a",
+                        "flac",
+                        "-compression_level",
+                        "5",
+                        str(flac_path),
+                    ],
+                    capture_output=True,
+                    text=True,
+                    timeout=600,
                 )
                 if r2.returncode != 0:
-                    log.error("[%s] ffmpeg error for %s: %s", ctx.jid, m, r2.stderr[-500:])
+                    log.error(
+                        "[%s] ffmpeg error for %s: %s", ctx.jid, m, r2.stderr[-500:]
+                    )
                     stats.conversion_failed += 1
                     continue
             m.unlink()
@@ -213,12 +271,16 @@ def normalize_audio(raw_dir: Path, ctx: PipelineContext) -> NormalizeStats:
             # Integrity gate: flac -t verifies stream decodes and MD5 matches.
             test = subprocess.run(
                 ["flac", "-t", "-s", str(flac_path)],
-                capture_output=True, text=True, timeout=120,
+                capture_output=True,
+                text=True,
+                timeout=120,
             )
             if test.returncode != 0:
                 log.error(
                     "[%s] INTEGRITY: flac -t failed for %s — deleting. stderr=%s",
-                    ctx.jid, flac_path.name, (test.stderr or "")[-300:],
+                    ctx.jid,
+                    flac_path.name,
+                    (test.stderr or "")[-300:],
                 )
                 stats.integrity_failed += 1
                 flac_path.unlink(missing_ok=True)
@@ -233,12 +295,15 @@ def normalize_audio(raw_dir: Path, ctx: PipelineContext) -> NormalizeStats:
         try:
             test = subprocess.run(
                 ["flac", "-t", "-s", str(f)],
-                capture_output=True, text=True, timeout=120,
+                capture_output=True,
+                text=True,
+                timeout=120,
             )
             if test.returncode != 0:
                 log.error(
                     "[%s] INTEGRITY (direct-flac): flac -t failed for %s — deleting",
-                    ctx.jid, f.name,
+                    ctx.jid,
+                    f.name,
                 )
                 stats.integrity_failed += 1
                 f.unlink(missing_ok=True)
@@ -294,7 +359,9 @@ def import_to_lidarr(
 
     # Defer cancel cleanup so a late-stage cancel doesn't rmtree the output_dir
     # before Lidarr has imported it.
-    server._raise_if_job_cancelled(ctx.worker_job_id, ctx.jid, output_dir, cleanup=False)
+    server._raise_if_job_cancelled(
+        ctx.worker_job_id, ctx.jid, output_dir, cleanup=False
+    )
     try:
         server._trigger_lidarr_import(
             ctx.jid,

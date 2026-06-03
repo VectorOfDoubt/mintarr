@@ -36,9 +36,13 @@ def main() -> int:
     import server  # type: ignore
 
     routes = []
-    for rule in sorted(server.app.url_map.iter_rules(), key=lambda r: (str(r.rule), r.endpoint)):
+    for rule in sorted(
+        server.app.url_map.iter_rules(), key=lambda r: (str(r.rule), r.endpoint)
+    ):
         methods = sorted(m for m in rule.methods if m not in {"HEAD", "OPTIONS"})
-        routes.append({"rule": str(rule.rule), "endpoint": rule.endpoint, "methods": methods})
+        routes.append(
+            {"rule": str(rule.rule), "endpoint": rule.endpoint, "methods": methods}
+        )
     print(json.dumps(routes, indent=2, sort_keys=True))
     return 0
 

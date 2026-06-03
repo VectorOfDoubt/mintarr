@@ -27,6 +27,7 @@ def mock_session(monkeypatch):
     in production this gates on token.json presence; in tests we patch it
     directly so the dispatcher doesn't 503.
     """
+
     class _FakeAlbum:
         def __init__(self, aid):
             self.id = aid
@@ -43,9 +44,11 @@ def mock_session(monkeypatch):
     monkeypatch.setattr(server, "_get_session", lambda: _FakeSession())
     # Also patch the get_session re-export used by adapter helpers
     from adapters import tidal as _tidal_mod
+
     monkeypatch.setattr(_tidal_mod, "get_session", lambda: _FakeSession())
     # F3.2 gates on adapter.is_enabled() — token.json doesn't exist in tests
     import adapters as _adapters
+
     tidal_adapter = _adapters.get_adapter("tidal")
     if tidal_adapter is not None:
         monkeypatch.setattr(tidal_adapter, "is_enabled", lambda: True)
@@ -131,7 +134,9 @@ def test_addurl_enqueue_dedupe_race_returns_existing_jid_without_phantom_job(
     assert server._jobs == {}
 
 
-def test_addurl_dedupe_does_not_block_after_terminal(fresh_db, mock_session, monkeypatch):
+def test_addurl_dedupe_does_not_block_after_terminal(
+    fresh_db, mock_session, monkeypatch
+):
     """If a previous tidal_grab job completed/failed, new addurl creates new job."""
     monkeypatch.setenv("TIDALHIRES_DISABLE_WORKER", "1")
 
@@ -156,16 +161,19 @@ def test_executor_invoked_with_correct_payload(fresh_db, monkeypatch):
     """The tidal_grab executor delegates to pipeline.execute_source_grab
     with the correct adapter + payload (F3.4 generic executor)."""
     import pipeline
+
     calls = []
 
     def _fake_execute(job, adapter, ctx):
-        calls.append({
-            "jid": job["jid"],
-            "adapter_name": adapter.name,
-            "worker_job_id": ctx.worker_job_id,
-            "source_id": json.loads(job["payload_json"]).get("source_id")
-                         or json.loads(job["payload_json"]).get("album_id"),
-        })
+        calls.append(
+            {
+                "jid": job["jid"],
+                "adapter_name": adapter.name,
+                "worker_job_id": ctx.worker_job_id,
+                "source_id": json.loads(job["payload_json"]).get("source_id")
+                or json.loads(job["payload_json"]).get("album_id"),
+            }
+        )
         with server._jobs_lock:
             server._jobs[job["jid"]] = {"id": job["jid"], "status": "completed"}
 
@@ -194,7 +202,9 @@ def test_executor_raises_on_run_download_failure(fresh_db, monkeypatch):
     def _fake_execute(job, adapter, ctx):
         with server._jobs_lock:
             server._jobs[job["jid"]] = {
-                "id": job["jid"], "status": "failed", "error": "tidal-dl-ng timeout",
+                "id": job["jid"],
+                "status": "failed",
+                "error": "tidal-dl-ng timeout",
             }
 
     monkeypatch.setattr(pipeline, "execute_source_grab", _fake_execute)
@@ -208,7 +218,9 @@ def test_executor_raises_on_run_download_failure(fresh_db, monkeypatch):
         server._execute_tidal_grab_job(job)
 
 
-def test_executor_treats_v2_block_sidecar_as_completed_business_result(fresh_db, monkeypatch):
+def test_executor_treats_v2_block_sidecar_as_completed_business_result(
+    fresh_db, monkeypatch
+):
     """V2 BLOCK sets _jobs failed for SAB compatibility, but worker completed."""
     import pipeline
 
@@ -231,7 +243,9 @@ def test_executor_treats_v2_block_sidecar_as_completed_business_result(fresh_db,
     }
 
     monkeypatch.setattr(pipeline, "execute_source_grab", _fake_execute)
-    monkeypatch.setattr(server, "_read_verification_sidecar", lambda jid: (None, sidecar))
+    monkeypatch.setattr(
+        server, "_read_verification_sidecar", lambda jid: (None, sidecar)
+    )
 
     job = {
         "id": 101,
@@ -257,8 +271,11 @@ def test_executor_sets_terminal_progress_from_failed_sidecar(fresh_db, monkeypat
 
     def _fake_execute(job, adapter, ctx):
         server._set_worker_progress(
-            ctx.worker_job_id, job["jid"],
-            "finalizing", 98, "Finalizing pipeline result",
+            ctx.worker_job_id,
+            job["jid"],
+            "finalizing",
+            98,
+            "Finalizing pipeline result",
         )
         with server._jobs_lock:
             server._jobs[job["jid"]] = {
@@ -278,22 +295,31 @@ def test_executor_sets_terminal_progress_from_failed_sidecar(fresh_db, monkeypat
     }
 
     monkeypatch.setattr(pipeline, "execute_source_grab", _fake_execute)
-    monkeypatch.setattr(server, "_read_verification_sidecar", lambda jid: (None, sidecar))
+    monkeypatch.setattr(
+        server, "_read_verification_sidecar", lambda jid: (None, sidecar)
+    )
 
-    result_state, result = server._execute_tidal_grab_job({
-        "id": worker_job_id,
-        "jid": jid,
-        "payload_json": json.dumps({"album_id": 888}),
-    })
+    result_state, result = server._execute_tidal_grab_job(
+        {
+            "id": worker_job_id,
+            "jid": jid,
+            "payload_json": json.dumps({"album_id": 888}),
+        }
+    )
 
     assert result_state == "failed"
     assert result["import_outcome"] == "FAILED"
     progress = json.loads(state_db.get_job(worker_job_id)["progress_json"])
     assert progress["stage"] == "failed"
     assert progress["percent"] == 100
-    assert progress["message"] == "Import failed: no importable files after verification"
+    assert (
+        progress["message"] == "Import failed: no importable files after verification"
+    )
     assert server._jobs[jid]["stage"] == "failed"
-    assert server._jobs[jid]["warning"] == "Import failed: no importable files after verification"
+    assert (
+        server._jobs[jid]["warning"]
+        == "Import failed: no importable files after verification"
+    )
 
 
 def test_executor_missing_album_id_raises(fresh_db):
@@ -310,7 +336,9 @@ def test_worker_progress_updates_db_and_jobs_projection(fresh_db, monkeypatch):
     monkeypatch.setattr(server, "_save_jobs", lambda: None)
     job_id = state_db.enqueue_job(jid="prog1", type="tidal_grab")
 
-    server._set_worker_progress(job_id, "prog1", "downloading", 25, "Downloading from TIDAL")
+    server._set_worker_progress(
+        job_id, "prog1", "downloading", 25, "Downloading from TIDAL"
+    )
 
     job = state_db.get_job(job_id)
     progress = json.loads(job["progress_json"])
@@ -321,7 +349,9 @@ def test_worker_progress_updates_db_and_jobs_projection(fresh_db, monkeypatch):
     assert server._jobs["prog1"]["stage"] == "downloading"
 
 
-def test_cancellable_subprocess_stops_and_cleans_work_dir(fresh_db, tmp_path, monkeypatch):
+def test_cancellable_subprocess_stops_and_cleans_work_dir(
+    fresh_db, tmp_path, monkeypatch
+):
     jid = "cancelrun"
     work_dir = tmp_path / "downloads" / jid
     work_dir.mkdir(parents=True)
@@ -345,7 +375,9 @@ def test_cancellable_subprocess_stops_and_cleans_work_dir(fresh_db, tmp_path, mo
     assert server._jobs[jid]["error"] == "cancelled by user"
 
 
-def test_addurl_falls_back_to_thread_if_enqueue_fails(fresh_db, mock_session, monkeypatch):
+def test_addurl_falls_back_to_thread_if_enqueue_fails(
+    fresh_db, mock_session, monkeypatch
+):
     """If state_db.enqueue_job returns None, fallback spawns direct thread."""
     monkeypatch.setenv("TIDALHIRES_DISABLE_WORKER", "1")
     monkeypatch.setattr(state_db, "enqueue_job", lambda **kw: None)
@@ -358,6 +390,7 @@ def test_addurl_falls_back_to_thread_if_enqueue_fails(fresh_db, mock_session, mo
             self.target = target
             self.args = args
             started_threads.append(self)
+
         def start(self):
             pass  # Don't actually run
 

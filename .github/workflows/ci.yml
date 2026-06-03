@@ -51,6 +51,9 @@ jobs:
       - name: ruff check
         run: ruff check app tests
 
+      - name: ruff format check
+        run: ruff format --check app tests scripts
+
 
   # typecheck job is disabled for v0.1.0. The codebase has 12 known mypy
   # findings in legacy paths; cleanup is tracked for v0.2.0. Operators can

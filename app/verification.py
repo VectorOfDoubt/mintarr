@@ -9,7 +9,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
-VerificationDecision = Literal["ACCEPT", "ACCEPT_PROVISIONAL", "REVIEW_REQUIRED", "BLOCK"]
+VerificationDecision = Literal[
+    "ACCEPT", "ACCEPT_PROVISIONAL", "REVIEW_REQUIRED", "BLOCK"
+]
 ImportOutcome = Literal["MANUAL_IMPORTED", "RESCUED", "FAILED", "SKIPPED", "PENDING"]
 
 
@@ -61,7 +63,11 @@ class VerificationResult:
         if self.import_outcome == "RESCUED":
             return "RESCUED_BY_RESCAN"
         if self.verification_decision == "ACCEPT":
-            return "IMPORTED_AUTHENTIC" if self.verdict == "AUTHENTIC" else "IMPORTED_WITH_WARNING"
+            return (
+                "IMPORTED_AUTHENTIC"
+                if self.verdict == "AUTHENTIC"
+                else "IMPORTED_WITH_WARNING"
+            )
         if self.verification_decision == "ACCEPT_PROVISIONAL":
             return "IMPORTED_DESPITE_FAKE"
         if self.verification_decision == "BLOCK":

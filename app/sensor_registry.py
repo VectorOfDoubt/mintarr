@@ -17,7 +17,9 @@ SensorClass = Literal[
     "provenance",
     "library_state",
 ]
-SensorStage = Literal["technical_gate", "spectral", "source_specific", "metadata", "provenance"]
+SensorStage = Literal[
+    "technical_gate", "spectral", "source_specific", "metadata", "provenance"
+]
 FailPolicy = Literal["block", "review", "skip", "warn"]
 Mode = Literal["dry_run", "import"]
 
@@ -86,7 +88,8 @@ class SensorRegistry:
         }
         return sorted(
             [
-                sensor for sensor in self._sensors.values()
+                sensor
+                for sensor in self._sensors.values()
                 if sensor.enabled and source_lane in sensor.applies_to
             ],
             key=lambda sensor: (stage_order[sensor.stage], sensor.name),
@@ -96,12 +99,15 @@ class SensorRegistry:
         if mode != "import":
             return
         disabled_required = [
-            sensor.name for sensor in self._sensors.values()
+            sensor.name
+            for sensor in self._sensors.values()
             if sensor.required and not sensor.enabled
         ]
         if disabled_required:
             names = ", ".join(sorted(disabled_required))
-            raise ValueError(f"required sensors cannot be disabled in import mode: {names}")
+            raise ValueError(
+                f"required sensors cannot be disabled in import mode: {names}"
+            )
 
 
 default_registry = SensorRegistry()

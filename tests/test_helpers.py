@@ -52,9 +52,18 @@ def test_release_title_format_matches_lidarr_parser(fake_album):
 
 
 def test_track_title_normalization_ignores_remaster_noise():
-    assert server._normalize_track_title_for_match("01 - Celice (2026 Remaster).flac") == "celice"
-    assert server._normalize_track_title_for_match("1-01. Cosy Prisons [Remastered]") == "cosy prisons"
-    assert server._normalize_track_title_for_match("Celice (Early Version)") == "celice early version"
+    assert (
+        server._normalize_track_title_for_match("01 - Celice (2026 Remaster).flac")
+        == "celice"
+    )
+    assert (
+        server._normalize_track_title_for_match("1-01. Cosy Prisons [Remastered]")
+        == "cosy prisons"
+    )
+    assert (
+        server._normalize_track_title_for_match("Celice (Early Version)")
+        == "celice early version"
+    )
 
 
 def test_release_match_score_prefers_full_remaster_release():
@@ -67,19 +76,27 @@ def test_release_match_score_prefers_full_remaster_release():
             "04 - Minor Key Sonata (Analogue).flac",
         ]
     }
-    full_release_tracks = server._track_title_names([
-        {"title": "Celice"},
-        {"title": "Don't Do Me Any Favours"},
-        {"title": "Cosy Prisons"},
-        {"title": "Minor Key Sonata (Analogue)"},
-    ])
-    standard_release_tracks = server._track_title_names([
-        {"title": "Celice"},
-        {"title": "Don't Do Me Any Favours"},
-    ])
+    full_release_tracks = server._track_title_names(
+        [
+            {"title": "Celice"},
+            {"title": "Don't Do Me Any Favours"},
+            {"title": "Cosy Prisons"},
+            {"title": "Minor Key Sonata (Analogue)"},
+        ]
+    )
+    standard_release_tracks = server._track_title_names(
+        [
+            {"title": "Celice"},
+            {"title": "Don't Do Me Any Favours"},
+        ]
+    )
 
-    full = server._score_release_match(4, downloaded, {"trackCount": 4}, full_release_tracks)
-    standard = server._score_release_match(4, downloaded, {"trackCount": 2}, standard_release_tracks)
+    full = server._score_release_match(
+        4, downloaded, {"trackCount": 4}, full_release_tracks
+    )
+    standard = server._score_release_match(
+        4, downloaded, {"trackCount": 2}, standard_release_tracks
+    )
 
     assert full == 100
     assert standard < 70

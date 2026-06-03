@@ -11,6 +11,7 @@ import pytest
 
 def test_release_candidate_guid_is_source_colon_id():
     from adapters.base import ReleaseCandidate
+
     rc = ReleaseCandidate(
         source_type="tidal",
         source_id="12345",
@@ -28,6 +29,7 @@ def test_release_candidate_guid_is_source_colon_id():
 
 def test_raw_download_holds_paths_and_counts(tmp_path):
     from adapters.base import RawDownload
+
     rd = RawDownload(files_dir=tmp_path, file_count=12, total_bytes=42)
     assert rd.files_dir == tmp_path
     assert rd.file_count == 12
@@ -36,20 +38,31 @@ def test_raw_download_holds_paths_and_counts(tmp_path):
 
 def test_registry_register_get_and_enabled_filter():
     import adapters
+
     adapters.reset_registry()
 
     class _DummyAdapter:
         name = "dummy"
         source_type = "dummy"
-        def is_enabled(self): return True
-        def search(self, *a, **kw): return []
-        def download_raw(self, *a, **kw): raise NotImplementedError
-        def cleanup(self, *a, **kw): return None
+
+        def is_enabled(self):
+            return True
+
+        def search(self, *a, **kw):
+            return []
+
+        def download_raw(self, *a, **kw):
+            raise NotImplementedError
+
+        def cleanup(self, *a, **kw):
+            return None
 
     class _OffAdapter(_DummyAdapter):
         name = "off"
         source_type = "off"
-        def is_enabled(self): return False
+
+        def is_enabled(self):
+            return False
 
     adapters.register(_DummyAdapter())
     adapters.register(_OffAdapter())
@@ -62,15 +75,24 @@ def test_registry_register_get_and_enabled_filter():
 
 def test_registry_register_duplicate_raises():
     import adapters
+
     adapters.reset_registry()
 
     class _A:
         name = "dup"
         source_type = "dup"
-        def is_enabled(self): return True
-        def search(self, *a, **kw): return []
-        def download_raw(self, *a, **kw): raise NotImplementedError
-        def cleanup(self, *a, **kw): return None
+
+        def is_enabled(self):
+            return True
+
+        def search(self, *a, **kw):
+            return []
+
+        def download_raw(self, *a, **kw):
+            raise NotImplementedError
+
+        def cleanup(self, *a, **kw):
+            return None
 
     adapters.register(_A())
     with pytest.raises(ValueError, match="already registered"):
@@ -99,6 +121,7 @@ def test_runtime_context_satisfies_protocol(tmp_path):
 def test_tidal_adapter_is_enabled_when_token_present(tmp_path):
     """is_enabled() must reflect token.json presence."""
     from adapters.tidal import TidalAdapter
+
     cfg = tmp_path / "tidal-config"
     cfg.mkdir()
     adapter = TidalAdapter(config_dir=str(cfg))
@@ -109,6 +132,7 @@ def test_tidal_adapter_is_enabled_when_token_present(tmp_path):
 
 def test_tidal_adapter_name_and_source_type():
     from adapters.tidal import TidalAdapter
+
     a = TidalAdapter()
     assert a.name == "tidal"
     assert a.source_type == "tidal"
@@ -125,7 +149,9 @@ def test_tidal_get_session_loads_token_as_pkce(tmp_path, monkeypatch):
     seen = {}
 
     class _FakeSession:
-        def load_oauth_session(self, token_type, access_token, refresh_token, expiry_time, *, is_pkce=False):
+        def load_oauth_session(
+            self, token_type, access_token, refresh_token, expiry_time, *, is_pkce=False
+        ):
             seen["is_pkce"] = is_pkce
             self.user = SimpleNamespace(username="redacted")
             return True
@@ -152,7 +178,9 @@ def test_tidal_get_session_pkce_can_be_disabled(tmp_path, monkeypatch):
     seen = {}
 
     class _FakeSession:
-        def load_oauth_session(self, token_type, access_token, refresh_token, expiry_time, *, is_pkce=False):
+        def load_oauth_session(
+            self, token_type, access_token, refresh_token, expiry_time, *, is_pkce=False
+        ):
             seen["is_pkce"] = is_pkce
             self.user = SimpleNamespace(username="redacted")
             return True

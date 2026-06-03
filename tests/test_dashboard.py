@@ -84,12 +84,13 @@ def test_dashboard_html_fetches_and_renders_connectors(monkeypatch, tmp_path):
 
 def test_dashboard_summary_returns_expected_shape(monkeypatch, tmp_path):
     _patch_paths(monkeypatch, tmp_path)
-    output_dir = (tmp_path / "output" / "sum12345")
+    output_dir = tmp_path / "output" / "sum12345"
     output_dir.mkdir(parents=True)
     server._write_verification_sidecar("sum12345", _result(jid="sum12345"), output_dir)
 
     # Clear dashboard cache to ensure fresh fetch
     from dashboard_cache import clear
+
     clear()
 
     client = server.app.test_client()
@@ -135,6 +136,7 @@ def test_dashboard_summary_counts_pending_from_derived_status(monkeypatch, tmp_p
     )
 
     from dashboard_cache import clear
+
     clear()
 
     client = server.app.test_client()
@@ -148,11 +150,12 @@ def test_dashboard_summary_counts_pending_from_derived_status(monkeypatch, tmp_p
 
 def test_dashboard_summary_flags_blocking_lidarr_commands(monkeypatch, tmp_path):
     _patch_paths(monkeypatch, tmp_path)
-    output_dir = (tmp_path / "output" / "cmd12345")
+    output_dir = tmp_path / "output" / "cmd12345"
     output_dir.mkdir(parents=True)
     server._write_verification_sidecar("cmd12345", _result(jid="cmd12345"), output_dir)
 
     import dashboard
+
     monkeypatch.setenv("LIDARR_API_URL", "http://lidarr/api/v1")
     monkeypatch.setattr(server, "_get_lidarr_key", lambda: "lidarr-key")
     monkeypatch.setattr(dashboard.time, "time", lambda: 7200.0)
@@ -171,29 +174,32 @@ def test_dashboard_summary_flags_blocking_lidarr_commands(monkeypatch, tmp_path)
         if url == "http://lidarr/api/v1/queue?pageSize=1":
             return FakeResponse({"totalRecords": 4})
         if url == "http://lidarr/api/v1/command":
-            return FakeResponse([
-                {
-                    "id": 14568,
-                    "name": "RescanFolders",
-                    "status": "started",
-                    "message": "Importing 1608 tracks",
-                    "queued": "1970-01-01T00:00:00Z",
-                    "started": "1970-01-01T00:10:00Z",
-                },
-                {
-                    "id": 14647,
-                    "name": "ManualImport",
-                    "status": "queued",
-                    "message": None,
-                    "queued": "1970-01-01T01:00:00Z",
-                    "started": None,
-                },
-            ])
+            return FakeResponse(
+                [
+                    {
+                        "id": 14568,
+                        "name": "RescanFolders",
+                        "status": "started",
+                        "message": "Importing 1608 tracks",
+                        "queued": "1970-01-01T00:00:00Z",
+                        "started": "1970-01-01T00:10:00Z",
+                    },
+                    {
+                        "id": 14647,
+                        "name": "ManualImport",
+                        "status": "queued",
+                        "message": None,
+                        "queued": "1970-01-01T01:00:00Z",
+                        "started": None,
+                    },
+                ]
+            )
         raise AssertionError(f"unexpected url: {url}")
 
     monkeypatch.setattr("requests.get", fake_get)
 
     from dashboard_cache import clear
+
     clear()
 
     client = server.app.test_client()
@@ -213,11 +219,12 @@ def test_dashboard_summary_flags_blocking_lidarr_commands(monkeypatch, tmp_path)
 
 def test_dashboard_records_returns_records(monkeypatch, tmp_path):
     _patch_paths(monkeypatch, tmp_path)
-    output_dir = (tmp_path / "output" / "rec12345")
+    output_dir = tmp_path / "output" / "rec12345"
     output_dir.mkdir(parents=True)
     server._write_verification_sidecar("rec12345", _result(jid="rec12345"), output_dir)
 
     from dashboard_cache import clear
+
     clear()
 
     client = server.app.test_client()
@@ -240,6 +247,7 @@ def test_dashboard_records_filters_by_decision(monkeypatch, tmp_path):
         server._write_verification_sidecar(jid, _result(jid=jid, decision=dec), d)
 
     from dashboard_cache import clear
+
     clear()
 
     client = server.app.test_client()
@@ -259,7 +267,7 @@ def test_dashboard_record_detail_404_for_unknown(monkeypatch, tmp_path):
 
 def test_dashboard_record_detail_includes_available_actions(monkeypatch, tmp_path):
     _patch_paths(monkeypatch, tmp_path)
-    output_dir = (tmp_path / "output" / "det12345")
+    output_dir = tmp_path / "output" / "det12345"
     output_dir.mkdir(parents=True)
     # REVIEW_REQUIRED → pending_review → should allow promote+discard
     server._write_verification_sidecar(
@@ -280,9 +288,11 @@ def test_dashboard_record_detail_includes_available_actions(monkeypatch, tmp_pat
     assert data["files"] == []
 
 
-def test_dashboard_record_detail_does_not_reconcile_review_required(monkeypatch, tmp_path):
+def test_dashboard_record_detail_does_not_reconcile_review_required(
+    monkeypatch, tmp_path
+):
     _patch_paths(monkeypatch, tmp_path)
-    output_dir = (tmp_path / "output" / "revfast1")
+    output_dir = tmp_path / "output" / "revfast1"
     output_dir.mkdir(parents=True)
     server._write_verification_sidecar(
         "revfast1",
@@ -304,7 +314,7 @@ def test_dashboard_record_detail_does_not_reconcile_review_required(monkeypatch,
 
 def test_review_required_sidecar_starts_dashboard_media_prewarm(monkeypatch, tmp_path):
     _patch_paths(monkeypatch, tmp_path)
-    output_dir = (tmp_path / "output" / "warm1234")
+    output_dir = tmp_path / "output" / "warm1234"
     output_dir.mkdir(parents=True)
     (output_dir / "01.flac").write_bytes(b"fake flac")
     result = _result(jid="warm1234", decision="REVIEW_REQUIRED", outcome="PENDING")
@@ -323,23 +333,29 @@ def test_review_required_sidecar_starts_dashboard_media_prewarm(monkeypatch, tmp
 
     server._write_verification_sidecar("warm1234", result, output_dir)
 
-    assert started == [{
-        "target": server._prewarm_dashboard_media_worker,
-        "args": ("warm1234",),
-        "daemon": True,
-    }]
+    assert started == [
+        {
+            "target": server._prewarm_dashboard_media_worker,
+            "args": ("warm1234",),
+            "daemon": True,
+        }
+    ]
     with server._dashboard_media_prewarm_lock:
         server._dashboard_media_prewarm_inflight.discard("warm1234")
 
 
 def test_dashboard_record_detail_includes_job_timings(monkeypatch, tmp_path):
     _patch_paths(monkeypatch, tmp_path)
-    output_dir = (tmp_path / "output" / "tim12345")
+    output_dir = tmp_path / "output" / "tim12345"
     output_dir.mkdir(parents=True)
     server._write_verification_sidecar("tim12345", _result(jid="tim12345"), output_dir)
-    monkeypatch.setattr(server, "_jobs", {
-        "tim12345": {"id": "tim12345", "timings": {"flac_detective_sec": 12.345}},
-    })
+    monkeypatch.setattr(
+        server,
+        "_jobs",
+        {
+            "tim12345": {"id": "tim12345", "timings": {"flac_detective_sec": 12.345}},
+        },
+    )
 
     client = server.app.test_client()
     resp = client.get(f"/dashboard/v1/record/tim12345?apikey={VALID_KEY}")
@@ -359,14 +375,28 @@ def test_dashboard_timings_requires_apikey():
 
 def test_dashboard_timings_aggregates_jobs(monkeypatch):
     monkeypatch.setattr(server, "_verification_records", lambda: [])
-    monkeypatch.setattr(server, "_jobs", {
-        "tim1": {"created_at": 1779620000, "timings": {"flac_detective_sec": 10, "pre_import_total_sec": 100}},
-        "tim2": {"created_at": 1779620010, "timings": {"flac_detective_sec": 20, "pre_import_total_sec": 200}},
-        "tim3": {"created_at": 1779620020, "timings": {"flac_detective_sec": 30, "pre_import_total_sec": 300}},
-    })
+    monkeypatch.setattr(
+        server,
+        "_jobs",
+        {
+            "tim1": {
+                "created_at": 1779620000,
+                "timings": {"flac_detective_sec": 10, "pre_import_total_sec": 100},
+            },
+            "tim2": {
+                "created_at": 1779620010,
+                "timings": {"flac_detective_sec": 20, "pre_import_total_sec": 200},
+            },
+            "tim3": {
+                "created_at": 1779620020,
+                "timings": {"flac_detective_sec": 30, "pre_import_total_sec": 300},
+            },
+        },
+    )
     monkeypatch.setattr("dashboard.time.time", lambda: 1779620100)
 
     from dashboard_cache import clear
+
     clear()
 
     client = server.app.test_client()
@@ -381,16 +411,26 @@ def test_dashboard_timings_aggregates_jobs(monkeypatch):
 
 def test_dashboard_timings_filters_stage(monkeypatch):
     monkeypatch.setattr(server, "_verification_records", lambda: [])
-    monkeypatch.setattr(server, "_jobs", {
-        "tim1": {"created_at": 1779620000, "timings": {"flac_detective_sec": 10, "postprocess_sec": 1}},
-    })
+    monkeypatch.setattr(
+        server,
+        "_jobs",
+        {
+            "tim1": {
+                "created_at": 1779620000,
+                "timings": {"flac_detective_sec": 10, "postprocess_sec": 1},
+            },
+        },
+    )
     monkeypatch.setattr("dashboard.time.time", lambda: 1779620100)
 
     from dashboard_cache import clear
+
     clear()
 
     client = server.app.test_client()
-    resp = client.get(f"/dashboard/v1/timings?window=1h&stage=postprocess_sec&apikey={VALID_KEY}")
+    resp = client.get(
+        f"/dashboard/v1/timings?window=1h&stage=postprocess_sec&apikey={VALID_KEY}"
+    )
     assert resp.status_code == 200
     data = resp.get_json()
     assert list(data["stages"].keys()) == ["postprocess_sec"]
@@ -420,14 +460,17 @@ def test_dashboard_media_artifact_generates_from_contained_audio(monkeypatch, tm
     media_dir = tmp_path / "media"
 
     import dashboard
+
     monkeypatch.setattr(dashboard, "_dashboard_media_dir", lambda: media_dir)
 
     def fake_run(cmd, **kwargs):
         Path(cmd[-1]).parent.mkdir(parents=True, exist_ok=True)
         Path(cmd[-1]).write_bytes(b"mp3")
+
         class Result:
             returncode = 0
             stderr = ""
+
         return Result()
 
     monkeypatch.setattr(dashboard.subprocess, "run", fake_run)
@@ -439,7 +482,9 @@ def test_dashboard_media_artifact_generates_from_contained_audio(monkeypatch, tm
     assert path.read_bytes() == b"mp3"
 
 
-def test_record_detail_marks_media_review_available_only_for_retained_non_imported(monkeypatch, tmp_path):
+def test_record_detail_marks_media_review_available_only_for_retained_non_imported(
+    monkeypatch, tmp_path
+):
     output_base = _patch_paths(monkeypatch, tmp_path)
 
     review_dir = output_base / "rev12345"
@@ -453,9 +498,12 @@ def test_record_detail_marks_media_review_available_only_for_retained_non_import
     imported_dir = output_base / "imp12345"
     imported_dir.mkdir(parents=True)
     (imported_dir / "01.flac").write_bytes(b"fake flac")
-    server._write_verification_sidecar("imp12345", _result(jid="imp12345"), imported_dir)
+    server._write_verification_sidecar(
+        "imp12345", _result(jid="imp12345"), imported_dir
+    )
 
     import dashboard
+
     assert dashboard._build_record_detail(server, "rev12345")["media"] == {
         "available": True,
         "files_present": True,
@@ -489,11 +537,16 @@ def test_dashboard_media_artifact_rejects_uncontained_job_path(monkeypatch, tmp_
     outside = tmp_path / "outside"
     outside.mkdir()
     (outside / "01.flac").write_bytes(b"fake flac")
-    monkeypatch.setattr(server, "_jobs", {
-        "escape1": {"id": "escape1", "output_dir": str(outside)},
-    })
+    monkeypatch.setattr(
+        server,
+        "_jobs",
+        {
+            "escape1": {"id": "escape1", "output_dir": str(outside)},
+        },
+    )
 
     import dashboard
+
     path, error = dashboard._media_artifact(server, "escape1", "audio")
 
     assert path is None
@@ -503,7 +556,7 @@ def test_dashboard_media_artifact_rejects_uncontained_job_path(monkeypatch, tmp_
 
 def test_lidarr_context_returns_album_queue_and_history(monkeypatch, tmp_path):
     _patch_paths(monkeypatch, tmp_path)
-    output_dir = (tmp_path / "output" / "ctx12345")
+    output_dir = tmp_path / "output" / "ctx12345"
     output_dir.mkdir(parents=True)
     server._write_verification_sidecar("ctx12345", _result(jid="ctx12345"), output_dir)
     monkeypatch.setattr(server, "_get_lidarr_key", lambda: "lidarr-key")
@@ -521,34 +574,57 @@ def test_lidarr_context_returns_album_queue_and_history(monkeypatch, tmp_path):
 
     def fake_get(url, **kwargs):
         if url.endswith("/album/100"):
-            return FakeResponse({
-                "id": 100,
-                "title": "Test Album",
-                "artist": {"artistName": "Test Artist"},
-                "statistics": {"trackCount": 12, "trackFileCount": 10},
-                "monitored": True,
-                "profileId": 1,
-                "currentRelease": {"title": "Deluxe", "trackCount": 12},
-            })
+            return FakeResponse(
+                {
+                    "id": 100,
+                    "title": "Test Album",
+                    "artist": {"artistName": "Test Artist"},
+                    "statistics": {"trackCount": 12, "trackFileCount": 10},
+                    "monitored": True,
+                    "profileId": 1,
+                    "currentRelease": {"title": "Deluxe", "trackCount": 12},
+                }
+            )
         if url.endswith("/queue"):
-            return FakeResponse({"records": [
-                {"id": 1, "albumId": 100, "title": "Test Artist - Test Album",
-                 "downloadId": "ctx12345", "status": "completed", "sizeleft": 0},
-                {"id": 2, "albumId": 999, "title": "Other"},
-            ]})
+            return FakeResponse(
+                {
+                    "records": [
+                        {
+                            "id": 1,
+                            "albumId": 100,
+                            "title": "Test Artist - Test Album",
+                            "downloadId": "ctx12345",
+                            "status": "completed",
+                            "sizeleft": 0,
+                        },
+                        {"id": 2, "albumId": 999, "title": "Other"},
+                    ]
+                }
+            )
         if url.endswith("/history"):
-            return FakeResponse({"records": [
-                {"albumId": 100, "date": "2026-05-24T12:00:00Z",
-                 "eventType": "downloadFolderImported", "indexer": "TidalHires",
-                 "downloadId": "ctx12345", "sourceTitle": "Test Artist - Test Album"},
-                {"albumId": 999, "eventType": "grabbed"},
-            ]})
+            return FakeResponse(
+                {
+                    "records": [
+                        {
+                            "albumId": 100,
+                            "date": "2026-05-24T12:00:00Z",
+                            "eventType": "downloadFolderImported",
+                            "indexer": "TidalHires",
+                            "downloadId": "ctx12345",
+                            "sourceTitle": "Test Artist - Test Album",
+                        },
+                        {"albumId": 999, "eventType": "grabbed"},
+                    ]
+                }
+            )
         raise AssertionError(url)
 
     import requests
+
     monkeypatch.setattr(requests, "get", fake_get)
 
     from dashboard_cache import clear
+
     clear()
 
     client = server.app.test_client()
@@ -565,7 +641,7 @@ def test_lidarr_context_returns_album_queue_and_history(monkeypatch, tmp_path):
 def test_dashboard_action_rejects_unallowed(monkeypatch, tmp_path):
     """ACCEPT/MANUAL_IMPORTED record allows no actions — discard should 409."""
     _patch_paths(monkeypatch, tmp_path)
-    output_dir = (tmp_path / "output" / "act12345")
+    output_dir = tmp_path / "output" / "act12345"
     output_dir.mkdir(parents=True)
     server._write_verification_sidecar("act12345", _result(jid="act12345"), output_dir)
 
@@ -590,80 +666,150 @@ def test_dashboard_action_404_for_unknown(monkeypatch, tmp_path):
 
 def test_derive_status_for_common_combinations():
     from dashboard import derive_status
-    assert derive_status({"v2_verification_decision": "ACCEPT", "v2_import_outcome": "MANUAL_IMPORTED",
-                          "lifecycle": {"state": "created"}}) == "imported"
-    assert derive_status({"v2_verification_decision": "REVIEW_REQUIRED",
-                          "lifecycle": {"state": "pending_review"}}) == "needs_review"
-    assert derive_status({"v2_import_outcome": "FAILED", "lifecycle": {"state": "created"}}) == "failed"
+
+    assert (
+        derive_status(
+            {
+                "v2_verification_decision": "ACCEPT",
+                "v2_import_outcome": "MANUAL_IMPORTED",
+                "lifecycle": {"state": "created"},
+            }
+        )
+        == "imported"
+    )
+    assert (
+        derive_status(
+            {
+                "v2_verification_decision": "REVIEW_REQUIRED",
+                "lifecycle": {"state": "pending_review"},
+            }
+        )
+        == "needs_review"
+    )
+    assert (
+        derive_status(
+            {"v2_import_outcome": "FAILED", "lifecycle": {"state": "created"}}
+        )
+        == "failed"
+    )
     assert derive_status({"lifecycle": {"state": "discarded"}}) == "discarded"
-    assert derive_status({"v2_verification_decision": "BLOCK", "lifecycle": {"state": "created"}}) == "blocked"
-    assert derive_status({"v2_verification_decision": "BLOCK", "v2_import_outcome": "MANUAL_IMPORTED",
-                          "lifecycle": {"state": "created"}}) == "policy_violation"
+    assert (
+        derive_status(
+            {"v2_verification_decision": "BLOCK", "lifecycle": {"state": "created"}}
+        )
+        == "blocked"
+    )
+    assert (
+        derive_status(
+            {
+                "v2_verification_decision": "BLOCK",
+                "v2_import_outcome": "MANUAL_IMPORTED",
+                "lifecycle": {"state": "created"},
+            }
+        )
+        == "policy_violation"
+    )
 
 
 def test_status_reason_for_operator_states():
     from dashboard import status_reason
 
-    assert status_reason({
-        "v2_verification_decision": "REVIEW_REQUIRED",
-        "v2_import_outcome": "PENDING",
-        "v2_overrides": ["fake_hi_res"],
-        "lifecycle": {"state": "pending_review"},
-    }) == "Looks like upsampled hi-res: useful high-frequency content stops at the file's technical ceiling."
-    assert status_reason({
-        "v2_verification_decision": "ACCEPT_PROVISIONAL",
-        "v2_import_outcome": "FAILED",
-        "reason": "manualimport and rescue failed",
-        "lifecycle": {"state": "created"},
-    }) == "Import failed: manualimport and rescue failed"
-    assert status_reason({
-        "v2_verification_decision": "ACCEPT_PROVISIONAL",
-        "v2_import_outcome": "FAILED",
-        "reason": "nothing pre-existing",
-        "job_error": "manual promote import failed",
-        "lifecycle": {"state": "created"},
-    }) == (
+    assert (
+        status_reason(
+            {
+                "v2_verification_decision": "REVIEW_REQUIRED",
+                "v2_import_outcome": "PENDING",
+                "v2_overrides": ["fake_hi_res"],
+                "lifecycle": {"state": "pending_review"},
+            }
+        )
+        == "Looks like upsampled hi-res: useful high-frequency content stops at the file's technical ceiling."
+    )
+    assert (
+        status_reason(
+            {
+                "v2_verification_decision": "ACCEPT_PROVISIONAL",
+                "v2_import_outcome": "FAILED",
+                "reason": "manualimport and rescue failed",
+                "lifecycle": {"state": "created"},
+            }
+        )
+        == "Import failed: manualimport and rescue failed"
+    )
+    assert status_reason(
+        {
+            "v2_verification_decision": "ACCEPT_PROVISIONAL",
+            "v2_import_outcome": "FAILED",
+            "reason": "nothing pre-existing",
+            "job_error": "manual promote import failed",
+            "lifecycle": {"state": "created"},
+        }
+    ) == (
         "Import failed after QC passed: Lidarr ManualImport did not confirm any imported files. "
         "Open the record for Lidarr context, then retry import or discard."
     )
-    assert status_reason({
-        "v2_verification_decision": "ACCEPT_PROVISIONAL",
-        "v2_import_outcome": "MANUAL_IMPORTED",
-        "reason": "score=68",
-        "lifecycle": {"state": "created"},
-    }) == "Imported provisionally because the score was below full-accept threshold."
-    assert status_reason({
-        "v2_verification_decision": "BLOCK",
-        "v2_import_outcome": "SKIPPED",
-        "reason": "validator unavailable",
-        "lifecycle": {"state": "created"},
-    }) == "Blocked by policy: validator unavailable."
-    assert status_reason({
-        "v2_verification_decision": "BLOCK",
-        "v2_import_outcome": "SKIPPED",
-        "reason": "codec mismatch",
-        "v2_overrides": ["codec_mismatch", "no_audio_files"],
-        "sensors": [{
-            "name": "ffprobe",
-            "evidence": {"codec_gate_skipped": 10, "flac_count": 0},
-        }],
-        "lifecycle": {"state": "created"},
-    }) == (
+    assert (
+        status_reason(
+            {
+                "v2_verification_decision": "ACCEPT_PROVISIONAL",
+                "v2_import_outcome": "MANUAL_IMPORTED",
+                "reason": "score=68",
+                "lifecycle": {"state": "created"},
+            }
+        )
+        == "Imported provisionally because the score was below full-accept threshold."
+    )
+    assert (
+        status_reason(
+            {
+                "v2_verification_decision": "BLOCK",
+                "v2_import_outcome": "SKIPPED",
+                "reason": "validator unavailable",
+                "lifecycle": {"state": "created"},
+            }
+        )
+        == "Blocked by policy: validator unavailable."
+    )
+    assert status_reason(
+        {
+            "v2_verification_decision": "BLOCK",
+            "v2_import_outcome": "SKIPPED",
+            "reason": "codec mismatch",
+            "v2_overrides": ["codec_mismatch", "no_audio_files"],
+            "sensors": [
+                {
+                    "name": "ffprobe",
+                    "evidence": {"codec_gate_skipped": 10, "flac_count": 0},
+                }
+            ],
+            "lifecycle": {"state": "created"},
+        }
+    ) == (
         "Skipped before import: the release was advertised as FLAC, "
         "but the download contained 10 non-FLAC audio file(s). "
         "All were stopped by the codec gate, so no FLAC files remained for import."
     )
-    assert status_reason({
-        "v2_verification_decision": "BLOCK",
-        "v2_import_outcome": "MANUAL_IMPORTED",
-        "reason": "codec mismatch",
-        "lifecycle": {"state": "created"},
-    }) == "Policy violation: this record was imported even though V2 decided BLOCK. Keep it for audit and inspect Lidarr library/history."
-    assert status_reason({
-        "v2_verification_decision": "REVIEW_REQUIRED",
-        "v2_import_outcome": "PENDING",
-        "lifecycle": {"state": "discarded", "actor": "user_discard"},
-    }) == "Discarded by user; files were removed and the grab was blocklisted when possible."
+    assert (
+        status_reason(
+            {
+                "v2_verification_decision": "BLOCK",
+                "v2_import_outcome": "MANUAL_IMPORTED",
+                "reason": "codec mismatch",
+                "lifecycle": {"state": "created"},
+            }
+        )
+        == "Policy violation: this record was imported even though V2 decided BLOCK. Keep it for audit and inspect Lidarr library/history."
+    )
+    assert (
+        status_reason(
+            {
+                "v2_verification_decision": "REVIEW_REQUIRED",
+                "v2_import_outcome": "PENDING",
+                "lifecycle": {"state": "discarded", "actor": "user_discard"},
+            }
+        )
+        == "Discarded by user; files were removed and the grab was blocklisted when possible."
+    )
 
 
 def test_record_job_timing_rounds_and_persists(monkeypatch):
@@ -715,23 +861,37 @@ def test_job_cancel_409_has_operator_friendly_error(tmp_path):
 
 def test_available_actions_per_state():
     from dashboard import available_actions
+
     # REVIEW_REQUIRED + pending_review → promote/discard
-    assert set(available_actions({
-        "v2_verification_decision": "REVIEW_REQUIRED",
-        "lifecycle": {"state": "pending_review"},
-    })) == {"promote", "discard"}
+    assert set(
+        available_actions(
+            {
+                "v2_verification_decision": "REVIEW_REQUIRED",
+                "lifecycle": {"state": "pending_review"},
+            }
+        )
+    ) == {"promote", "discard"}
     # FAILED + ACCEPT → retry/discard
-    assert set(available_actions({
-        "v2_verification_decision": "ACCEPT",
-        "v2_import_outcome": "FAILED",
-        "lifecycle": {"state": "created"},
-    })) == {"retry_import", "discard"}
+    assert set(
+        available_actions(
+            {
+                "v2_verification_decision": "ACCEPT",
+                "v2_import_outcome": "FAILED",
+                "lifecycle": {"state": "created"},
+            }
+        )
+    ) == {"retry_import", "discard"}
     # IMPORTED → no actions
-    assert available_actions({
-        "v2_verification_decision": "ACCEPT",
-        "v2_import_outcome": "MANUAL_IMPORTED",
-        "lifecycle": {"state": "created"},
-    }) == []
+    assert (
+        available_actions(
+            {
+                "v2_verification_decision": "ACCEPT",
+                "v2_import_outcome": "MANUAL_IMPORTED",
+                "lifecycle": {"state": "created"},
+            }
+        )
+        == []
+    )
     # discarded → no actions
     assert available_actions({"lifecycle": {"state": "discarded"}}) == []
 
@@ -739,7 +899,7 @@ def test_available_actions_per_state():
 def test_dashboard_cache_invalidate_on_action(monkeypatch, tmp_path):
     """POST action should invalidate summary + records cache."""
     _patch_paths(monkeypatch, tmp_path)
-    output_dir = (tmp_path / "output" / "inv12345")
+    output_dir = tmp_path / "output" / "inv12345"
     output_dir.mkdir(parents=True)
     server._write_verification_sidecar(
         "inv12345",
@@ -748,6 +908,7 @@ def test_dashboard_cache_invalidate_on_action(monkeypatch, tmp_path):
     )
 
     from dashboard_cache import clear, _cache
+
     clear()
 
     client = server.app.test_client()
@@ -765,14 +926,16 @@ def test_dashboard_cache_invalidate_on_action(monkeypatch, tmp_path):
 
 # ---- F1.6: DB-backed records + actions endpoint ----
 
+
 def test_dashboard_records_uses_db_when_available(monkeypatch, tmp_path):
     """When DB has records, /records returns _source=db marker."""
     _patch_paths(monkeypatch, tmp_path)
-    output_dir = (tmp_path / "output" / "dbq12345")
+    output_dir = tmp_path / "output" / "dbq12345"
     output_dir.mkdir(parents=True)
     server._write_verification_sidecar("dbq12345", _result(jid="dbq12345"), output_dir)
 
     from dashboard_cache import clear
+
     clear()
 
     client = server.app.test_client()
@@ -785,19 +948,22 @@ def test_dashboard_records_uses_db_when_available(monkeypatch, tmp_path):
 def test_dashboard_records_db_reason_uses_sidecar_evidence(monkeypatch, tmp_path):
     """DB-backed rows should still expose non-cryptic status reasons."""
     _patch_paths(monkeypatch, tmp_path)
-    output_dir = (tmp_path / "output" / "dbblock1")
+    output_dir = tmp_path / "output" / "dbblock1"
     output_dir.mkdir(parents=True)
     result = _result(jid="dbblock1", decision="BLOCK", outcome="SKIPPED")
     result.score = 0
     result.verdict = "UNKNOWN"
     result.overrides = ["codec_mismatch", "no_audio_files"]
-    result.sensors = [{
-        "name": "ffprobe",
-        "evidence": {"codec_gate_skipped": 10, "flac_count": 0},
-    }]
+    result.sensors = [
+        {
+            "name": "ffprobe",
+            "evidence": {"codec_gate_skipped": 10, "flac_count": 0},
+        }
+    ]
     server._write_verification_sidecar("dbblock1", result, output_dir)
 
     from dashboard_cache import clear
+
     clear()
 
     client = server.app.test_client()
@@ -826,7 +992,7 @@ def test_dashboard_actions_endpoint_empty_when_no_actions(monkeypatch, tmp_path)
 def test_dashboard_actions_per_jid(monkeypatch, tmp_path):
     """Action POST should be logged + readable via /actions/<jid>."""
     _patch_paths(monkeypatch, tmp_path)
-    output_dir = (tmp_path / "output" / "logj1234")
+    output_dir = tmp_path / "output" / "logj1234"
     output_dir.mkdir(parents=True)
     server._write_verification_sidecar(
         "logj1234",

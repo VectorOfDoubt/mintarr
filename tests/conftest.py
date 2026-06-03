@@ -24,7 +24,11 @@ os.environ["TIDALHIRES_STATE_DB"] = str(Path(_TMPDIR) / "state.db")
 # F2.1: do not start auto-worker in tests (pytest controls lifecycle)
 os.environ["TIDALHIRES_DISABLE_WORKER"] = "1"
 
-APP_DIR = Path("/app") if Path("/app/server.py").exists() else Path(__file__).resolve().parents[1] / "app"
+APP_DIR = (
+    Path("/app")
+    if Path("/app/server.py").exists()
+    else Path(__file__).resolve().parents[1] / "app"
+)
 sys.path.insert(0, str(APP_DIR))
 
 
@@ -38,6 +42,7 @@ def _reset_state_db():
     """
     try:
         import state_db
+
         state_db._initialized = False
         if state_db._db_path.exists():
             state_db._db_path.unlink()
@@ -49,6 +54,7 @@ def _reset_state_db():
         from adapters.tidal import TidalAdapter
         from adapters.local_folder import LocalFolderAdapter
         from adapters.soulseek import SoulseekCompletedAdapter
+
         adapters.reset_registry()
         adapters.register(TidalAdapter())
         adapters.register(LocalFolderAdapter())

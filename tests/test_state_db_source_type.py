@@ -15,6 +15,7 @@ def _cols(db_path: Path) -> set[str]:
 def test_migration_adds_source_type_column(tmp_path):
     """A pre-F3.1 records table (without source_type) gains the column on init."""
     import state_db
+
     db = tmp_path / "legacy.db"
     # Simulate pre-F3.1 schema by creating records without source_type
     with sqlite3.connect(str(db)) as conn:
@@ -52,13 +53,16 @@ def test_migration_adds_source_type_column(tmp_path):
 
     # Backfill: legacy row should now have 'tidal'
     with sqlite3.connect(str(db)) as conn:
-        row = conn.execute("SELECT source_type FROM records WHERE jid='legacyjid'").fetchone()
+        row = conn.execute(
+            "SELECT source_type FROM records WHERE jid='legacyjid'"
+        ).fetchone()
     assert row[0] == "tidal"
 
 
 def test_migration_is_idempotent(tmp_path):
     """Running init twice on the same DB must not error or duplicate columns."""
     import state_db
+
     db = tmp_path / "fresh.db"
 
     state_db._initialized = False
@@ -74,6 +78,7 @@ def test_migration_is_idempotent(tmp_path):
 
 def test_upsert_record_persists_source_type(tmp_path):
     import state_db
+
     db = tmp_path / "upsert.db"
     state_db._initialized = False
     state_db.init(db_path=db)
@@ -88,13 +93,16 @@ def test_upsert_record_persists_source_type(tmp_path):
     }
     state_db.upsert_record(sidecar, derived_status="imported")
     with sqlite3.connect(str(db)) as conn:
-        row = conn.execute("SELECT source_type FROM records WHERE jid='abc123'").fetchone()
+        row = conn.execute(
+            "SELECT source_type FROM records WHERE jid='abc123'"
+        ).fetchone()
     assert row[0] == "tidal"
 
 
 def test_upsert_record_defaults_to_tidal_when_absent(tmp_path):
     """Sidecars without source_type are treated as legacy TIDAL."""
     import state_db
+
     db = tmp_path / "legacy_sidecar.db"
     state_db._initialized = False
     state_db.init(db_path=db)
@@ -106,5 +114,7 @@ def test_upsert_record_defaults_to_tidal_when_absent(tmp_path):
     }
     state_db.upsert_record(sidecar)
     with sqlite3.connect(str(db)) as conn:
-        row = conn.execute("SELECT source_type FROM records WHERE jid='legacysid'").fetchone()
+        row = conn.execute(
+            "SELECT source_type FROM records WHERE jid='legacysid'"
+        ).fetchone()
     assert row[0] == "tidal"

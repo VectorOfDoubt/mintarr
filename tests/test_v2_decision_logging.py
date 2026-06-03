@@ -75,7 +75,9 @@ def test_log_decision_writes_v2_fields_when_flag_enabled(value, tmp_path, monkey
     monkeypatch.setattr(server, "DECISIONS_LOG", tmp_path / "decisions.jsonl")
     monkeypatch.setenv("V2_VERIFICATION_ENABLED", value)
 
-    server._log_decision("abc12345", v2_result=_verification_result(), error="extra context")
+    server._log_decision(
+        "abc12345", v2_result=_verification_result(), error="extra context"
+    )
 
     [record] = _read_records(server.DECISIONS_LOG)
     assert record["jid"] == "abc12345"
@@ -83,7 +85,12 @@ def test_log_decision_writes_v2_fields_when_flag_enabled(value, tmp_path, monkey
     assert record["v2_verification_decision"] == "ACCEPT"
     assert record["v2_import_outcome"] == "MANUAL_IMPORTED"
     assert record["v2_score"] == 85
-    assert record["v2_components"] == {"ffprobe": 25, "flac_t": 25, "detective": 35, "complete": 0}
+    assert record["v2_components"] == {
+        "ffprobe": 25,
+        "flac_t": 25,
+        "detective": 35,
+        "complete": 0,
+    }
     assert record["v2_overrides"] == []
     assert record["error"] == "extra context"
     assert record["ts"] > 0

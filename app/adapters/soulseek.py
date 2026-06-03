@@ -25,7 +25,14 @@ from .local_folder import hash_rel
 log = logging.getLogger("tidalhires.adapter.soulseek")
 
 _SUPPORTED_AUDIO_SUFFIXES = (".flac", ".m4a")
-_PARTIAL_SUFFIXES = (".part", ".partial", ".tmp", ".download", ".crdownload", ".incomplete")
+_PARTIAL_SUFFIXES = (
+    ".part",
+    ".partial",
+    ".tmp",
+    ".download",
+    ".crdownload",
+    ".incomplete",
+)
 _SLSKD_PREFIX = "slskd:"
 _SLSKD_SUCCESS_STATES = ("Succeeded", "Completed")
 _SLSKD_FAILURE_STATES = ("Errored", "Rejected", "Cancelled", "TimedOut", "Aborted")
@@ -100,11 +107,19 @@ class SoulseekCompletedAdapter:
 
     @property
     def max_files(self) -> int:
-        return self._max_files if self._max_files is not None else _env_int("SOULSEEK_MAX_FILES", 300)
+        return (
+            self._max_files
+            if self._max_files is not None
+            else _env_int("SOULSEEK_MAX_FILES", 300)
+        )
 
     @property
     def max_bytes(self) -> int:
-        return self._max_bytes if self._max_bytes is not None else _env_int("SOULSEEK_MAX_BYTES", 0)
+        return (
+            self._max_bytes
+            if self._max_bytes is not None
+            else _env_int("SOULSEEK_MAX_BYTES", 0)
+        )
 
     @property
     def settle_seconds(self) -> float:
@@ -183,21 +198,29 @@ class SoulseekCompletedAdapter:
         search_enabled = self._search_enabled
         if search_enabled is None:
             search_enabled = _env_bool("SOULSEEK_SEARCH_ENABLED")
-        if not search_enabled or not self.is_enabled() or not self.slskd_is_configured():
+        if (
+            not search_enabled
+            or not self.is_enabled()
+            or not self.slskd_is_configured()
+        ):
             return []
         search_text = self._search_text(query=query, artist=artist, album=album)
         if not search_text:
             return []
 
         try:
-            search_payload = self._slskd_post("/searches", {
-                "searchText": search_text,
-                "responseLimit": self.search_response_limit,
-                "fileLimit": self.search_file_limit,
-                "searchTimeout": self.search_timeout * 1000,
-                "minimumResponseFileCount": self.min_tracks,
-                "filterResponses": True,
-            }, timeout=self.search_timeout + 5)
+            search_payload = self._slskd_post(
+                "/searches",
+                {
+                    "searchText": search_text,
+                    "responseLimit": self.search_response_limit,
+                    "fileLimit": self.search_file_limit,
+                    "searchTimeout": self.search_timeout * 1000,
+                    "minimumResponseFileCount": self.min_tracks,
+                    "filterResponses": True,
+                },
+                timeout=self.search_timeout + 5,
+            )
         except Exception:
             log.exception("Soulseek slskd search failed for %r", search_text)
             return []
@@ -275,16 +298,24 @@ class SoulseekCompletedAdapter:
         if not audio_files:
             raise RuntimeError(f"no supported audio files found in {src}")
         if len(first) > self.max_files:
-            raise RuntimeError(f"soulseek folder has too many files: {len(first)} > {self.max_files}")
+            raise RuntimeError(
+                f"soulseek folder has too many files: {len(first)} > {self.max_files}"
+            )
         if self.max_bytes and total_bytes > self.max_bytes:
-            raise RuntimeError(f"soulseek folder exceeds max bytes: {total_bytes} > {self.max_bytes}")
+            raise RuntimeError(
+                f"soulseek folder exceeds max bytes: {total_bytes} > {self.max_bytes}"
+            )
         settle_seconds = self.settle_seconds
         if settle_seconds:
             time.sleep(settle_seconds)
             second, audio_files_2, total_bytes_2, partial_files_2 = self._snapshot(src)
             if partial_files_2:
                 raise RuntimeError("soulseek folder has partial download markers")
-            if second != first or audio_files_2 != audio_files or total_bytes_2 != total_bytes:
+            if (
+                second != first
+                or audio_files_2 != audio_files
+                or total_bytes_2 != total_bytes
+            ):
                 raise RuntimeError("soulseek folder not settled")
         return len(first), audio_files, total_bytes
 
@@ -359,12 +390,16 @@ class SoulseekCompletedAdapter:
 
     def _slskd_get(self, path: str, *, timeout: int = 15):
         import requests
-        response = requests.get(self._api_url(path), headers=self._api_headers(), timeout=timeout)
+
+        response = requests.get(
+            self._api_url(path), headers=self._api_headers(), timeout=timeout
+        )
         response.raise_for_status()
         return response.json()
 
     def _slskd_post(self, path: str, payload, *, timeout: int = 15):
         import requests
+
         response = requests.post(
             self._api_url(path),
             headers={**self._api_headers(), "Content-Type": "application/json"},
@@ -405,13 +440,18 @@ class SoulseekCompletedAdapter:
         candidates: list[ReleaseCandidate] = []
         seen: set[str] = set()
         for response in responses:
-            username = str(response.get("username") or response.get("user") or "").strip()
+            username = str(
+                response.get("username") or response.get("user") or ""
+            ).strip()
             if not username:
                 continue
             grouped: dict[str, list[dict]] = {}
             for file_info in response.get("files") or []:
                 filename = str(file_info.get("filename") or "").strip()
-                if not filename or Path(filename).suffix.lower() not in _SUPPORTED_AUDIO_SUFFIXES:
+                if (
+                    not filename
+                    or Path(filename).suffix.lower() not in _SUPPORTED_AUDIO_SUFFIXES
+                ):
                     continue
                 parent = self._remote_parent(filename)
                 grouped.setdefault(parent, []).append(file_info)
@@ -421,17 +461,21 @@ class SoulseekCompletedAdapter:
                     continue
                 files = sorted(
                     files,
-                    key=lambda f: self._remote_filename_sort_key(str(f.get("filename") or "")),
+                    key=lambda f: self._remote_filename_sort_key(
+                        str(f.get("filename") or "")
+                    ),
                 )
                 if len(files) > self.max_files:
-                    files = files[:self.max_files]
+                    files = files[: self.max_files]
                 total = sum(int(f.get("size") or 0) for f in files)
                 if self.max_bytes and total > self.max_bytes:
                     continue
                 request = SlskdDownloadRequest(
                     username=username,
                     files=tuple(
-                        SlskdDownloadFile(str(f.get("filename") or ""), int(f.get("size") or 0))
+                        SlskdDownloadFile(
+                            str(f.get("filename") or ""), int(f.get("size") or 0)
+                        )
                         for f in files
                     ),
                     title=self._candidate_title(parent, artist=artist, album=album),
@@ -441,22 +485,29 @@ class SoulseekCompletedAdapter:
                 if source_id in seen:
                     continue
                 seen.add(source_id)
-                quality = "FLAC" if all(
-                    Path(f.filename).suffix.lower() == ".flac" for f in request.files
-                ) else "FLAC/M4A"
-                candidates.append(ReleaseCandidate(
-                    source_type=self.source_type,
-                    source_id=source_id,
-                    title=f"{request.title} ({quality}) [Soulseek]",
-                    artist=artist or "Soulseek",
-                    album=album or self._display_album(parent),
-                    year=year,
-                    quality_tag=quality,
-                    size_bytes=total,
-                    download_url=f"soulseek:{source_id}",
-                    priority=10,
-                    extra={"username": username, "file_count": len(request.files)},
-                ))
+                quality = (
+                    "FLAC"
+                    if all(
+                        Path(f.filename).suffix.lower() == ".flac"
+                        for f in request.files
+                    )
+                    else "FLAC/M4A"
+                )
+                candidates.append(
+                    ReleaseCandidate(
+                        source_type=self.source_type,
+                        source_id=source_id,
+                        title=f"{request.title} ({quality}) [Soulseek]",
+                        artist=artist or "Soulseek",
+                        album=album or self._display_album(parent),
+                        year=year,
+                        quality_tag=quality,
+                        size_bytes=total,
+                        download_url=f"soulseek:{source_id}",
+                        priority=10,
+                        extra={"username": username, "file_count": len(request.files)},
+                    )
+                )
                 if len(candidates) >= self.search_response_limit:
                     return candidates
         return candidates
@@ -493,7 +544,9 @@ class SoulseekCompletedAdapter:
 
     def _encode_slskd_source_id(self, request: SlskdDownloadRequest) -> str:
         payload = self._slskd_request_payload(request)
-        raw = json.dumps(payload, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+        raw = json.dumps(payload, separators=(",", ":"), ensure_ascii=False).encode(
+            "utf-8"
+        )
         token = hashlib.sha256(raw).hexdigest()[:24]
         self._store_slskd_request(token, payload)
         return _SLSKD_PREFIX + token
@@ -504,11 +557,17 @@ class SoulseekCompletedAdapter:
             "u": request.username,
             "t": request.title,
             "q": request.search_text,
-            "f": [{"filename": item.filename, "size": item.size} for item in request.files],
+            "f": [
+                {"filename": item.filename, "size": item.size} for item in request.files
+            ],
         }
 
     def _candidate_cache_path(self) -> Path:
-        return Path(os.environ.get("SOULSEEK_CANDIDATE_CACHE", "/config/soulseek_candidates.json"))
+        return Path(
+            os.environ.get(
+                "SOULSEEK_CANDIDATE_CACHE", "/config/soulseek_candidates.json"
+            )
+        )
 
     def _store_slskd_request(self, token: str, payload: dict) -> None:
         path = self._candidate_cache_path()
@@ -521,7 +580,10 @@ class SoulseekCompletedAdapter:
                     existing = {}
             existing[token] = payload
             tmp = path.with_suffix(path.suffix + ".tmp")
-            tmp.write_text(json.dumps(existing, separators=(",", ":"), ensure_ascii=False), encoding="utf-8")
+            tmp.write_text(
+                json.dumps(existing, separators=(",", ":"), ensure_ascii=False),
+                encoding="utf-8",
+            )
             tmp.replace(path)
         except Exception:
             log.exception("failed to store Soulseek slskd candidate token")
@@ -542,12 +604,14 @@ class SoulseekCompletedAdapter:
 
     def _decode_legacy_slskd_source_id(self, token: str) -> dict:
         padded = token + ("=" * (-len(token) % 4))
-        return json.loads(base64.urlsafe_b64decode(padded.encode("ascii")).decode("utf-8"))
+        return json.loads(
+            base64.urlsafe_b64decode(padded.encode("ascii")).decode("utf-8")
+        )
 
     def _decode_slskd_source_id(self, source_id: str) -> SlskdDownloadRequest:
         if not source_id.startswith(_SLSKD_PREFIX):
             raise RuntimeError("soulseek slskd source_id must start with slskd:")
-        token = source_id[len(_SLSKD_PREFIX):]
+        token = source_id[len(_SLSKD_PREFIX) :]
         payload = self._load_slskd_request_payload(token)
         if payload is None:
             try:
@@ -566,16 +630,23 @@ class SoulseekCompletedAdapter:
         for item in payload.get("f") or []:
             filename = str(item.get("filename") or "").strip()
             size = int(item.get("size") or 0)
-            if not filename or Path(filename).suffix.lower() not in _SUPPORTED_AUDIO_SUFFIXES:
+            if (
+                not filename
+                or Path(filename).suffix.lower() not in _SUPPORTED_AUDIO_SUFFIXES
+            ):
                 raise RuntimeError("soulseek slskd source_id has invalid file")
             files.append(SlskdDownloadFile(filename, size))
         if not files:
             raise RuntimeError("soulseek slskd source_id has no files")
         if len(files) > self.max_files:
-            raise RuntimeError(f"soulseek slskd source_id has too many files: {len(files)} > {self.max_files}")
+            raise RuntimeError(
+                f"soulseek slskd source_id has too many files: {len(files)} > {self.max_files}"
+            )
         total = sum(item.size for item in files)
         if self.max_bytes and total > self.max_bytes:
-            raise RuntimeError(f"soulseek slskd source_id exceeds max bytes: {total} > {self.max_bytes}")
+            raise RuntimeError(
+                f"soulseek slskd source_id exceeds max bytes: {total} > {self.max_bytes}"
+            )
         return SlskdDownloadRequest(
             username=username,
             files=tuple(files),
@@ -583,7 +654,9 @@ class SoulseekCompletedAdapter:
             search_text=str(payload.get("q") or ""),
         )
 
-    def _download_raw_from_slskd(self, candidate_id: str, ctx: PipelineContext) -> RawDownload:
+    def _download_raw_from_slskd(
+        self, candidate_id: str, ctx: PipelineContext
+    ) -> RawDownload:
         if not self.slskd_is_configured():
             raise RuntimeError("slskd API not configured")
         request = self._decode_slskd_source_id(candidate_id)
@@ -607,10 +680,14 @@ class SoulseekCompletedAdapter:
             audio_files=copied,
             size_bytes=total_bytes,
         )
-        return RawDownload(files_dir=ctx.raw_dir, file_count=copied, total_bytes=total_bytes)
+        return RawDownload(
+            files_dir=ctx.raw_dir, file_count=copied, total_bytes=total_bytes
+        )
 
     def _queue_slskd_download(self, request: SlskdDownloadRequest) -> None:
-        body = [{"filename": item.filename, "size": item.size} for item in request.files]
+        body = [
+            {"filename": item.filename, "size": item.size} for item in request.files
+        ]
         self._slskd_post(
             f"/transfers/downloads/{quote(request.username, safe='')}",
             body,
@@ -712,7 +789,9 @@ class SoulseekCompletedAdapter:
                 candidates.append(path)
             if not candidates:
                 continue
-            chosen = sorted(candidates, key=lambda p: p.stat().st_mtime_ns, reverse=True)[0]
+            chosen = sorted(
+                candidates, key=lambda p: p.stat().st_mtime_ns, reverse=True
+            )[0]
             matches.append(chosen)
             used.add(chosen)
         return matches
@@ -742,4 +821,9 @@ class SoulseekCompletedAdapter:
         return len(paths), total
 
 
-__all__ = ["SoulseekCompletedAdapter", "SlskdDownloadRequest", "SlskdDownloadFile", "hash_rel"]
+__all__ = [
+    "SoulseekCompletedAdapter",
+    "SlskdDownloadRequest",
+    "SlskdDownloadFile",
+    "hash_rel",
+]

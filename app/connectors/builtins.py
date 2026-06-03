@@ -11,7 +11,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
-from .base import ConnectorHealth, ConnectorKind, ConnectorManifest, MANIFEST_API_VERSION, health_checked_now
+from .base import (
+    ConnectorHealth,
+    ConnectorKind,
+    ConnectorManifest,
+    MANIFEST_API_VERSION,
+    health_checked_now,
+)
 from .config import configured_enabled
 from .registry import check_required_connectors_installed, get_connector, register
 
@@ -23,6 +29,7 @@ class AdapterBackedConnector:
 
     def _adapter(self):
         import adapters
+
         return adapters.get_adapter(self.adapter_name)
 
     def is_installed(self) -> bool:
@@ -103,7 +110,11 @@ class FlacDetectiveConnector:
         docker_service="flac-detective",
         required_env=("FLAC_API_URL",),
         optional_env=(),
-        capabilities=("spectral_analysis", "fake_lossless_verdict", "per_file_evidence"),
+        capabilities=(
+            "spectral_analysis",
+            "fake_lossless_verdict",
+            "per_file_evidence",
+        ),
         docs_url="connectors/flac_detective/",
         min_supported_version="0.6.0",
     )
@@ -113,7 +124,9 @@ class FlacDetectiveConnector:
         self._health_cache: ConnectorHealth | None = None
 
     def _health_url(self) -> str:
-        analyze_url = os.environ.get("FLAC_API_URL", "http://host.docker.internal:8889/analyze")
+        analyze_url = os.environ.get(
+            "FLAC_API_URL", "http://host.docker.internal:8889/analyze"
+        )
         return analyze_url.rsplit("/", 1)[0].rstrip("/") + "/health"
 
     def is_installed(self) -> bool:
@@ -125,7 +138,8 @@ class FlacDetectiveConnector:
     def health(self) -> ConnectorHealth:
         if (
             self._health_cache is not None
-            and time.time() - self._health_cache.last_checked_at < self.health_cache_seconds
+            and time.time() - self._health_cache.last_checked_at
+            < self.health_cache_seconds
         ):
             return self._health_cache
         if not self.is_enabled():
@@ -133,6 +147,7 @@ class FlacDetectiveConnector:
             return self._health_cache
         try:
             import requests
+
             response = requests.get(self._health_url(), timeout=2)
         except Exception as exc:
             self._health_cache = health_checked_now("missing", str(exc)[:200])
@@ -140,7 +155,9 @@ class FlacDetectiveConnector:
         if response.ok:
             self._health_cache = health_checked_now("ok")
             return self._health_cache
-        self._health_cache = health_checked_now("degraded", f"HTTP {response.status_code}")
+        self._health_cache = health_checked_now(
+            "degraded", f"HTTP {response.status_code}"
+        )
         return self._health_cache
 
     def detected_version(self) -> str | None:
@@ -148,7 +165,9 @@ class FlacDetectiveConnector:
 
 
 def _lidarr_api_url() -> str:
-    return os.environ.get("LIDARR_API_URL", "http://host.docker.internal:8686/api/v1").rstrip("/")
+    return os.environ.get(
+        "LIDARR_API_URL", "http://host.docker.internal:8686/api/v1"
+    ).rstrip("/")
 
 
 def _lidarr_api_key() -> str:
@@ -177,6 +196,7 @@ class LidarrConnector:
     def is_enabled(self) -> bool:
         try:
             import state_db
+
             stored = state_db.get_connector_config(self.manifest.id)
         except Exception:
             stored = None
@@ -193,7 +213,8 @@ class LidarrConnector:
     def health(self) -> ConnectorHealth:
         if (
             self._health_cache is not None
-            and time.time() - self._health_cache.last_checked_at < self.health_cache_seconds
+            and time.time() - self._health_cache.last_checked_at
+            < self.health_cache_seconds
         ):
             return self._health_cache
         if not self.is_enabled():
@@ -201,10 +222,13 @@ class LidarrConnector:
             return self._health_cache
         key = _lidarr_api_key()
         if not key:
-            self._health_cache = health_checked_now("missing", "Lidarr API key not configured")
+            self._health_cache = health_checked_now(
+                "missing", "Lidarr API key not configured"
+            )
             return self._health_cache
         try:
             import requests
+
             response = requests.get(
                 f"{_lidarr_api_url()}/queue",
                 headers={"X-Api-Key": key},
@@ -217,7 +241,9 @@ class LidarrConnector:
         if response.ok:
             self._health_cache = health_checked_now("ok")
             return self._health_cache
-        self._health_cache = health_checked_now("blocked", f"HTTP {response.status_code}")
+        self._health_cache = health_checked_now(
+            "blocked", f"HTTP {response.status_code}"
+        )
         return self._health_cache
 
     def detected_version(self) -> str | None:
@@ -229,6 +255,7 @@ class LidarrConnector:
             return None
         try:
             import requests
+
             response = requests.get(
                 f"{_lidarr_api_url()}/system/status",
                 headers={"X-Api-Key": key},
@@ -401,7 +428,11 @@ def built_in_connectors() -> list:
                 install_profile=None,
                 docker_service="lidarr",
                 required_env=("LIDARR_API_URL",),
-                optional_env=("LIDARR_API_KEY", "LIDARR_CONFIG_XML", "MINTARR_RESCUE_RESCAN_ENABLED"),
+                optional_env=(
+                    "LIDARR_API_KEY",
+                    "LIDARR_CONFIG_XML",
+                    "MINTARR_RESCUE_RESCAN_ENABLED",
+                ),
                 capabilities=("rescue_rescan", "library_rescan"),
                 docs_url="connectors/lidarr_rescue_rescan/",
                 min_supported_version=None,

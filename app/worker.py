@@ -39,7 +39,9 @@ class JobCancelled(Exception):
     """Executor stopped because the user requested cancellation."""
 
 
-def register_executor(job_type: str, fn: Callable[[dict], tuple[str | None, dict | None]]) -> None:
+def register_executor(
+    job_type: str, fn: Callable[[dict], tuple[str | None, dict | None]]
+) -> None:
     """Register a function to execute jobs of a given type.
 
     Function receives the full job dict (from state_db). Should return
@@ -158,9 +160,12 @@ def _execute_job(job: dict) -> None:
 
     executor = _executors.get(job_type)
     if executor is None:
-        log.error("[job %s/%s] no executor registered for type=%s", job_id, jid, job_type)
-        state_db.mark_job_failed(job_id, f"no executor for type={job_type}",
-                                 result_state="config_error")
+        log.error(
+            "[job %s/%s] no executor registered for type=%s", job_id, jid, job_type
+        )
+        state_db.mark_job_failed(
+            job_id, f"no executor for type={job_type}", result_state="config_error"
+        )
         return
 
     log.info("[job %s/%s] starting (type=%s)", job_id, jid, job_type)
@@ -185,18 +190,25 @@ def _execute_job(job: dict) -> None:
         state_db.heartbeat_job(job_id)
         heartbeat_thread.start()
         result_state, result = executor(job)
-        state_db.mark_job_completed(job_id, result_state=result_state, result=result or {})
+        state_db.mark_job_completed(
+            job_id, result_state=result_state, result=result or {}
+        )
         log.info("[job %s/%s] completed (result_state=%s)", job_id, jid, result_state)
     except JobCancelled as exc:
         log.info("[job %s/%s] cancelled: %s", job_id, jid, exc)
         state_db.mark_job_cancelled(job_id)
     except Exception as exc:
-        if not state_db.is_job_cancel_requested(job_id) and _is_transient_failure(job, exc):
+        if not state_db.is_job_cancel_requested(job_id) and _is_transient_failure(
+            job, exc
+        ):
             delay_sec = _retry_delay_sec(job)
             if state_db.schedule_job_retry(job_id, str(exc), delay_sec=delay_sec):
                 log.warning(
                     "[job %s/%s] transient failure; retry scheduled in %ss: %s",
-                    job_id, jid, delay_sec, exc,
+                    job_id,
+                    jid,
+                    delay_sec,
+                    exc,
                 )
                 return
         log.exception("[job %s/%s] failed", job_id, jid)
@@ -246,7 +258,9 @@ def start_worker() -> None:
 
     _worker_id = f"{os.getpid()}-{uuid.uuid4().hex[:8]}"
     _shutdown_event.clear()
-    _worker_thread = threading.Thread(target=_worker_loop, name="tidalhires-worker", daemon=True)
+    _worker_thread = threading.Thread(
+        target=_worker_loop, name="tidalhires-worker", daemon=True
+    )
     _worker_thread.start()
     log.info("worker thread started (worker_id=%s)", _worker_id)
 

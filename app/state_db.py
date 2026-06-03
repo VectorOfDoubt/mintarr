@@ -135,7 +135,7 @@ CREATE TABLE IF NOT EXISTS connector_config (
 """
 
 # Default lease/heartbeat per F2 design
-DEFAULT_LEASE_SEC = 300.0    # 5 min — recovery-trigger
+DEFAULT_LEASE_SEC = 300.0  # 5 min — recovery-trigger
 HEARTBEAT_INTERVAL_SEC = 30.0  # worker pings DB every 30s during long ops
 
 ACTIVE_JOB_STATES = ("queued", "running", "cancelling")
@@ -176,9 +176,7 @@ def _ensure_records_source_type_column(conn: sqlite3.Connection) -> None:
     if "source_type" in cols:
         return
     conn.execute("ALTER TABLE records ADD COLUMN source_type TEXT")
-    conn.execute(
-        "UPDATE records SET source_type = 'tidal' WHERE source_type IS NULL"
-    )
+    conn.execute("UPDATE records SET source_type = 'tidal' WHERE source_type IS NULL")
     log.info("state_db: added records.source_type column (backfilled to 'tidal')")
 
 
@@ -195,6 +193,7 @@ def _ensure_initialized() -> bool:
 
 
 # ---------- Write helpers (all defensive — never raise) ----------
+
 
 def upsert_record(sidecar: dict, *, derived_status: str | None = None) -> None:
     """Upsert a record row from a verification sidecar.
@@ -215,7 +214,9 @@ def upsert_record(sidecar: dict, *, derived_status: str | None = None) -> None:
             "jid": jid,
             "title": sidecar.get("title", ""),
             "album_ids_json": json.dumps(sidecar.get("album_ids") or []),
-            "created_at": float(lifecycle.get("created_at") or sidecar.get("ts") or now),
+            "created_at": float(
+                lifecycle.get("created_at") or sidecar.get("ts") or now
+            ),
             "updated_at": now,
             "verification_decision": sidecar.get("v2_verification_decision"),
             "import_outcome": sidecar.get("v2_import_outcome"),
@@ -230,7 +231,8 @@ def upsert_record(sidecar: dict, *, derived_status: str | None = None) -> None:
             "source_type": sidecar.get("source_type") or "tidal",
         }
         with _lock, _connect() as conn:
-            conn.execute("""
+            conn.execute(
+                """
                 INSERT INTO records (jid, title, album_ids_json, created_at, updated_at,
                   verification_decision, import_outcome, derived_status, score, verdict,
                   lifecycle_state, actor, discarded_at, promoted_at, expired_at, source_type)
@@ -252,7 +254,9 @@ def upsert_record(sidecar: dict, *, derived_status: str | None = None) -> None:
                   promoted_at=COALESCE(excluded.promoted_at, records.promoted_at),
                   expired_at=COALESCE(excluded.expired_at, records.expired_at),
                   source_type=COALESCE(excluded.source_type, records.source_type)
-            """, params)
+            """,
+                params,
+            )
     except Exception:
         log.exception("state_db.upsert_record failed for jid=%s", sidecar.get("jid"))
 
@@ -266,26 +270,31 @@ def upsert_sensor_runs(jid: str, sensors: list[dict] | None) -> None:
         for s in sensors:
             if not isinstance(s, dict):
                 continue
-            rows.append({
-                "jid": jid,
-                "sensor_name": s.get("name", ""),
-                "sensor_class": s.get("class"),
-                "status": s.get("status"),
-                "severity": s.get("severity"),
-                "confidence": s.get("confidence"),
-                "duration_ms": s.get("duration_ms"),
-                "evidence_json": json.dumps(s.get("evidence") or {}),
-            })
+            rows.append(
+                {
+                    "jid": jid,
+                    "sensor_name": s.get("name", ""),
+                    "sensor_class": s.get("class"),
+                    "status": s.get("status"),
+                    "severity": s.get("severity"),
+                    "confidence": s.get("confidence"),
+                    "duration_ms": s.get("duration_ms"),
+                    "evidence_json": json.dumps(s.get("evidence") or {}),
+                }
+            )
         if not rows:
             return
         with _lock, _connect() as conn:
             conn.execute("DELETE FROM sensor_runs WHERE jid = ?", (jid,))
-            conn.executemany("""
+            conn.executemany(
+                """
                 INSERT INTO sensor_runs (jid, sensor_name, sensor_class, status, severity,
                   confidence, duration_ms, evidence_json)
                 VALUES (:jid, :sensor_name, :sensor_class, :status, :severity,
                   :confidence, :duration_ms, :evidence_json)
-            """, rows)
+            """,
+                rows,
+            )
     except Exception:
         log.exception("state_db.upsert_sensor_runs failed for jid=%s", jid)
 
@@ -299,42 +308,54 @@ def upsert_file_evidence(jid: str, files: list[dict] | None) -> None:
         for f in files:
             if not isinstance(f, dict):
                 continue
-            rows.append({
-                "jid": jid,
-                "filename": f.get("filename") or f.get("filepath") or "",
-                "sample_rate": f.get("sample_rate"),
-                "bit_depth": f.get("bit_depth"),
-                "cutoff_hz": f.get("cutoff_hz") or f.get("cutoff_freq"),
-                "nyquist_hz": f.get("nyquist_hz"),
-                "detective_verdict": f.get("detective_verdict") or f.get("verdict"),
-                "is_fake_high_res": int(bool(f.get("is_fake_high_res"))) if f.get("is_fake_high_res") is not None else None,
-                "estimated_mp3_bitrate": f.get("estimated_mp3_bitrate"),
-                "evidence_json": json.dumps(f),
-            })
+            rows.append(
+                {
+                    "jid": jid,
+                    "filename": f.get("filename") or f.get("filepath") or "",
+                    "sample_rate": f.get("sample_rate"),
+                    "bit_depth": f.get("bit_depth"),
+                    "cutoff_hz": f.get("cutoff_hz") or f.get("cutoff_freq"),
+                    "nyquist_hz": f.get("nyquist_hz"),
+                    "detective_verdict": f.get("detective_verdict") or f.get("verdict"),
+                    "is_fake_high_res": int(bool(f.get("is_fake_high_res")))
+                    if f.get("is_fake_high_res") is not None
+                    else None,
+                    "estimated_mp3_bitrate": f.get("estimated_mp3_bitrate"),
+                    "evidence_json": json.dumps(f),
+                }
+            )
         if not rows:
             return
         with _lock, _connect() as conn:
             conn.execute("DELETE FROM file_evidence WHERE jid = ?", (jid,))
-            conn.executemany("""
+            conn.executemany(
+                """
                 INSERT INTO file_evidence (jid, filename, sample_rate, bit_depth, cutoff_hz,
                   nyquist_hz, detective_verdict, is_fake_high_res, estimated_mp3_bitrate, evidence_json)
                 VALUES (:jid, :filename, :sample_rate, :bit_depth, :cutoff_hz,
                   :nyquist_hz, :detective_verdict, :is_fake_high_res, :estimated_mp3_bitrate, :evidence_json)
-            """, rows)
+            """,
+                rows,
+            )
     except Exception:
         log.exception("state_db.upsert_file_evidence failed for jid=%s", jid)
 
 
-def log_action(jid: str, action: str, actor: str, result: str, details: dict | None = None) -> None:
+def log_action(
+    jid: str, action: str, actor: str, result: str, details: dict | None = None
+) -> None:
     """Append-only action log for audit trail."""
     if not _ensure_initialized() or not jid or not action:
         return
     try:
         with _lock, _connect() as conn:
-            conn.execute("""
+            conn.execute(
+                """
                 INSERT INTO actions (jid, action, actor, created_at, result, details_json)
                 VALUES (?, ?, ?, ?, ?, ?)
-            """, (jid, action, actor, time.time(), result, json.dumps(details or {})))
+            """,
+                (jid, action, actor, time.time(), result, json.dumps(details or {})),
+            )
     except Exception:
         log.exception("state_db.log_action failed for jid=%s action=%s", jid, action)
 
@@ -350,6 +371,7 @@ def upsert_from_sidecar(sidecar: dict, *, derived_status: str | None = None) -> 
 
 
 # ---------- Read helpers (raise on init-fail — caller's responsibility) ----------
+
 
 def get_record(jid: str) -> dict | None:
     if not _ensure_initialized():
@@ -402,7 +424,9 @@ def list_records(
         }.get(sort, "ORDER BY created_at DESC")
 
         with _lock, _connect() as conn:
-            total = conn.execute(f"SELECT COUNT(*) FROM records {where_clause}", params).fetchone()[0]
+            total = conn.execute(
+                f"SELECT COUNT(*) FROM records {where_clause}", params
+            ).fetchone()[0]
             rows = conn.execute(
                 f"SELECT * FROM records {where_clause} {order_clause} LIMIT ? OFFSET ?",
                 params + [limit, offset],
@@ -451,7 +475,9 @@ def get_connector_config(connector_id: str) -> dict | None:
             ).fetchone()
             return _connector_config_row(row) if row else None
     except Exception:
-        log.exception("state_db.get_connector_config failed for connector_id=%s", connector_id)
+        log.exception(
+            "state_db.get_connector_config failed for connector_id=%s", connector_id
+        )
         return None
 
 
@@ -460,7 +486,9 @@ def list_connector_config() -> dict[str, dict]:
         return {}
     try:
         with _lock, _connect() as conn:
-            rows = conn.execute("SELECT * FROM connector_config ORDER BY connector_id").fetchall()
+            rows = conn.execute(
+                "SELECT * FROM connector_config ORDER BY connector_id"
+            ).fetchall()
             return {row["connector_id"]: _connector_config_row(row) for row in rows}
     except Exception:
         log.exception("state_db.list_connector_config failed")
@@ -499,7 +527,9 @@ def set_connector_config(
             "actor": actor,
         }
     except Exception:
-        log.exception("state_db.set_connector_config failed for connector_id=%s", connector_id)
+        log.exception(
+            "state_db.set_connector_config failed for connector_id=%s", connector_id
+        )
         return None
 
 
@@ -521,6 +551,7 @@ def count_by_status() -> dict[str, int]:
 
 # ---------- Maintenance ----------
 
+
 def clear_all() -> None:
     """Test-only helper: clear all data (keep schema)."""
     if not _ensure_initialized():
@@ -537,6 +568,7 @@ def get_db_path() -> Path:
 # ============================================================================
 # F2 worker queue helpers
 # ============================================================================
+
 
 def enqueue_job(
     *,
@@ -570,22 +602,33 @@ def enqueue_job(
                 if row:
                     return int(row["id"])
 
-            cur = conn.execute("""
+            cur = conn.execute(
+                """
                 INSERT INTO jobs (jid, type, state, priority, created_at, attempts, max_attempts,
                   dedupe_key, source_type, source_id, payload_json)
                 VALUES (?, ?, 'queued', ?, ?, 0, ?, ?, ?, ?, ?)
-            """, (
-                jid, type, priority, time.time(), max_attempts,
-                dedupe_key, source_type, source_id,
-                json.dumps(payload or {}),
-            ))
+            """,
+                (
+                    jid,
+                    type,
+                    priority,
+                    time.time(),
+                    max_attempts,
+                    dedupe_key,
+                    source_type,
+                    source_id,
+                    json.dumps(payload or {}),
+                ),
+            )
             return int(cur.lastrowid)
     except Exception:
         log.exception("state_db.enqueue_job failed for jid=%s type=%s", jid, type)
         return None
 
 
-def dequeue_next_job(*, worker_id: str, lease_sec: float = DEFAULT_LEASE_SEC) -> dict | None:
+def dequeue_next_job(
+    *, worker_id: str, lease_sec: float = DEFAULT_LEASE_SEC
+) -> dict | None:
     """Atomically claim the next eligible job. Returns job dict or None.
 
     Eligibility: state=queued AND (next_attempt_at IS NULL OR next_attempt_at <= now).
@@ -596,19 +639,23 @@ def dequeue_next_job(*, worker_id: str, lease_sec: float = DEFAULT_LEASE_SEC) ->
     try:
         now = time.time()
         with _lock, _connect() as conn:
-            row = conn.execute("""
+            row = conn.execute(
+                """
                 SELECT * FROM jobs
                 WHERE state = 'queued'
                   AND (next_attempt_at IS NULL OR next_attempt_at <= ?)
                 ORDER BY priority ASC, created_at ASC
                 LIMIT 1
-            """, (now,)).fetchone()
+            """,
+                (now,),
+            ).fetchone()
             if not row:
                 return None
 
             # Atomic claim — only update if still queued (prevents double-claim if
             # another thread snuck in; defensive even with N=1 worker).
-            updated = conn.execute("""
+            updated = conn.execute(
+                """
                 UPDATE jobs
                 SET state = 'running',
                     started_at = ?,
@@ -617,11 +664,15 @@ def dequeue_next_job(*, worker_id: str, lease_sec: float = DEFAULT_LEASE_SEC) ->
                     worker_id = ?,
                     attempts = attempts + 1
                 WHERE id = ? AND state = 'queued'
-            """, (now, now, now + lease_sec, worker_id, row["id"]))
+            """,
+                (now, now, now + lease_sec, worker_id, row["id"]),
+            )
             if updated.rowcount == 0:
                 return None
             # Re-fetch with updated fields
-            row = conn.execute("SELECT * FROM jobs WHERE id = ?", (row["id"],)).fetchone()
+            row = conn.execute(
+                "SELECT * FROM jobs WHERE id = ?", (row["id"],)
+            ).fetchone()
             return dict(row)
     except Exception:
         log.exception("state_db.dequeue_next_job failed worker_id=%s", worker_id)
@@ -660,35 +711,43 @@ def update_job_progress(job_id: int, progress: dict) -> None:
         log.exception("state_db.update_job_progress failed for job_id=%s", job_id)
 
 
-def mark_job_completed(job_id: int, *, result_state: str | None = None,
-                       result: dict | None = None) -> None:
+def mark_job_completed(
+    job_id: int, *, result_state: str | None = None, result: dict | None = None
+) -> None:
     """Worker finished job successfully (execution-state-wise). result_state holds
     the business outcome (imported / blocked / needs_review / etc)."""
     if not _ensure_initialized():
         return
     try:
         with _lock, _connect() as conn:
-            conn.execute("""
+            conn.execute(
+                """
                 UPDATE jobs SET state = 'completed', finished_at = ?,
                   result_state = ?, result_json = ?, error_text = NULL
                 WHERE id = ?
-            """, (time.time(), result_state, json.dumps(result or {}), job_id))
+            """,
+                (time.time(), result_state, json.dumps(result or {}), job_id),
+            )
     except Exception:
         log.exception("state_db.mark_job_completed failed for job_id=%s", job_id)
 
 
-def mark_job_failed(job_id: int, error_text: str, *,
-                    result_state: str | None = "failed") -> None:
+def mark_job_failed(
+    job_id: int, error_text: str, *, result_state: str | None = "failed"
+) -> None:
     """Worker hit unexpected execution failure and no retry was scheduled."""
     if not _ensure_initialized():
         return
     try:
         with _lock, _connect() as conn:
-            conn.execute("""
+            conn.execute(
+                """
                 UPDATE jobs SET state = 'failed', finished_at = ?,
                   result_state = ?, error_text = ?
                 WHERE id = ?
-            """, (time.time(), result_state, str(error_text)[:1000], job_id))
+            """,
+                (time.time(), result_state, str(error_text)[:1000], job_id),
+            )
     except Exception:
         log.exception("state_db.mark_job_failed failed for job_id=%s", job_id)
 
@@ -714,7 +773,8 @@ def schedule_job_retry(
             "retry_at": retry_at,
         }
         with _lock, _connect() as conn:
-            cur = conn.execute("""
+            cur = conn.execute(
+                """
                 UPDATE jobs
                 SET state = 'queued',
                   result_state = ?,
@@ -731,13 +791,15 @@ def schedule_job_retry(
                   AND state IN ('running','cancelling')
                   AND COALESCE(attempts, 0) < COALESCE(max_attempts, 1)
                   AND COALESCE(cancel_requested, 0) = 0
-            """, (
-                result_state,
-                retry_at,
-                json.dumps(progress),
-                str(error_text)[:1000],
-                job_id,
-            ))
+            """,
+                (
+                    result_state,
+                    retry_at,
+                    json.dumps(progress),
+                    str(error_text)[:1000],
+                    job_id,
+                ),
+            )
             return cur.rowcount > 0
     except Exception:
         log.exception("state_db.schedule_job_retry failed for job_id=%s", job_id)
@@ -830,7 +892,9 @@ def list_jobs(
             params.append(jid)
         where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
         with _lock, _connect() as conn:
-            total = conn.execute(f"SELECT COUNT(*) FROM jobs {where}", params).fetchone()[0]
+            total = conn.execute(
+                f"SELECT COUNT(*) FROM jobs {where}", params
+            ).fetchone()[0]
             rows = conn.execute(
                 f"SELECT * FROM jobs {where} ORDER BY created_at DESC LIMIT ? OFFSET ?",
                 params + [limit, offset],
@@ -841,7 +905,9 @@ def list_jobs(
         return (0, [])
 
 
-def recover_stale_running_jobs(*, max_age_sec: float | None = None, force: bool = False) -> int:
+def recover_stale_running_jobs(
+    *, max_age_sec: float | None = None, force: bool = False
+) -> int:
     """Boot-time + periodic recovery: jobs in state=running with expired lease.
 
     F2.1 policy: requeue once (reset state to queued, increment attempts).
@@ -866,14 +932,17 @@ def recover_stale_running_jobs(*, max_age_sec: float | None = None, force: bool 
                     WHERE state = 'running'
                 """).fetchall()
             else:
-                rows = conn.execute("""
+                rows = conn.execute(
+                    """
                     SELECT id, attempts, max_attempts FROM jobs
                     WHERE state = 'running'
                       AND (
                         (lease_expires_at IS NOT NULL AND lease_expires_at < ?)
                         OR (lease_expires_at IS NULL AND started_at < ?)
                       )
-                """, (now, stale_before)).fetchall()
+                """,
+                    (now, stale_before),
+                ).fetchall()
 
             recovered = 0
             for row in rows:
@@ -881,21 +950,27 @@ def recover_stale_running_jobs(*, max_age_sec: float | None = None, force: bool 
                 max_a = row["max_attempts"] or 3
                 if attempts >= max_a:
                     # Already at limit — terminal failure
-                    conn.execute("""
+                    conn.execute(
+                        """
                         UPDATE jobs SET state = 'failed', finished_at = ?,
                           result_state = 'stale', error_text = 'lease expired, attempts exhausted'
                         WHERE id = ?
-                    """, (now, row["id"]))
+                    """,
+                        (now, row["id"]),
+                    )
                 else:
                     # Requeue with delay to avoid hot-loop
-                    conn.execute("""
+                    conn.execute(
+                        """
                         UPDATE jobs SET state = 'queued',
                           started_at = NULL, heartbeat_at = NULL, lease_expires_at = NULL,
                           worker_id = NULL,
                           next_attempt_at = ?,
                           error_text = 'recovered from stale lease'
                         WHERE id = ?
-                    """, (now + 5, row["id"]))
+                    """,
+                        (now + 5, row["id"]),
+                    )
                 recovered += 1
             if recovered:
                 log.info("recovered %d stale running jobs", recovered)
@@ -912,10 +987,12 @@ def count_active_jobs() -> int:
     try:
         with _lock, _connect() as conn:
             placeholders = ",".join("?" * len(ACTIVE_JOB_STATES))
-            return int(conn.execute(
-                f"SELECT COUNT(*) FROM jobs WHERE state IN ({placeholders})",
-                ACTIVE_JOB_STATES,
-            ).fetchone()[0])
+            return int(
+                conn.execute(
+                    f"SELECT COUNT(*) FROM jobs WHERE state IN ({placeholders})",
+                    ACTIVE_JOB_STATES,
+                ).fetchone()[0]
+            )
     except Exception:
         return 0
 

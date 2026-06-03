@@ -23,7 +23,9 @@ class _FakeContext:
         self.cancel_checks += 1
 
     def run_subprocess(self, argv, *, timeout, text=True):
-        raise AssertionError("SoulseekCompletedAdapter must not spawn subprocesses in F3.5a")
+        raise AssertionError(
+            "SoulseekCompletedAdapter must not spawn subprocesses in F3.5a"
+        )
 
     def set_progress(self, *, stage, percent, message="", **extra):
         self.progress_calls.append(
@@ -34,7 +36,9 @@ class _FakeContext:
         pass
 
 
-def _seed_album(root: Path, artist: str = "Artist", album: str = "Album", tracks: int = 2) -> Path:
+def _seed_album(
+    root: Path, artist: str = "Artist", album: str = "Album", tracks: int = 2
+) -> Path:
     album_dir = root / artist / album
     album_dir.mkdir(parents=True, exist_ok=True)
     for i in range(tracks):
@@ -45,9 +49,22 @@ def _seed_album(root: Path, artist: str = "Artist", album: str = "Album", tracks
 def test_soulseek_adapter_enabled_requires_toggle_and_root(tmp_path):
     from adapters.soulseek import SoulseekCompletedAdapter
 
-    assert SoulseekCompletedAdapter(download_root=str(tmp_path), enabled=False).is_enabled() is False
-    assert SoulseekCompletedAdapter(download_root=str(tmp_path / "missing"), enabled=True).is_enabled() is False
-    assert SoulseekCompletedAdapter(download_root=str(tmp_path), enabled=True).is_enabled() is True
+    assert (
+        SoulseekCompletedAdapter(
+            download_root=str(tmp_path), enabled=False
+        ).is_enabled()
+        is False
+    )
+    assert (
+        SoulseekCompletedAdapter(
+            download_root=str(tmp_path / "missing"), enabled=True
+        ).is_enabled()
+        is False
+    )
+    assert (
+        SoulseekCompletedAdapter(download_root=str(tmp_path), enabled=True).is_enabled()
+        is True
+    )
 
 
 def test_soulseek_normalize_blocks_absolute_traversal_and_symlink(tmp_path):
@@ -56,7 +73,9 @@ def test_soulseek_normalize_blocks_absolute_traversal_and_symlink(tmp_path):
     root = tmp_path / "soulseek"
     real = _seed_album(root, "Artist", "Real")
     (root / "Artist" / "Linked").symlink_to(real, target_is_directory=True)
-    adapter = SoulseekCompletedAdapter(download_root=str(root), enabled=True, settle_seconds=0)
+    adapter = SoulseekCompletedAdapter(
+        download_root=str(root), enabled=True, settle_seconds=0
+    )
 
     with pytest.raises(RuntimeError, match="must be relative"):
         adapter.normalize_candidate_id("/etc/passwd")
@@ -73,7 +92,9 @@ def test_soulseek_rejects_partial_markers(tmp_path):
     root = tmp_path / "soulseek"
     album = _seed_album(root)
     (album / "03 track.flac.part").write_bytes(b"partial")
-    adapter = SoulseekCompletedAdapter(download_root=str(root), enabled=True, settle_seconds=0)
+    adapter = SoulseekCompletedAdapter(
+        download_root=str(root), enabled=True, settle_seconds=0
+    )
 
     with pytest.raises(RuntimeError, match="partial download markers"):
         adapter.normalize_candidate_id("Artist/Album")
@@ -106,7 +127,9 @@ def test_soulseek_rejects_unsettled_folder(tmp_path, monkeypatch):
 
     root = tmp_path / "soulseek"
     album = _seed_album(root)
-    adapter = SoulseekCompletedAdapter(download_root=str(root), enabled=True, settle_seconds=1)
+    adapter = SoulseekCompletedAdapter(
+        download_root=str(root), enabled=True, settle_seconds=1
+    )
 
     def fake_sleep(seconds):
         (album / "03 track.flac").write_bytes(b"new")
@@ -122,7 +145,9 @@ def test_soulseek_download_raw_copies_without_modifying_source(tmp_path):
 
     root = tmp_path / "soulseek"
     src = _seed_album(root, tracks=2)
-    adapter = SoulseekCompletedAdapter(download_root=str(root), enabled=True, settle_seconds=0)
+    adapter = SoulseekCompletedAdapter(
+        download_root=str(root), enabled=True, settle_seconds=0
+    )
     raw_dir = tmp_path / "raw"
     ctx = _FakeContext(jid="slsk", raw_dir=raw_dir)
 
@@ -130,8 +155,14 @@ def test_soulseek_download_raw_copies_without_modifying_source(tmp_path):
 
     assert result.file_count == 2
     assert result.total_bytes > 0
-    assert sorted(p.name for p in raw_dir.rglob("*.flac")) == ["01 track.flac", "02 track.flac"]
-    assert sorted(p.name for p in src.rglob("*.flac")) == ["01 track.flac", "02 track.flac"]
+    assert sorted(p.name for p in raw_dir.rglob("*.flac")) == [
+        "01 track.flac",
+        "02 track.flac",
+    ]
+    assert sorted(p.name for p in src.rglob("*.flac")) == [
+        "01 track.flac",
+        "02 track.flac",
+    ]
     assert [item["stage"] for item in ctx.progress_calls] == ["copying", "copied"]
 
 
@@ -174,19 +205,28 @@ def test_soulseek_search_uses_slskd_and_returns_folder_candidate(tmp_path, monke
         if url.endswith("/searches/search-1"):
             return _Response({"isComplete": True, "responses": []})
         if url.endswith("/searches/search-1/responses"):
-            return _Response([
-                {
-                    "username": "peer",
-                    "files": [
-                        {"filename": "Music/Artist/Album/01 Track.flac", "size": 10},
-                        {"filename": "Music/Artist/Album/02 Track.flac", "size": 20},
-                        {"filename": "Music/Artist/Album/cover.jpg", "size": 5},
-                    ],
-                }
-            ])
+            return _Response(
+                [
+                    {
+                        "username": "peer",
+                        "files": [
+                            {
+                                "filename": "Music/Artist/Album/01 Track.flac",
+                                "size": 10,
+                            },
+                            {
+                                "filename": "Music/Artist/Album/02 Track.flac",
+                                "size": 20,
+                            },
+                            {"filename": "Music/Artist/Album/cover.jpg", "size": 5},
+                        ],
+                    }
+                ]
+            )
         raise AssertionError(url)
 
     import requests
+
     monkeypatch.setattr(requests, "post", fake_post)
     monkeypatch.setattr(requests, "get", fake_get)
 
@@ -205,7 +245,10 @@ def test_soulseek_search_can_append_optional_suffix(monkeypatch):
     monkeypatch.setenv("SOULSEEK_SEARCH_SUFFIX", "lossless")
     adapter = SoulseekCompletedAdapter()
 
-    assert adapter._search_text(query="", artist="Artist", album="Album") == "Artist Album lossless"
+    assert (
+        adapter._search_text(query="", artist="Artist", album="Album")
+        == "Artist Album lossless"
+    )
 
 
 def test_soulseek_candidate_title_without_artist_avoids_source_prefix():
@@ -213,9 +256,9 @@ def test_soulseek_candidate_title_without_artist_avoids_source_prefix():
 
     adapter = SoulseekCompletedAdapter()
 
-    assert adapter._candidate_title("Music/Fatboy Slim - Right Here", artist="", album="") == (
-        "Fatboy Slim - Right Here"
-    )
+    assert adapter._candidate_title(
+        "Music/Fatboy Slim - Right Here", artist="", album=""
+    ) == ("Fatboy Slim - Right Here")
 
 
 def test_soulseek_slskd_source_id_uses_short_cached_token(tmp_path, monkeypatch):
@@ -225,7 +268,9 @@ def test_soulseek_slskd_source_id_uses_short_cached_token(tmp_path, monkeypatch)
         SoulseekCompletedAdapter,
     )
 
-    monkeypatch.setenv("SOULSEEK_CANDIDATE_CACHE", str(tmp_path / "soulseek-candidates.json"))
+    monkeypatch.setenv(
+        "SOULSEEK_CANDIDATE_CACHE", str(tmp_path / "soulseek-candidates.json")
+    )
     adapter = SoulseekCompletedAdapter()
     request = SlskdDownloadRequest(
         username="peer",
@@ -300,18 +345,21 @@ def test_soulseek_slskd_download_queues_waits_and_copies(tmp_path, monkeypatch):
         return _Response({})
 
     import requests
+
     monkeypatch.setattr(requests, "post", fake_post)
     monkeypatch.setattr(requests, "get", fake_get)
 
     result = adapter.download_raw(source_id, ctx)
 
-    assert posts == [(
-        "http://slskd.test/api/v0/transfers/downloads/peer",
-        [
-            {"filename": "Remote/Album/01 Track.flac", "size": 4},
-            {"filename": "Remote/Album/02 Track.flac", "size": 5},
-        ],
-    )]
+    assert posts == [
+        (
+            "http://slskd.test/api/v0/transfers/downloads/peer",
+            [
+                {"filename": "Remote/Album/01 Track.flac", "size": 4},
+                {"filename": "Remote/Album/02 Track.flac", "size": 5},
+            ],
+        )
+    ]
     assert result.file_count == 2
     assert result.total_bytes == 9
     assert sorted(p.name for p in raw_dir.rglob("*.flac")) == [
@@ -327,10 +375,19 @@ def test_soulseek_executor_threads_source_type(tmp_path, monkeypatch):
 
     root = tmp_path / "soulseek"
     _seed_album(root)
-    adapter = SoulseekCompletedAdapter(download_root=str(root), enabled=True, settle_seconds=0)
+    adapter = SoulseekCompletedAdapter(
+        download_root=str(root), enabled=True, settle_seconds=0
+    )
     seen: dict = {}
 
-    def _capturing_trigger(jid, output_dir, worker_job_id=None, *, source_type="tidal", target_album_id=None):
+    def _capturing_trigger(
+        jid,
+        output_dir,
+        worker_job_id=None,
+        *,
+        source_type="tidal",
+        target_album_id=None,
+    ):
         seen["jid"] = jid
         seen["source_type"] = source_type
         seen["target_album_id"] = target_album_id
@@ -341,6 +398,7 @@ def test_soulseek_executor_threads_source_type(tmp_path, monkeypatch):
     monkeypatch.setattr(server, "OUTPUT_BASE", tmp_path / "output")
     monkeypatch.setattr(server, "DOWNLOAD_BASE", tmp_path / "downloads")
     import subprocess
+
     monkeypatch.setattr(
         subprocess,
         "run",
@@ -353,7 +411,11 @@ def test_soulseek_executor_threads_source_type(tmp_path, monkeypatch):
         raw_dir=server.DOWNLOAD_BASE / jid,
         output_dir=server.OUTPUT_BASE / jid,
     )
-    job = {"id": None, "jid": jid, "payload_json": json.dumps({"source_id": "Artist/Album"})}
+    job = {
+        "id": None,
+        "jid": jid,
+        "payload_json": json.dumps({"source_id": "Artist/Album"}),
+    }
 
     pipeline.execute_source_grab(job, adapter, ctx)
 
@@ -375,7 +437,11 @@ def soulseek_client(tmp_path, monkeypatch):
     adapters.reset_registry()
     adapters.register(TidalAdapter())
     adapters.register(LocalFolderAdapter(ingest_root=str(tmp_path / "local")))
-    adapters.register(SoulseekCompletedAdapter(download_root=str(root), enabled=True, settle_seconds=0))
+    adapters.register(
+        SoulseekCompletedAdapter(
+            download_root=str(root), enabled=True, settle_seconds=0
+        )
+    )
     connectors.reset_registry()
     connectors.register_builtin_connectors(warn_missing_required=False)
     state_db._initialized = False
@@ -408,6 +474,7 @@ def test_soulseek_ingest_endpoint_enqueues_job(soulseek_client):
     assert payload["status"] is True
     jid = payload["nzo_ids"][0]
     import state_db
+
     job = state_db.get_job(payload["job_id"])
     assert job["jid"] == jid
     assert job["type"] == "soulseek_grab"
@@ -442,7 +509,10 @@ def test_soulseek_ingest_endpoint_respects_connector_mode(soulseek_client):
     client, root = soulseek_client
     _seed_album(root)
     import state_db
-    state_db.set_connector_config("soulseek", enabled=True, mode="dry_run", actor="test")
+
+    state_db.set_connector_config(
+        "soulseek", enabled=True, mode="dry_run", actor="test"
+    )
 
     response = _ingest(client, "Artist/Album")
 
@@ -457,12 +527,14 @@ def test_soulseek_addurl_accepts_slskd_candidate_id(soulseek_client):
     import state_db
 
     adapter = adapters.get_adapter("soulseek")
-    source_id = adapter._encode_slskd_source_id(SlskdDownloadRequest(
-        username="peer",
-        title="Artist - Album",
-        search_text="Artist Album flac",
-        files=(SlskdDownloadFile("Remote/Album/01 Track.flac", 10),),
-    ))
+    source_id = adapter._encode_slskd_source_id(
+        SlskdDownloadRequest(
+            username="peer",
+            title="Artist - Album",
+            search_text="Artist Album flac",
+            files=(SlskdDownloadFile("Remote/Album/01 Track.flac", 10),),
+        )
+    )
 
     response = client.post(
         "/sabnzbd/api",

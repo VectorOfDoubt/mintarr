@@ -42,6 +42,7 @@ def _sidecar(jid="abc123", **overrides):
 
 # ---------- Init + schema ----------
 
+
 def test_init_creates_schema(fresh_db):
     """init() should be idempotent — calling twice doesn't error."""
     state_db.init(db_path=fresh_db)
@@ -51,12 +52,22 @@ def test_init_creates_schema(fresh_db):
 
 def test_init_creates_all_tables(fresh_db):
     import sqlite3
+
     conn = sqlite3.connect(str(fresh_db))
-    tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-    assert {"records", "sensor_runs", "file_evidence", "actions", "connector_config"}.issubset(tables)
+    tables = {
+        r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
+    }
+    assert {
+        "records",
+        "sensor_runs",
+        "file_evidence",
+        "actions",
+        "connector_config",
+    }.issubset(tables)
 
 
 # ---------- upsert_record ----------
+
 
 def test_upsert_record_inserts(fresh_db):
     state_db.upsert_record(_sidecar(), derived_status="imported")
@@ -70,10 +81,13 @@ def test_upsert_record_inserts(fresh_db):
 
 def test_upsert_record_updates_on_conflict(fresh_db):
     state_db.upsert_record(_sidecar(), derived_status="imported")
-    state_db.upsert_record(_sidecar(
-        v2_import_outcome="FAILED",
-        lifecycle={"state": "created", "actor": None},
-    ), derived_status="failed")
+    state_db.upsert_record(
+        _sidecar(
+            v2_import_outcome="FAILED",
+            lifecycle={"state": "created", "actor": None},
+        ),
+        derived_status="failed",
+    )
     rec = state_db.get_record("abc123")
     assert rec["import_outcome"] == "FAILED"
     assert rec["derived_status"] == "failed"
@@ -81,18 +95,22 @@ def test_upsert_record_updates_on_conflict(fresh_db):
 
 def test_upsert_record_preserves_lifecycle_timestamps(fresh_db):
     """COALESCE in ON CONFLICT should not overwrite existing promoted_at with None."""
-    promoted_sidecar = _sidecar(lifecycle={
-        "state": "promoted",
-        "actor": "user_promote",
-        "promoted_at": 1779700000.0,
-        "created_at": 1779600000.0,
-    })
+    promoted_sidecar = _sidecar(
+        lifecycle={
+            "state": "promoted",
+            "actor": "user_promote",
+            "promoted_at": 1779700000.0,
+            "created_at": 1779600000.0,
+        }
+    )
     state_db.upsert_record(promoted_sidecar)
     rec = state_db.get_record("abc123")
     assert rec["promoted_at"] == 1779700000.0
 
     # Second upsert without promoted_at — should NOT clear it
-    state_db.upsert_record(_sidecar(lifecycle={"state": "promoted", "actor": "user_promote"}))
+    state_db.upsert_record(
+        _sidecar(lifecycle={"state": "promoted", "actor": "user_promote"})
+    )
     rec = state_db.get_record("abc123")
     assert rec["promoted_at"] == 1779700000.0  # preserved
 
@@ -104,25 +122,49 @@ def test_upsert_record_handles_missing_jid_gracefully(fresh_db):
 
 # ---------- upsert_sensor_runs ----------
 
+
 def test_upsert_sensor_runs_replaces_existing(fresh_db):
     sensors_v1 = [
-        {"name": "ffprobe", "class": "hard_gate", "status": "pass", "confidence": 1.0, "duration_ms": 420},
-        {"name": "flac_t", "class": "hard_gate", "status": "pass", "confidence": 1.0, "duration_ms": 7100},
+        {
+            "name": "ffprobe",
+            "class": "hard_gate",
+            "status": "pass",
+            "confidence": 1.0,
+            "duration_ms": 420,
+        },
+        {
+            "name": "flac_t",
+            "class": "hard_gate",
+            "status": "pass",
+            "confidence": 1.0,
+            "duration_ms": 7100,
+        },
     ]
     state_db.upsert_sensor_runs("xyz789", sensors_v1)
 
     import sqlite3
+
     conn = sqlite3.connect(str(fresh_db))
-    rows = conn.execute("SELECT sensor_name, status FROM sensor_runs WHERE jid = 'xyz789'").fetchall()
+    rows = conn.execute(
+        "SELECT sensor_name, status FROM sensor_runs WHERE jid = 'xyz789'"
+    ).fetchall()
     assert len(rows) == 2
     assert {r[0] for r in rows} == {"ffprobe", "flac_t"}
 
     # Replace with new set
     sensors_v2 = [
-        {"name": "ffprobe", "class": "hard_gate", "status": "fail", "confidence": 1.0, "duration_ms": 420},
+        {
+            "name": "ffprobe",
+            "class": "hard_gate",
+            "status": "fail",
+            "confidence": 1.0,
+            "duration_ms": 420,
+        },
     ]
     state_db.upsert_sensor_runs("xyz789", sensors_v2)
-    rows = conn.execute("SELECT sensor_name, status FROM sensor_runs WHERE jid = 'xyz789'").fetchall()
+    rows = conn.execute(
+        "SELECT sensor_name, status FROM sensor_runs WHERE jid = 'xyz789'"
+    ).fetchall()
     assert len(rows) == 1
     assert rows[0][1] == "fail"
 
@@ -133,6 +175,7 @@ def test_upsert_sensor_runs_handles_empty(fresh_db):
 
 
 # ---------- upsert_file_evidence ----------
+
 
 def test_upsert_file_evidence_stores_per_file(fresh_db):
     files = [
@@ -158,6 +201,7 @@ def test_upsert_file_evidence_stores_per_file(fresh_db):
     state_db.upsert_file_evidence("file123", files)
 
     import sqlite3
+
     conn = sqlite3.connect(str(fresh_db))
     rows = conn.execute(
         "SELECT filename, detective_verdict, is_fake_high_res FROM file_evidence WHERE jid = 'file123'"
@@ -169,9 +213,14 @@ def test_upsert_file_evidence_stores_per_file(fresh_db):
 
 # ---------- log_action ----------
 
+
 def test_log_action_appends_rows(fresh_db):
-    state_db.log_action("act123", "promote", "user_dashboard", "ok", {"status_code": 200})
-    state_db.log_action("act123", "promote", "user_dashboard", "http_409", {"status_code": 409})
+    state_db.log_action(
+        "act123", "promote", "user_dashboard", "ok", {"status_code": 200}
+    )
+    state_db.log_action(
+        "act123", "promote", "user_dashboard", "http_409", {"status_code": 409}
+    )
     actions = state_db.list_actions(jid="act123")
     assert len(actions) == 2
     # Order by created_at DESC
@@ -205,7 +254,9 @@ def test_connector_config_round_trip(fresh_db):
 
 def test_connector_config_update_overwrites_existing(fresh_db):
     state_db.set_connector_config("tidal", enabled=True, mode="dry_run", actor="test")
-    state_db.set_connector_config("tidal", enabled=False, mode="disabled", actor="test2")
+    state_db.set_connector_config(
+        "tidal", enabled=False, mode="disabled", actor="test2"
+    )
 
     row = state_db.get_connector_config("tidal")
     assert row["enabled"] is False
@@ -215,9 +266,12 @@ def test_connector_config_update_overwrites_existing(fresh_db):
 
 # ---------- list_records (filtering) ----------
 
+
 def test_list_records_filters_by_decision(fresh_db):
     state_db.upsert_record(_sidecar(jid="acc1", v2_verification_decision="ACCEPT"))
-    state_db.upsert_record(_sidecar(jid="rev1", v2_verification_decision="REVIEW_REQUIRED"))
+    state_db.upsert_record(
+        _sidecar(jid="rev1", v2_verification_decision="REVIEW_REQUIRED")
+    )
     state_db.upsert_record(_sidecar(jid="blk1", v2_verification_decision="BLOCK"))
 
     total, rows = state_db.list_records(decision=["ACCEPT", "BLOCK"])
@@ -244,13 +298,26 @@ def test_list_records_pagination(fresh_db):
 
 
 def test_list_records_sort_ts_desc_default(fresh_db):
-    state_db.upsert_record(_sidecar(jid="old", ts=1779600000.0, lifecycle={"state": "created", "created_at": 1779600000.0}))
-    state_db.upsert_record(_sidecar(jid="new", ts=1779700000.0, lifecycle={"state": "created", "created_at": 1779700000.0}))
+    state_db.upsert_record(
+        _sidecar(
+            jid="old",
+            ts=1779600000.0,
+            lifecycle={"state": "created", "created_at": 1779600000.0},
+        )
+    )
+    state_db.upsert_record(
+        _sidecar(
+            jid="new",
+            ts=1779700000.0,
+            lifecycle={"state": "created", "created_at": 1779700000.0},
+        )
+    )
     total, rows = state_db.list_records()
     assert rows[0]["jid"] == "new"
 
 
 # ---------- count_by_status ----------
+
 
 def test_count_by_status_aggregates(fresh_db):
     state_db.upsert_record(_sidecar(jid="a"), derived_status="imported")
@@ -263,13 +330,19 @@ def test_count_by_status_aggregates(fresh_db):
 
 # ---------- upsert_from_sidecar (full integration) ----------
 
+
 def test_upsert_from_sidecar_writes_all_tables(fresh_db):
     sidecar = _sidecar(jid="full123")
     sidecar["sensors"] = [
         {"name": "ffprobe", "class": "hard_gate", "status": "pass", "confidence": 1.0},
     ]
     sidecar["files"] = [
-        {"filename": "01 - Track.flac", "sample_rate": 96000, "bit_depth": 24, "detective_verdict": "AUTHENTIC"},
+        {
+            "filename": "01 - Track.flac",
+            "sample_rate": 96000,
+            "bit_depth": 24,
+            "detective_verdict": "AUTHENTIC",
+        },
     ]
     state_db.upsert_from_sidecar(sidecar, derived_status="imported")
 
@@ -277,14 +350,20 @@ def test_upsert_from_sidecar_writes_all_tables(fresh_db):
     assert rec is not None
 
     import sqlite3
+
     conn = sqlite3.connect(str(fresh_db))
-    sensor_count = conn.execute("SELECT COUNT(*) FROM sensor_runs WHERE jid='full123'").fetchone()[0]
-    file_count = conn.execute("SELECT COUNT(*) FROM file_evidence WHERE jid='full123'").fetchone()[0]
+    sensor_count = conn.execute(
+        "SELECT COUNT(*) FROM sensor_runs WHERE jid='full123'"
+    ).fetchone()[0]
+    file_count = conn.execute(
+        "SELECT COUNT(*) FROM file_evidence WHERE jid='full123'"
+    ).fetchone()[0]
     assert sensor_count == 1
     assert file_count == 1
 
 
 # ---------- Defensive: failures don't propagate ----------
+
 
 def test_upsert_record_does_not_raise_on_init_failure(monkeypatch, tmp_path):
     """If DB init fails (e.g., permission denied), upserts return silently."""
@@ -298,6 +377,7 @@ def test_upsert_record_does_not_raise_on_init_failure(monkeypatch, tmp_path):
     # Better simulate: monkeypatch _connect to raise
     def _raise(*a, **kw):
         raise OSError("permission denied")
+
     monkeypatch.setattr(state_db, "_connect", _raise)
 
     # Should not raise

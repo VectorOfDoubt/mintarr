@@ -26,6 +26,7 @@ def fresh_db(tmp_path):
 # enqueue / dedupe
 # ============================================================================
 
+
 def test_enqueue_returns_id(fresh_db):
     job_id = state_db.enqueue_job(jid="abc123", type="noop", payload={"sleep_sec": 0})
     assert isinstance(job_id, int)
@@ -55,6 +56,7 @@ def test_enqueue_dedupe_only_blocks_active_states(fresh_db):
 # ============================================================================
 # dequeue / state transitions
 # ============================================================================
+
 
 def test_dequeue_returns_none_when_empty(fresh_db):
     assert state_db.dequeue_next_job(worker_id="test-w") is None
@@ -114,7 +116,12 @@ def test_mark_job_failed_records_error(fresh_db):
 def test_schedule_job_retry_requeues_running_job(fresh_db):
     job_id = state_db.enqueue_job(jid="retry1", type="noop", max_attempts=3)
     state_db.dequeue_next_job(worker_id="w1")
-    assert state_db.schedule_job_retry(job_id, "HTTP 503 Service Unavailable", delay_sec=60) is True
+    assert (
+        state_db.schedule_job_retry(
+            job_id, "HTTP 503 Service Unavailable", delay_sec=60
+        )
+        is True
+    )
 
     job = state_db.get_job(job_id)
     assert job["state"] == "queued"
@@ -136,6 +143,7 @@ def test_schedule_job_retry_refuses_exhausted_attempts(fresh_db):
 # ============================================================================
 # heartbeat / lease / stale recovery
 # ============================================================================
+
 
 def test_heartbeat_extends_lease(fresh_db):
     job_id = state_db.enqueue_job(jid="hb1", type="noop")
@@ -196,6 +204,7 @@ def test_recover_stale_running_fails_when_attempts_exhausted(fresh_db):
 # cancel
 # ============================================================================
 
+
 def test_request_job_cancel_sets_flag(fresh_db):
     job_id = state_db.enqueue_job(jid="cancel1", type="noop")
     assert state_db.request_job_cancel(job_id) is True
@@ -223,6 +232,7 @@ def test_request_job_cancel_ignores_terminal_jobs(fresh_db):
 # worker loop end-to-end
 # ============================================================================
 
+
 def test_worker_executes_enqueued_job(fresh_db):
     """Enqueue a noop job, start worker, verify it runs to completion."""
     job_id = state_db.enqueue_job(jid="e2e1", type="noop", payload={"sleep_sec": 0.05})
@@ -242,7 +252,9 @@ def test_worker_executes_enqueued_job(fresh_db):
 
 def test_worker_marks_failed_executor_jobs(fresh_db):
     job_id = state_db.enqueue_job(
-        jid="fail2", type="noop", payload={"fail": True, "fail_msg": "boom"},
+        jid="fail2",
+        type="noop",
+        payload={"fail": True, "fail_msg": "boom"},
     )
     worker.start_worker()
     try:
@@ -278,7 +290,9 @@ def test_worker_requeues_transient_executor_failure(fresh_db, monkeypatch):
 
     monkeypatch.setitem(worker._RETRY_BACKOFF_SEC, "transient_test", [60, 300])
     worker.register_executor("transient_test", transient_executor)
-    job_id = state_db.enqueue_job(jid="transient1", type="transient_test", max_attempts=3)
+    job_id = state_db.enqueue_job(
+        jid="transient1", type="transient_test", max_attempts=3
+    )
     job = state_db.dequeue_next_job(worker_id="w1")
     worker._execute_job(job)
 
@@ -296,7 +310,9 @@ def test_worker_does_not_retry_permanent_executor_failure(fresh_db, monkeypatch)
 
     monkeypatch.setitem(worker._RETRY_BACKOFF_SEC, "permanent_test", [60, 300])
     worker.register_executor("permanent_test", permanent_executor)
-    job_id = state_db.enqueue_job(jid="permanent1", type="permanent_test", max_attempts=3)
+    job_id = state_db.enqueue_job(
+        jid="permanent1", type="permanent_test", max_attempts=3
+    )
     job = state_db.dequeue_next_job(worker_id="w1")
     worker._execute_job(job)
 
@@ -310,9 +326,13 @@ def test_worker_does_not_retry_after_attempts_exhausted(fresh_db, monkeypatch):
     def timeout_executor(job):
         raise RuntimeError("tidal-dl-ng timeout")
 
-    monkeypatch.setitem(worker._RETRY_BACKOFF_SEC, "exhausted_transient_test", [60, 300])
+    monkeypatch.setitem(
+        worker._RETRY_BACKOFF_SEC, "exhausted_transient_test", [60, 300]
+    )
     worker.register_executor("exhausted_transient_test", timeout_executor)
-    job_id = state_db.enqueue_job(jid="exhausted_transient", type="exhausted_transient_test", max_attempts=1)
+    job_id = state_db.enqueue_job(
+        jid="exhausted_transient", type="exhausted_transient_test", max_attempts=1
+    )
     job = state_db.dequeue_next_job(worker_id="w1")
     worker._execute_job(job)
 
@@ -377,6 +397,7 @@ def test_count_active_jobs(fresh_db):
 # ============================================================================
 # list_jobs queries
 # ============================================================================
+
 
 def test_list_jobs_filters_by_state(fresh_db):
     state_db.enqueue_job(jid="lj1", type="noop")

@@ -39,7 +39,9 @@ def invalidate_prefix(prefix: str) -> int:
     """Drop all cache entries whose first key-element starts with prefix.
     Used after write-actions to force fresh data on next read."""
     with _lock:
-        keys_to_drop = [k for k in _cache if isinstance(k[0], str) and k[0].startswith(prefix)]
+        keys_to_drop = [
+            k for k in _cache if isinstance(k[0], str) and k[0].startswith(prefix)
+        ]
         for k in keys_to_drop:
             del _cache[k]
         return len(keys_to_drop)

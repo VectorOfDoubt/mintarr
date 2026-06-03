@@ -54,61 +54,86 @@ def _api_key():
 
 def test_parse_source_name_tidal_prefix(routing_env):
     import server
+
     assert server._parse_source_name("tidal:12345", {}) == ("tidal", "12345")
 
 
 def test_parse_source_name_local_prefix(routing_env):
     import server
+
     # Note: rel-path with spaces + slash + parens must survive intact
     assert server._parse_source_name(
-        "local:Nightwish/Nemo (CD Single)", {},
+        "local:Nightwish/Nemo (CD Single)",
+        {},
     ) == ("local", "Nightwish/Nemo (CD Single)")
 
 
 def test_parse_source_name_unknown_prefix_returns_none(routing_env):
     import server
+
     assert server._parse_source_name("foo:bar", {}) is None
 
 
 def test_parse_source_name_nzb_content_legacy_tidal(routing_env):
     """Old-style NZBs only embedded a numeric TIDAL ID inside <meta type="name">."""
     import server
+
     legacy_nzb = '<head><meta type="name">tidal:789012</meta></head>'
+
     class _F:
-        def __init__(self, data): self._data = data
-        def read(self): return self._data
-    assert server._parse_source_name("", {"f": _F(legacy_nzb.encode())}) == ("tidal", "789012")
+        def __init__(self, data):
+            self._data = data
+
+        def read(self):
+            return self._data
+
+    assert server._parse_source_name("", {"f": _F(legacy_nzb.encode())}) == (
+        "tidal",
+        "789012",
+    )
 
 
 def test_parse_source_name_nzb_structured_local_with_spaces(routing_env):
     """F3.3 NZBs emit structured meta so rel-paths with spaces roundtrip cleanly."""
     import server
+
     rel = "Nightwish/Nemo (CD Single)"
     nzb = (
-        '<head>'
+        "<head>"
         '<meta type="tidalhires_source">local</meta>'
         f'<meta type="tidalhires_source_id">{rel}</meta>'
-        '</head>'
+        "</head>"
     )
+
     class _F:
-        def __init__(self, data): self._data = data
-        def read(self): return self._data
+        def __init__(self, data):
+            self._data = data
+
+        def read(self):
+            return self._data
+
     assert server._parse_source_name("", {"f": _F(nzb.encode())}) == ("local", rel)
 
 
 def test_parse_source_name_nzb_structured_local_unescapes_xml_entities(routing_env):
     """NZB meta is XML-escaped on write; addurl parsing must unescape it."""
     import server
+
     rel = "R&B/Bookends"
     nzb = (
-        '<head>'
+        "<head>"
         '<meta type="tidalhires_source">local</meta>'
         '<meta type="tidalhires_source_id">R&amp;B/Bookends</meta>'
-        '</head>'
+        "</head>"
     )
+
     class _F:
-        def __init__(self, data): self._data = data
-        def read(self): return self._data
+        def __init__(self, data):
+            self._data = data
+
+        def read(self):
+            return self._data
+
     assert server._parse_source_name("", {"f": _F(nzb.encode())}) == ("local", rel)
 
 
@@ -117,6 +142,7 @@ def test_parse_source_name_nzb_structured_local_unescapes_xml_entities(routing_e
 
 def test_addurl_routes_local_to_local_grab_executor(routing_env):
     import state_db
+
     client, ingest = routing_env
     _seed_album(ingest, "Artist", "Album")
 
@@ -132,10 +158,13 @@ def test_addurl_routes_local_to_local_grab_executor(routing_env):
     # state_db has a local_grab job for this jid
     with state_db._connect() as conn:
         row = conn.execute(
-            "SELECT type, source_type, source_id FROM jobs WHERE jid=?", (jid,),
+            "SELECT type, source_type, source_id FROM jobs WHERE jid=?",
+            (jid,),
         ).fetchone()
     assert dict(row) == {
-        "type": "local_grab", "source_type": "local", "source_id": "Artist/Album",
+        "type": "local_grab",
+        "source_type": "local",
+        "source_id": "Artist/Album",
     }
 
 
@@ -159,7 +188,9 @@ def test_addurl_publishes_jobs_projection_before_enqueue(routing_env, monkeypatc
         with server._jobs_lock:
             assert jid in server._jobs
             server._jobs[jid].update(
-                status="downloading", percent=25, stage="download_raw",
+                status="downloading",
+                percent=25,
+                stage="download_raw",
             )
         return job_id
 
@@ -188,9 +219,12 @@ def test_addurl_rejects_unknown_source(routing_env):
 
 def test_addurl_rejects_disabled_source(routing_env, monkeypatch):
     import adapters
+
     client, _ = routing_env
     monkeypatch.setattr(
-        adapters.get_adapter("local"), "is_enabled", lambda: False,
+        adapters.get_adapter("local"),
+        "is_enabled",
+        lambda: False,
     )
     r = client.post(
         f"/sabnzbd/api?apikey={_api_key()}",
@@ -203,7 +237,9 @@ def test_addurl_rejects_disabled_source(routing_env, monkeypatch):
 def test_addurl_rejects_source_not_in_import_mode(routing_env):
     import state_db
 
-    state_db.set_connector_config("local_folder", enabled=True, mode="dry_run", actor="test")
+    state_db.set_connector_config(
+        "local_folder", enabled=True, mode="dry_run", actor="test"
+    )
 
     client, _ = routing_env
     r = client.post(
@@ -224,20 +260,37 @@ def test_newznab_aggregates_from_enabled_adapters(routing_env, monkeypatch):
     from adapters.base import ReleaseCandidate
 
     tidal_rc = ReleaseCandidate(
-        source_type="tidal", source_id="111", title="T-Artist - T-Album [TIDAL] [FLAC 24bit]",
-        artist="T-Artist", album="T-Album", year=2024,
-        quality_tag="FLAC 24bit", size_bytes=1, download_url="tidal:111", priority=50,
+        source_type="tidal",
+        source_id="111",
+        title="T-Artist - T-Album [TIDAL] [FLAC 24bit]",
+        artist="T-Artist",
+        album="T-Album",
+        year=2024,
+        quality_tag="FLAC 24bit",
+        size_bytes=1,
+        download_url="tidal:111",
+        priority=50,
     )
     local_rc = ReleaseCandidate(
-        source_type="local", source_id="L-Artist/L-Album",
+        source_type="local",
+        source_id="L-Artist/L-Album",
         title="L-Artist - L-Album (FLAC) [Local]",
-        artist="L-Artist", album="L-Album", year=None,
-        quality_tag="FLAC", size_bytes=2, download_url="local:L-Artist/L-Album", priority=30,
+        artist="L-Artist",
+        album="L-Album",
+        year=None,
+        quality_tag="FLAC",
+        size_bytes=2,
+        download_url="local:L-Artist/L-Album",
+        priority=30,
     )
     # TIDAL adapter has no token in tests — force enabled + stubbed search
     monkeypatch.setattr(adapters.get_adapter("tidal"), "is_enabled", lambda: True)
-    monkeypatch.setattr(adapters.get_adapter("tidal"), "search", lambda **kw: [tidal_rc])
-    monkeypatch.setattr(adapters.get_adapter("local"), "search", lambda **kw: [local_rc])
+    monkeypatch.setattr(
+        adapters.get_adapter("tidal"), "search", lambda **kw: [tidal_rc]
+    )
+    monkeypatch.setattr(
+        adapters.get_adapter("local"), "search", lambda **kw: [local_rc]
+    )
 
     client, _ = routing_env
     r = client.get(
@@ -255,20 +308,39 @@ def test_newznab_skips_dry_run_source_adapter(routing_env, monkeypatch):
     from adapters.base import ReleaseCandidate
 
     tidal_rc = ReleaseCandidate(
-        source_type="tidal", source_id="111", title="T-Artist - T-Album [TIDAL] [FLAC 24bit]",
-        artist="T-Artist", album="T-Album", year=2024,
-        quality_tag="FLAC 24bit", size_bytes=1, download_url="tidal:111", priority=50,
+        source_type="tidal",
+        source_id="111",
+        title="T-Artist - T-Album [TIDAL] [FLAC 24bit]",
+        artist="T-Artist",
+        album="T-Album",
+        year=2024,
+        quality_tag="FLAC 24bit",
+        size_bytes=1,
+        download_url="tidal:111",
+        priority=50,
     )
     local_rc = ReleaseCandidate(
-        source_type="local", source_id="L-Artist/L-Album",
+        source_type="local",
+        source_id="L-Artist/L-Album",
         title="L-Artist - L-Album (FLAC) [Local]",
-        artist="L-Artist", album="L-Album", year=None,
-        quality_tag="FLAC", size_bytes=2, download_url="local:L-Artist/L-Album", priority=30,
+        artist="L-Artist",
+        album="L-Album",
+        year=None,
+        quality_tag="FLAC",
+        size_bytes=2,
+        download_url="local:L-Artist/L-Album",
+        priority=30,
     )
     monkeypatch.setattr(adapters.get_adapter("tidal"), "is_enabled", lambda: True)
-    monkeypatch.setattr(adapters.get_adapter("tidal"), "search", lambda **kw: [tidal_rc])
-    monkeypatch.setattr(adapters.get_adapter("local"), "search", lambda **kw: [local_rc])
-    state_db.set_connector_config("local_folder", enabled=True, mode="dry_run", actor="test")
+    monkeypatch.setattr(
+        adapters.get_adapter("tidal"), "search", lambda **kw: [tidal_rc]
+    )
+    monkeypatch.setattr(
+        adapters.get_adapter("local"), "search", lambda **kw: [local_rc]
+    )
+    state_db.set_connector_config(
+        "local_folder", enabled=True, mode="dry_run", actor="test"
+    )
 
     client, _ = routing_env
     r = client.get(f"/api?t=search&q=test&apikey={_api_key()}")
@@ -284,14 +356,28 @@ def test_newznab_sorts_by_priority_descending(routing_env, monkeypatch):
     from adapters.base import ReleaseCandidate
 
     low = ReleaseCandidate(
-        source_type="local", source_id="low", title="LOW-MARKER",
-        artist="X", album="Y", year=None, quality_tag="FLAC",
-        size_bytes=1, download_url="local:low", priority=30,
+        source_type="local",
+        source_id="low",
+        title="LOW-MARKER",
+        artist="X",
+        album="Y",
+        year=None,
+        quality_tag="FLAC",
+        size_bytes=1,
+        download_url="local:low",
+        priority=30,
     )
     high = ReleaseCandidate(
-        source_type="tidal", source_id="high", title="HIGH-MARKER",
-        artist="X", album="Y", year=None, quality_tag="FLAC 24bit",
-        size_bytes=1, download_url="tidal:high", priority=50,
+        source_type="tidal",
+        source_id="high",
+        title="HIGH-MARKER",
+        artist="X",
+        album="Y",
+        year=None,
+        quality_tag="FLAC 24bit",
+        size_bytes=1,
+        download_url="tidal:high",
+        priority=50,
     )
     monkeypatch.setattr(adapters.get_adapter("tidal"), "is_enabled", lambda: True)
     monkeypatch.setattr(adapters.get_adapter("tidal"), "search", lambda **kw: [high])
@@ -311,12 +397,21 @@ def test_newznab_failure_isolation(routing_env, monkeypatch):
         raise RuntimeError("simulated adapter failure")
 
     survivor = ReleaseCandidate(
-        source_type="local", source_id="ok", title="SURVIVOR",
-        artist="X", album="Y", year=None, quality_tag="FLAC",
-        size_bytes=1, download_url="local:ok", priority=30,
+        source_type="local",
+        source_id="ok",
+        title="SURVIVOR",
+        artist="X",
+        album="Y",
+        year=None,
+        quality_tag="FLAC",
+        size_bytes=1,
+        download_url="local:ok",
+        priority=30,
     )
     monkeypatch.setattr(adapters.get_adapter("tidal"), "search", _boom)
-    monkeypatch.setattr(adapters.get_adapter("local"), "search", lambda **kw: [survivor])
+    monkeypatch.setattr(
+        adapters.get_adapter("local"), "search", lambda **kw: [survivor]
+    )
 
     client, _ = routing_env
     body = client.get(f"/api?t=search&q=test&apikey={_api_key()}").data.decode()
@@ -351,6 +446,7 @@ def test_release_pub_date_has_matching_weekday(routing_env):
 
 def test_local_search_filters_by_artist_album_query(tmp_path):
     from adapters.local_folder import LocalFolderAdapter
+
     ingest = tmp_path / "ingest"
     _seed_album(ingest, "Nightwish", "Once")
     _seed_album(ingest, "Iron Maiden", "Powerslave")
@@ -367,6 +463,7 @@ def test_local_search_filters_by_artist_album_query(tmp_path):
 
 def test_local_search_empty_query_returns_empty(tmp_path):
     from adapters.local_folder import LocalFolderAdapter
+
     ingest = tmp_path / "ingest"
     _seed_album(ingest, "Artist", "Album")
     adapter = LocalFolderAdapter(ingest_root=str(ingest))
@@ -375,6 +472,7 @@ def test_local_search_empty_query_returns_empty(tmp_path):
 
 def test_local_search_caps_at_100_candidates(tmp_path):
     from adapters.local_folder import LocalFolderAdapter
+
     ingest = tmp_path / "ingest"
     for i in range(110):
         _seed_album(ingest, "Artist", f"Album{i:03d}", tracks=1)
@@ -385,6 +483,7 @@ def test_local_search_caps_at_100_candidates(tmp_path):
 
 def test_local_search_skips_symlinked_dirs(tmp_path):
     from adapters.local_folder import LocalFolderAdapter
+
     ingest = tmp_path / "ingest"
     _seed_album(ingest, "Real", "RealAlbum")
     # Add a symlinked artist directory that points outside ingest
@@ -407,6 +506,7 @@ def test_local_search_skips_symlinked_dirs(tmp_path):
 
 def test_download_nzb_endpoint_accepts_encoded_local_token(routing_env):
     import server
+
     client, ingest = routing_env
     _seed_album(ingest, "Nightwish", "Nemo (CD Single)")
     rel = "Nightwish/Nemo (CD Single)"
@@ -430,6 +530,7 @@ def test_download_nzb_rejects_bad_encoded_source_id(routing_env):
 
 def test_b64url_decode_rejects_invalid_alphabet(routing_env):
     import server
+
     with pytest.raises(ValueError, match="invalid base64url token"):
         server._b64url_decode("!!!")
 
@@ -437,8 +538,12 @@ def test_b64url_decode_rejects_invalid_alphabet(routing_env):
 def test_download_nzb_canonicalizes_local_path_before_nzb(routing_env):
     """Path traversal in decoded source_id must be rejected, not echoed."""
     import server
+
     client, _ = routing_env
     bad = server._b64url_encode("../../etc/passwd")
     r = client.get(f"/download/local/{bad}.nzb?apikey={_api_key()}")
     assert r.status_code == 400
-    assert "path traversal" in r.data.decode().lower() or "invalid" in r.data.decode().lower()
+    assert (
+        "path traversal" in r.data.decode().lower()
+        or "invalid" in r.data.decode().lower()
+    )

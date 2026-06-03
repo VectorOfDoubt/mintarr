@@ -8,7 +8,11 @@ import sys
 from pathlib import Path
 
 
-APP_DIR = Path("/app") if Path("/app/server.py").exists() else Path(__file__).resolve().parents[1] / "app"
+APP_DIR = (
+    Path("/app")
+    if Path("/app/server.py").exists()
+    else Path(__file__).resolve().parents[1] / "app"
+)
 
 
 def _run_probe(code: str, env_updates: dict[str, str | None]) -> str:

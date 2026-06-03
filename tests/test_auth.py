@@ -53,15 +53,30 @@ def test_sab_routes_require_and_accept_apikey():
     assert client.post("/sabnzbd/api", data={"mode": "version"}).status_code == 401
     assert client.post("/api", data={"mode": "version"}).status_code == 401
 
-    assert client.get(f"/sabnzbd/api?mode=version&apikey={VALID_KEY}").status_code == 200
-    assert client.post(f"/sabnzbd/api?apikey={VALID_KEY}", data={"mode": "version"}).status_code == 200
-    assert client.post(f"/api?apikey={VALID_KEY}", data={"mode": "version"}).status_code == 200
+    assert (
+        client.get(f"/sabnzbd/api?mode=version&apikey={VALID_KEY}").status_code == 200
+    )
+    assert (
+        client.post(
+            f"/sabnzbd/api?apikey={VALID_KEY}", data={"mode": "version"}
+        ).status_code
+        == 200
+    )
+    assert (
+        client.post(f"/api?apikey={VALID_KEY}", data={"mode": "version"}).status_code
+        == 200
+    )
 
 
 def test_sab_history_hides_cleaned_jobs(mocker):
     client = server.app.test_client()
     mocker.patch.object(server, "_save_jobs")
-    server._jobs["visible123"] = {"id": "visible123", "status": "completed", "title": "Visible", "completed_at": 1}
+    server._jobs["visible123"] = {
+        "id": "visible123",
+        "status": "completed",
+        "title": "Visible",
+        "completed_at": 1,
+    }
     server._jobs["hidden123"] = {
         "id": "hidden123",
         "status": "completed",
@@ -153,7 +168,9 @@ def test_health_does_not_expose_tidal_user(mocker):
 
 def test_health_does_not_expose_error_details(mocker):
     client = server.app.test_client()
-    mocker.patch.object(server, "_get_session", side_effect=RuntimeError("secret token path"))
+    mocker.patch.object(
+        server, "_get_session", side_effect=RuntimeError("secret token path")
+    )
 
     response = client.get("/health")
 

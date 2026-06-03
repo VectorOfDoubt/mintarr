@@ -62,7 +62,15 @@ def validate(path: Path) -> list[str]:
         if not isinstance(sensor, dict):
             errors.append(f"{prefix} must be object")
             continue
-        for field in ("name", "class", "status", "severity", "confidence", "duration_ms", "evidence"):
+        for field in (
+            "name",
+            "class",
+            "status",
+            "severity",
+            "confidence",
+            "duration_ms",
+            "evidence",
+        ):
             if field not in sensor:
                 errors.append(f"{prefix} missing {field}")
         if sensor.get("status") not in VALID_SENSOR_STATUS:
@@ -75,14 +83,18 @@ def validate(path: Path) -> list[str]:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("paths", nargs="+", type=Path, help="sidecar files or directories")
+    parser.add_argument(
+        "paths", nargs="+", type=Path, help="sidecar files or directories"
+    )
     args = parser.parse_args()
 
     files: list[Path] = []
     for path in args.paths:
         if path.is_dir():
             files.extend(sorted(path.rglob("verification.json")))
-            files.extend(sorted(p for p in path.rglob("*.json") if p.name != "verification.json"))
+            files.extend(
+                sorted(p for p in path.rglob("*.json") if p.name != "verification.json")
+            )
         else:
             files.append(path)
 

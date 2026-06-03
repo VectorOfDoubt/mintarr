@@ -5,7 +5,13 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from .base import ConnectorKind, ConnectorMode, MANIFEST_API_VERSION, manifest_to_dict, unix_ts_to_iso
+from .base import (
+    ConnectorKind,
+    ConnectorMode,
+    MANIFEST_API_VERSION,
+    manifest_to_dict,
+    unix_ts_to_iso,
+)
 from .config import config_for_manifest, configured_mode
 
 if TYPE_CHECKING:
@@ -39,7 +45,9 @@ def connector_for_adapter(adapter_name: str) -> "Connector | None":
 
 
 def required_connectors() -> list["Connector"]:
-    return [connector for connector in _connectors.values() if connector.manifest.required]
+    return [
+        connector for connector in _connectors.values() if connector.manifest.required
+    ]
 
 
 def reset_registry() -> None:
@@ -70,7 +78,8 @@ def import_mode_invariant_violations() -> list[str]:
     violations = [
         f"source connectors in import mode require installed verifier: {connector.manifest.id}"
         for connector in required_connectors()
-        if not connector.is_installed() or configured_mode(connector.manifest) != ConnectorMode.IMPORT.value
+        if not connector.is_installed()
+        or configured_mode(connector.manifest) != ConnectorMode.IMPORT.value
     ]
     output_installed = any(
         connector.manifest.kind == ConnectorKind.OUTPUT
@@ -79,7 +88,9 @@ def import_mode_invariant_violations() -> list[str]:
         for connector in _connectors.values()
     )
     if not output_installed:
-        violations.append("source connectors in import mode require at least one installed output connector")
+        violations.append(
+            "source connectors in import mode require at least one installed output connector"
+        )
     return violations
 
 

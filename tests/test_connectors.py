@@ -11,7 +11,13 @@ import server
 VALID_KEY = "tidalhires-test-api-key"
 
 
-def _manifest(connector_id: str, *, kind=None, required: bool = False, default_enabled: bool = True):
+def _manifest(
+    connector_id: str,
+    *,
+    kind=None,
+    required: bool = False,
+    default_enabled: bool = True,
+):
     from connectors import ConnectorKind, ConnectorManifest, MANIFEST_API_VERSION
 
     return ConnectorManifest(
@@ -117,7 +123,9 @@ def test_required_connectors_returns_subset():
     connectors.reset_registry()
     connectors.register(_DummyConnector("required", required=True))
     connectors.register(_DummyConnector("optional", required=False))
-    assert [connector.manifest.id for connector in connectors.required_connectors()] == ["required"]
+    assert [
+        connector.manifest.id for connector in connectors.required_connectors()
+    ] == ["required"]
 
 
 def test_get_connectors_endpoint_requires_api_key():
@@ -160,7 +168,9 @@ def test_connector_payload_overlays_persisted_config():
 
 def test_connector_config_endpoint_requires_api_key():
     client = server.app.test_client()
-    resp = client.post("/dashboard/v1/connectors/tidal/config", json={"mode": "dry_run"})
+    resp = client.post(
+        "/dashboard/v1/connectors/tidal/config", json={"mode": "dry_run"}
+    )
     assert resp.status_code == 401
 
 
@@ -224,9 +234,21 @@ def test_connector_config_rejects_disabling_only_output_for_import_source():
     from connectors import ConnectorKind
 
     connectors.reset_registry()
-    connectors.register(_DummyConnector("source", kind=ConnectorKind.SOURCE, installed=True, enabled=True))
-    connectors.register(_DummyConnector("ffprobe", kind=ConnectorKind.VERIFIER, required=True, installed=True))
-    connectors.register(_DummyConnector("output", kind=ConnectorKind.OUTPUT, installed=True, enabled=True))
+    connectors.register(
+        _DummyConnector(
+            "source", kind=ConnectorKind.SOURCE, installed=True, enabled=True
+        )
+    )
+    connectors.register(
+        _DummyConnector(
+            "ffprobe", kind=ConnectorKind.VERIFIER, required=True, installed=True
+        )
+    )
+    connectors.register(
+        _DummyConnector(
+            "output", kind=ConnectorKind.OUTPUT, installed=True, enabled=True
+        )
+    )
 
     client = server.app.test_client()
     resp = client.post(
@@ -242,13 +264,19 @@ def test_connector_config_rejects_disabling_only_output_for_import_source():
 
 def test_tidal_connector_installed_iff_token_present(tmp_path):
     from adapters.tidal import TidalAdapter
-    from connectors import AdapterBackedConnector, ConnectorKind, ConnectorManifest, MANIFEST_API_VERSION
+    from connectors import (
+        AdapterBackedConnector,
+        ConnectorKind,
+        ConnectorManifest,
+        MANIFEST_API_VERSION,
+    )
 
     config_dir = tmp_path / "tidal"
     config_dir.mkdir()
     adapter = TidalAdapter(config_dir=str(config_dir))
 
     import adapters
+
     adapters.reset_registry()
     adapters.register(adapter)
 
@@ -285,10 +313,14 @@ def test_ffprobe_connector_detects_installed_via_path_lookup(monkeypatch):
         binary="ffprobe",
         version_args=("-version",),
     )
-    monkeypatch.setattr("shutil.which", lambda name: "/usr/bin/ffprobe" if name == "ffprobe" else None)
+    monkeypatch.setattr(
+        "shutil.which", lambda name: "/usr/bin/ffprobe" if name == "ffprobe" else None
+    )
     monkeypatch.setattr(
         "subprocess.run",
-        lambda *a, **kw: SimpleNamespace(stdout="ffprobe version 6.1 Copyright", stderr="", returncode=0),
+        lambda *a, **kw: SimpleNamespace(
+            stdout="ffprobe version 6.1 Copyright", stderr="", returncode=0
+        ),
     )
 
     assert connector.is_installed() is True
@@ -325,7 +357,9 @@ def test_lidarr_manual_import_connector_health_via_api_probe(monkeypatch):
         if url == "http://lidarr/api/v1/queue":
             return SimpleNamespace(ok=True, status_code=200)
         if url == "http://lidarr/api/v1/system/status":
-            return SimpleNamespace(ok=True, status_code=200, json=lambda: {"version": "2.14.1"})
+            return SimpleNamespace(
+                ok=True, status_code=200, json=lambda: {"version": "2.14.1"}
+            )
         raise AssertionError(f"unexpected url: {url}")
 
     monkeypatch.setattr("requests.get", fake_get)
@@ -340,7 +374,9 @@ def test_required_connector_missing_logs_warning_but_does_not_fail_boot(caplog):
     import connectors
 
     connectors.reset_registry()
-    connectors.register(_DummyConnector("required_missing", required=True, installed=False))
+    connectors.register(
+        _DummyConnector("required_missing", required=True, installed=False)
+    )
 
     missing = connectors.check_required_connectors_installed()
 
@@ -353,13 +389,27 @@ def test_no_source_in_import_mode_without_required_verifiers():
     from connectors import ConnectorKind
 
     connectors.reset_registry()
-    connectors.register(_DummyConnector("source", kind=ConnectorKind.SOURCE, installed=True, enabled=True))
-    connectors.register(_DummyConnector("ffprobe", kind=ConnectorKind.VERIFIER, required=True, installed=False))
-    connectors.register(_DummyConnector("output", kind=ConnectorKind.OUTPUT, installed=True, enabled=True))
+    connectors.register(
+        _DummyConnector(
+            "source", kind=ConnectorKind.SOURCE, installed=True, enabled=True
+        )
+    )
+    connectors.register(
+        _DummyConnector(
+            "ffprobe", kind=ConnectorKind.VERIFIER, required=True, installed=False
+        )
+    )
+    connectors.register(
+        _DummyConnector(
+            "output", kind=ConnectorKind.OUTPUT, installed=True, enabled=True
+        )
+    )
 
     violations = connectors.import_mode_invariant_violations()
 
-    assert violations == ["source connectors in import mode require installed verifier: ffprobe"]
+    assert violations == [
+        "source connectors in import mode require installed verifier: ffprobe"
+    ]
 
 
 def test_at_least_one_output_connector_must_be_installed():
@@ -367,10 +417,24 @@ def test_at_least_one_output_connector_must_be_installed():
     from connectors import ConnectorKind
 
     connectors.reset_registry()
-    connectors.register(_DummyConnector("source", kind=ConnectorKind.SOURCE, installed=True, enabled=True))
-    connectors.register(_DummyConnector("ffprobe", kind=ConnectorKind.VERIFIER, required=True, installed=True))
-    connectors.register(_DummyConnector("output", kind=ConnectorKind.OUTPUT, installed=False, enabled=True))
+    connectors.register(
+        _DummyConnector(
+            "source", kind=ConnectorKind.SOURCE, installed=True, enabled=True
+        )
+    )
+    connectors.register(
+        _DummyConnector(
+            "ffprobe", kind=ConnectorKind.VERIFIER, required=True, installed=True
+        )
+    )
+    connectors.register(
+        _DummyConnector(
+            "output", kind=ConnectorKind.OUTPUT, installed=False, enabled=True
+        )
+    )
 
     violations = connectors.import_mode_invariant_violations()
 
-    assert violations == ["source connectors in import mode require at least one installed output connector"]
+    assert violations == [
+        "source connectors in import mode require at least one installed output connector"
+    ]

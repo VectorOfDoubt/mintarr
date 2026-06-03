@@ -57,11 +57,15 @@ class _FakeAdapter:
         self.cleanup_called = False
         self._audio_files = audio_files
 
-    def is_enabled(self): return True
-    def search(self, *a, **kw): return []
+    def is_enabled(self):
+        return True
+
+    def search(self, *a, **kw):
+        return []
 
     def download_raw(self, candidate_id, ctx):
         from adapters.base import RawDownload
+
         self.download_called_with = candidate_id
         ctx.raw_dir.mkdir(parents=True, exist_ok=True)
         for i in range(self._audio_files):
@@ -93,7 +97,8 @@ def pipeline_env(tmp_path, monkeypatch):
     monkeypatch.setattr(server, "_record_job_timing", _no_op)
     # flac -t inside normalize_audio: pretend everything verifies fine
     monkeypatch.setattr(
-        subprocess, "run",
+        subprocess,
+        "run",
         lambda *a, **kw: _FakeCompleted(returncode=0),
     )
     return server, pipeline
@@ -187,7 +192,14 @@ def test_execute_source_grab_threads_non_tidal_source_type(pipeline_env, monkeyp
     adapter = _LocalFolderAdapter()
     seen: dict = {}
 
-    def _capturing_trigger(jid, output_dir, worker_job_id=None, *, source_type="tidal", target_album_id=None):
+    def _capturing_trigger(
+        jid,
+        output_dir,
+        worker_job_id=None,
+        *,
+        source_type="tidal",
+        target_album_id=None,
+    ):
         seen["jid"] = jid
         seen["source_type"] = source_type
         seen["output_dir"] = output_dir
@@ -217,7 +229,14 @@ def test_execute_source_grab_threads_target_album_id(pipeline_env, monkeypatch):
     adapter = _FakeAdapter()
     seen: dict = {}
 
-    def _capturing_trigger(jid, output_dir, worker_job_id=None, *, source_type="tidal", target_album_id=None):
+    def _capturing_trigger(
+        jid,
+        output_dir,
+        worker_job_id=None,
+        *,
+        source_type="tidal",
+        target_album_id=None,
+    ):
         seen["jid"] = jid
         seen["target_album_id"] = target_album_id
 

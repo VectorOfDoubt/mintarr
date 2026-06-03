@@ -16,7 +16,11 @@ if TYPE_CHECKING:
 
 
 def default_config(manifest: ConnectorManifest) -> dict:
-    mode = ConnectorMode.IMPORT.value if manifest.default_enabled else ConnectorMode.DISABLED.value
+    mode = (
+        ConnectorMode.IMPORT.value
+        if manifest.default_enabled
+        else ConnectorMode.DISABLED.value
+    )
     return {
         "connector_id": manifest.id,
         "enabled": manifest.default_enabled,
@@ -29,12 +33,15 @@ def default_config(manifest: ConnectorManifest) -> dict:
 def _stored_config(connector_id: str) -> dict | None:
     try:
         import state_db
+
         return state_db.get_connector_config(connector_id)
     except Exception:
         return None
 
 
-def config_for_manifest(manifest: ConnectorManifest, overrides: dict[str, dict] | None = None) -> dict:
+def config_for_manifest(
+    manifest: ConnectorManifest, overrides: dict[str, dict] | None = None
+) -> dict:
     row = (overrides or {}).get(manifest.id)
     if row is None:
         row = _stored_config(manifest.id)
@@ -63,7 +70,9 @@ def configured_mode(manifest: ConnectorManifest) -> str:
     return str(config_for_manifest(manifest)["mode"])
 
 
-def normalize_update(*, enabled: bool | None, mode: str | None, manifest: ConnectorManifest) -> dict:
+def normalize_update(
+    *, enabled: bool | None, mode: str | None, manifest: ConnectorManifest
+) -> dict:
     current = config_for_manifest(manifest)
     next_mode = mode or current["mode"]
     try:
@@ -91,6 +100,7 @@ def normalize_update(*, enabled: bool | None, mode: str | None, manifest: Connec
 def _snapshot() -> dict[str, dict]:
     try:
         import state_db
+
         return state_db.list_connector_config()
     except Exception:
         return {}
@@ -103,12 +113,16 @@ def validate_connector_update(
     mode: str | None,
     connectors: list["Connector"],
 ) -> tuple[dict | None, list[str]]:
-    connector = next((item for item in connectors if item.manifest.id == connector_id), None)
+    connector = next(
+        (item for item in connectors if item.manifest.id == connector_id), None
+    )
     if connector is None:
         return None, ["unknown connector"]
 
     try:
-        proposed = normalize_update(enabled=enabled, mode=mode, manifest=connector.manifest)
+        proposed = normalize_update(
+            enabled=enabled, mode=mode, manifest=connector.manifest
+        )
     except ValueError as exc:
         return None, [str(exc)]
 
@@ -124,13 +138,15 @@ def validate_connector_update(
         for item in connectors
         if item.manifest.kind == ConnectorKind.SOURCE
         and item.is_installed()
-        and config_for_manifest(item.manifest, snapshot)["mode"] == ConnectorMode.IMPORT.value
+        and config_for_manifest(item.manifest, snapshot)["mode"]
+        == ConnectorMode.IMPORT.value
     ]
     if source_importing:
         for item in connectors:
             if item.manifest.required and (
                 not item.is_installed()
-                or config_for_manifest(item.manifest, snapshot)["mode"] != ConnectorMode.IMPORT.value
+                or config_for_manifest(item.manifest, snapshot)["mode"]
+                != ConnectorMode.IMPORT.value
             ):
                 errors.append(
                     f"source connectors in import mode require installed verifier: {item.manifest.id}"
@@ -138,11 +154,14 @@ def validate_connector_update(
         output_ready = any(
             item.manifest.kind == ConnectorKind.OUTPUT
             and item.is_installed()
-            and config_for_manifest(item.manifest, snapshot)["mode"] == ConnectorMode.IMPORT.value
+            and config_for_manifest(item.manifest, snapshot)["mode"]
+            == ConnectorMode.IMPORT.value
             for item in connectors
         )
         if not output_ready:
-            errors.append("source connectors in import mode require at least one installed output connector")
+            errors.append(
+                "source connectors in import mode require at least one installed output connector"
+            )
 
     return proposed, errors
 
@@ -150,6 +169,7 @@ def validate_connector_update(
 def persist_connector_config(config: dict) -> dict | None:
     try:
         import state_db
+
         return state_db.set_connector_config(
             config["connector_id"],
             enabled=bool(config["enabled"]),

@@ -16,7 +16,9 @@ from verification import VerificationResult
 VALID_KEY = "tidalhires-test-api-key"
 
 
-def _result(jid="abc12345", decision="REVIEW_REQUIRED", outcome="PENDING", overrides=None):
+def _result(
+    jid="abc12345", decision="REVIEW_REQUIRED", outcome="PENDING", overrides=None
+):
     return VerificationResult(
         jid=jid,
         score=0 if decision == "BLOCK" else 60,
@@ -104,13 +106,19 @@ def test_decisions_endpoint_overlays_current_sidecar_lifecycle(tmp_path, monkeyp
     assert record["lifecycle"]["actor"] == "user_discard"
 
 
-def test_verification_get_reconciles_pending_import_from_lidarr_history(tmp_path, monkeypatch, mocker):
+def test_verification_get_reconciles_pending_import_from_lidarr_history(
+    tmp_path, monkeypatch, mocker
+):
     output_base = _patch_paths(monkeypatch, tmp_path)
     output_dir = output_base / "abc12345"
     output_dir.mkdir(parents=True)
     path = server._write_verification_sidecar(
         "abc12345",
-        _result(decision="ACCEPT_PROVISIONAL", outcome="PENDING", overrides=["manual_promote"]),
+        _result(
+            decision="ACCEPT_PROVISIONAL",
+            outcome="PENDING",
+            overrides=["manual_promote"],
+        ),
         output_dir,
     )
     server._jobs["abc12345"] = {"id": "abc12345", "output_dir": str(output_dir)}
@@ -131,7 +139,9 @@ def test_verification_get_reconciles_pending_import_from_lidarr_history(tmp_path
     cleanup.assert_not_called()
 
 
-def test_verification_get_marks_orphaned_pending_import_failed(tmp_path, monkeypatch, mocker):
+def test_verification_get_marks_orphaned_pending_import_failed(
+    tmp_path, monkeypatch, mocker
+):
     output_base = _patch_paths(monkeypatch, tmp_path)
     output_dir = output_base / "abc12345"
     output_dir.mkdir(parents=True)
@@ -140,13 +150,19 @@ def test_verification_get_marks_orphaned_pending_import_failed(tmp_path, monkeyp
         _result(decision="ACCEPT", outcome="PENDING"),
         output_dir,
     )
-    server._jobs["abc12345"] = {"id": "abc12345", "output_dir": str(output_dir), "status": "processing"}
+    server._jobs["abc12345"] = {
+        "id": "abc12345",
+        "output_dir": str(output_dir),
+        "status": "processing",
+    }
 
     monkeypatch.setenv("LIDARR_API_URL", "http://lidarr/api/v1")
     mocker.patch.object(server, "_get_lidarr_key", return_value="lidarr-key")
     mocker.patch.object(server, "_count_lidarr_imported_history", return_value=0)
     mocker.patch.object(server, "_count_lidarr_trackfiles", return_value=0)
-    mocker.patch.object(server, "_lidarr_has_pending_import_for_jid", return_value=False)
+    mocker.patch.object(
+        server, "_lidarr_has_pending_import_for_jid", return_value=False
+    )
     cleanup = mocker.patch.object(server, "_cleanup_lidarr_queue")
     mocker.patch.object(server, "_save_jobs")
 
@@ -157,11 +173,16 @@ def test_verification_get_marks_orphaned_pending_import_failed(tmp_path, monkeyp
     assert response.get_json()["v2_import_outcome"] == "FAILED"
     assert json.loads(path.read_text())["v2_import_outcome"] == "FAILED"
     assert server._jobs["abc12345"]["status"] == "failed"
-    assert server._jobs["abc12345"]["error"] == "lidarr manualimport ended without importing files"
+    assert (
+        server._jobs["abc12345"]["error"]
+        == "lidarr manualimport ended without importing files"
+    )
     cleanup.assert_called_once_with("abc12345", "http://lidarr/api/v1", "lidarr-key")
 
 
-def test_queue_reconcile_handles_human_pending_progress_message(tmp_path, monkeypatch, mocker):
+def test_queue_reconcile_handles_human_pending_progress_message(
+    tmp_path, monkeypatch, mocker
+):
     output_base = _patch_paths(monkeypatch, tmp_path)
     output_dir = output_base / "abc12345"
     output_dir.mkdir(parents=True)
@@ -182,7 +203,9 @@ def test_queue_reconcile_handles_human_pending_progress_message(tmp_path, monkey
     mocker.patch.object(server, "_get_lidarr_key", return_value="lidarr-key")
     mocker.patch.object(server, "_count_lidarr_imported_history", return_value=0)
     mocker.patch.object(server, "_count_lidarr_trackfiles", return_value=0)
-    mocker.patch.object(server, "_lidarr_has_pending_import_for_jid", return_value=False)
+    mocker.patch.object(
+        server, "_lidarr_has_pending_import_for_jid", return_value=False
+    )
     cleanup = mocker.patch.object(server, "_cleanup_lidarr_queue")
     mocker.patch.object(server, "_save_jobs")
 
@@ -190,11 +213,16 @@ def test_queue_reconcile_handles_human_pending_progress_message(tmp_path, monkey
 
     assert json.loads(path.read_text())["v2_import_outcome"] == "FAILED"
     assert server._jobs["abc12345"]["status"] == "failed"
-    assert server._jobs["abc12345"]["error"] == "lidarr manualimport ended without importing files"
+    assert (
+        server._jobs["abc12345"]["error"]
+        == "lidarr manualimport ended without importing files"
+    )
     cleanup.assert_called_once_with("abc12345", "http://lidarr/api/v1", "lidarr-key")
 
 
-def test_verification_get_reconciles_imported_trackfiles_only_when_sources_moved(tmp_path, monkeypatch, mocker):
+def test_verification_get_reconciles_imported_trackfiles_only_when_sources_moved(
+    tmp_path, monkeypatch, mocker
+):
     output_base = _patch_paths(monkeypatch, tmp_path)
     output_dir = output_base / "abc12345"
     output_dir.mkdir(parents=True)
@@ -203,13 +231,19 @@ def test_verification_get_reconciles_imported_trackfiles_only_when_sources_moved
         _result(decision="ACCEPT", outcome="PENDING"),
         output_dir,
     )
-    server._jobs["abc12345"] = {"id": "abc12345", "output_dir": str(output_dir), "status": "processing"}
+    server._jobs["abc12345"] = {
+        "id": "abc12345",
+        "output_dir": str(output_dir),
+        "status": "processing",
+    }
 
     monkeypatch.setenv("LIDARR_API_URL", "http://lidarr/api/v1")
     mocker.patch.object(server, "_get_lidarr_key", return_value="lidarr-key")
     mocker.patch.object(server, "_count_lidarr_imported_history", return_value=0)
     mocker.patch.object(server, "_count_lidarr_trackfiles", return_value=8)
-    mocker.patch.object(server, "_lidarr_has_pending_import_for_jid", return_value=False)
+    mocker.patch.object(
+        server, "_lidarr_has_pending_import_for_jid", return_value=False
+    )
     cleanup = mocker.patch.object(server, "_cleanup_lidarr_queue")
     mocker.patch.object(server, "_save_jobs")
 
@@ -223,7 +257,9 @@ def test_verification_get_reconciles_imported_trackfiles_only_when_sources_moved
     cleanup.assert_not_called()
 
 
-def test_verification_get_does_not_treat_existing_trackfiles_as_import_success(tmp_path, monkeypatch, mocker):
+def test_verification_get_does_not_treat_existing_trackfiles_as_import_success(
+    tmp_path, monkeypatch, mocker
+):
     output_base = _patch_paths(monkeypatch, tmp_path)
     output_dir = output_base / "abc12345"
     output_dir.mkdir(parents=True)
@@ -233,13 +269,19 @@ def test_verification_get_does_not_treat_existing_trackfiles_as_import_success(t
         _result(decision="ACCEPT", outcome="PENDING"),
         output_dir,
     )
-    server._jobs["abc12345"] = {"id": "abc12345", "output_dir": str(output_dir), "status": "processing"}
+    server._jobs["abc12345"] = {
+        "id": "abc12345",
+        "output_dir": str(output_dir),
+        "status": "processing",
+    }
 
     monkeypatch.setenv("LIDARR_API_URL", "http://lidarr/api/v1")
     mocker.patch.object(server, "_get_lidarr_key", return_value="lidarr-key")
     mocker.patch.object(server, "_count_lidarr_imported_history", return_value=0)
     mocker.patch.object(server, "_count_lidarr_trackfiles", return_value=8)
-    mocker.patch.object(server, "_lidarr_has_pending_import_for_jid", return_value=False)
+    mocker.patch.object(
+        server, "_lidarr_has_pending_import_for_jid", return_value=False
+    )
     cleanup = mocker.patch.object(server, "_cleanup_lidarr_queue")
     mocker.patch.object(server, "_save_jobs")
 
@@ -294,7 +336,9 @@ def test_verification_list_can_render_review_dashboard(tmp_path, monkeypatch):
     assert "/verification/abc12345/discard" in text
 
 
-def test_retry_import_reruns_verified_accept_without_recomputing_verification(tmp_path, monkeypatch, mocker):
+def test_retry_import_reruns_verified_accept_without_recomputing_verification(
+    tmp_path, monkeypatch, mocker
+):
     output_base = _patch_paths(monkeypatch, tmp_path)
     output_dir = output_base / "abc12345"
     output_dir.mkdir(parents=True)
@@ -310,7 +354,9 @@ def test_retry_import_reruns_verified_accept_without_recomputing_verification(tm
         "hidden_from_lidarr": True,
         "output_dir": str(output_dir),
     }
-    import_only = mocker.patch.object(server, "_run_manual_import_only", return_value="MANUAL_IMPORTED")
+    import_only = mocker.patch.object(
+        server, "_run_manual_import_only", return_value="MANUAL_IMPORTED"
+    )
     mocker.patch.object(server, "_save_jobs")
 
     client = server.app.test_client()
@@ -344,13 +390,17 @@ def test_retry_import_rejects_review_required(tmp_path, monkeypatch, mocker):
     import_only.assert_not_called()
 
 
-def test_promote_updates_sidecar_without_recomputing_verification(tmp_path, monkeypatch, mocker):
+def test_promote_updates_sidecar_without_recomputing_verification(
+    tmp_path, monkeypatch, mocker
+):
     output_base = _patch_paths(monkeypatch, tmp_path)
     output_dir = output_base / "abc12345"
     output_dir.mkdir(parents=True)
     path = server._write_verification_sidecar("abc12345", _result(), output_dir)
     server._jobs["abc12345"] = {"id": "abc12345", "output_dir": str(output_dir)}
-    import_only = mocker.patch.object(server, "_run_manual_import_only", return_value="MANUAL_IMPORTED")
+    import_only = mocker.patch.object(
+        server, "_run_manual_import_only", return_value="MANUAL_IMPORTED"
+    )
 
     client = server.app.test_client()
     response = client.post(f"/verification/abc12345/promote?apikey={VALID_KEY}")
@@ -366,7 +416,9 @@ def test_promote_updates_sidecar_without_recomputing_verification(tmp_path, monk
     result_state, payload = server._execute_promote_import_job(jobs[0])
     assert result_state == "promoted"
     assert payload["import_outcome"] == "MANUAL_IMPORTED"
-    import_only.assert_called_once_with("abc12345", output_dir, worker_job_id=jobs[0]["id"])
+    import_only.assert_called_once_with(
+        "abc12345", output_dir, worker_job_id=jobs[0]["id"]
+    )
     record = json.loads(path.read_text())
     assert record["v2_verification_decision"] == "ACCEPT_PROVISIONAL"
     assert record["v2_import_outcome"] == "MANUAL_IMPORTED"
@@ -380,7 +432,11 @@ def test_promote_is_idempotent_when_already_imported(tmp_path, monkeypatch, mock
     output_dir.mkdir(parents=True)
     server._write_verification_sidecar(
         "abc12345",
-        _result(decision="ACCEPT_PROVISIONAL", outcome="MANUAL_IMPORTED", overrides=["manual_promote"]),
+        _result(
+            decision="ACCEPT_PROVISIONAL",
+            outcome="MANUAL_IMPORTED",
+            overrides=["manual_promote"],
+        ),
         output_dir,
     )
     import_only = mocker.patch.object(server, "_run_manual_import_only")
@@ -399,9 +455,13 @@ def test_promote_failure_keeps_sidecar_retryable(tmp_path, monkeypatch, mocker):
     output_dir.mkdir(parents=True)
     path = server._write_verification_sidecar("abc12345", _result(), output_dir)
     server._jobs["abc12345"] = {"id": "abc12345", "output_dir": str(output_dir)}
-    import_only = mocker.patch.object(server, "_run_manual_import_only", return_value="FAILED")
+    import_only = mocker.patch.object(
+        server, "_run_manual_import_only", return_value="FAILED"
+    )
 
-    result_state, payload = server._execute_promote_import_job({"id": 1, "jid": "abc12345", "payload_json": "{}"})
+    result_state, payload = server._execute_promote_import_job(
+        {"id": 1, "jid": "abc12345", "payload_json": "{}"}
+    )
 
     assert result_state == "failed"
     assert payload["import_outcome"] == "FAILED"
@@ -419,13 +479,21 @@ def test_promote_retries_after_failed_manual_promote(tmp_path, monkeypatch, mock
     output_dir.mkdir(parents=True)
     path = server._write_verification_sidecar(
         "abc12345",
-        _result(decision="ACCEPT_PROVISIONAL", outcome="FAILED", overrides=["manual_promote"]),
+        _result(
+            decision="ACCEPT_PROVISIONAL",
+            outcome="FAILED",
+            overrides=["manual_promote"],
+        ),
         output_dir,
     )
     server._jobs["abc12345"] = {"id": "abc12345", "output_dir": str(output_dir)}
-    import_only = mocker.patch.object(server, "_run_manual_import_only", return_value="RESCUED")
+    import_only = mocker.patch.object(
+        server, "_run_manual_import_only", return_value="RESCUED"
+    )
 
-    result_state, payload = server._execute_promote_import_job({"id": 1, "jid": "abc12345", "payload_json": "{}"})
+    result_state, payload = server._execute_promote_import_job(
+        {"id": 1, "jid": "abc12345", "payload_json": "{}"}
+    )
 
     assert result_state == "promoted"
     assert payload["import_outcome"] == "RESCUED"
@@ -442,13 +510,21 @@ def test_promote_retries_after_pending_manual_promote(tmp_path, monkeypatch, moc
     output_dir.mkdir(parents=True)
     path = server._write_verification_sidecar(
         "abc12345",
-        _result(decision="ACCEPT_PROVISIONAL", outcome="PENDING", overrides=["manual_promote"]),
+        _result(
+            decision="ACCEPT_PROVISIONAL",
+            outcome="PENDING",
+            overrides=["manual_promote"],
+        ),
         output_dir,
     )
     server._jobs["abc12345"] = {"id": "abc12345", "output_dir": str(output_dir)}
-    import_only = mocker.patch.object(server, "_run_manual_import_only", return_value="MANUAL_IMPORTED")
+    import_only = mocker.patch.object(
+        server, "_run_manual_import_only", return_value="MANUAL_IMPORTED"
+    )
 
-    result_state, payload = server._execute_promote_import_job({"id": 1, "jid": "abc12345", "payload_json": "{}"})
+    result_state, payload = server._execute_promote_import_job(
+        {"id": 1, "jid": "abc12345", "payload_json": "{}"}
+    )
 
     assert result_state == "promoted"
     assert payload["import_outcome"] == "MANUAL_IMPORTED"
@@ -458,12 +534,16 @@ def test_promote_retries_after_pending_manual_promote(tmp_path, monkeypatch, moc
     assert record["v2_overrides"].count("manual_promote") == 1
 
 
-def test_promote_worker_honors_cancel_before_manual_import(tmp_path, monkeypatch, mocker):
+def test_promote_worker_honors_cancel_before_manual_import(
+    tmp_path, monkeypatch, mocker
+):
     state_db.init(db_path=tmp_path / "state.db")
     output_base = _patch_paths(monkeypatch, tmp_path)
     output_dir = output_base / "cancelpr1"
     output_dir.mkdir(parents=True)
-    path = server._write_verification_sidecar("cancelpr1", _result(jid="cancelpr1"), output_dir)
+    path = server._write_verification_sidecar(
+        "cancelpr1", _result(jid="cancelpr1"), output_dir
+    )
     server._jobs["cancelpr1"] = {"id": "cancelpr1", "output_dir": str(output_dir)}
     import_only = mocker.patch.object(server, "_run_manual_import_only")
 
@@ -472,11 +552,13 @@ def test_promote_worker_honors_cancel_before_manual_import(tmp_path, monkeypatch
     state_db.request_job_cancel(job_id)
 
     with pytest.raises(worker.JobCancelled):
-        server._execute_promote_import_job({
-            "id": job_id,
-            "jid": "cancelpr1",
-            "payload_json": "{}",
-        })
+        server._execute_promote_import_job(
+            {
+                "id": job_id,
+                "jid": "cancelpr1",
+                "payload_json": "{}",
+            }
+        )
 
     import_only.assert_not_called()
     assert output_dir.exists()
@@ -492,7 +574,9 @@ def test_worker_executes_promote_import_job(tmp_path, monkeypatch, mocker):
     output_dir.mkdir(parents=True)
     path = server._write_verification_sidecar(jid, _result(jid=jid), output_dir)
     server._jobs[jid] = {"id": jid, "output_dir": str(output_dir)}
-    import_only = mocker.patch.object(server, "_run_manual_import_only", return_value="MANUAL_IMPORTED")
+    import_only = mocker.patch.object(
+        server, "_run_manual_import_only", return_value="MANUAL_IMPORTED"
+    )
 
     worker.stop_worker(timeout=2)
     worker.register_executor("promote_import", server._execute_promote_import_job)
@@ -543,7 +627,9 @@ def test_discard_deletes_output_and_archives_sidecar(tmp_path, monkeypatch, mock
     assert record["lifecycle"]["blocklist_status"] == "done"
 
 
-def test_discard_accepts_failed_or_pending_manual_promote(tmp_path, monkeypatch, mocker):
+def test_discard_accepts_failed_or_pending_manual_promote(
+    tmp_path, monkeypatch, mocker
+):
     output_base = _patch_paths(monkeypatch, tmp_path)
     mocker.patch.object(server, "_get_lidarr_key", return_value="lidarr-key")
     mocker.patch.object(server, "_blocklist_grab", return_value=True)
@@ -556,7 +642,11 @@ def test_discard_accepts_failed_or_pending_manual_promote(tmp_path, monkeypatch,
         (output_dir / "01.flac").write_bytes(b"flac")
         server._write_verification_sidecar(
             jid,
-            _result(decision="ACCEPT_PROVISIONAL", outcome=outcome, overrides=["manual_promote"]),
+            _result(
+                decision="ACCEPT_PROVISIONAL",
+                outcome=outcome,
+                overrides=["manual_promote"],
+            ),
             output_dir,
         )
         server._jobs[jid] = {"id": jid, "output_dir": str(output_dir)}
@@ -572,7 +662,9 @@ def test_discard_accepts_failed_or_pending_manual_promote(tmp_path, monkeypatch,
         assert record["lifecycle"]["state"] == "discarded"
 
 
-def test_expire_review_required_archives_and_deletes_output(tmp_path, monkeypatch, mocker):
+def test_expire_review_required_archives_and_deletes_output(
+    tmp_path, monkeypatch, mocker
+):
     output_base = _patch_paths(monkeypatch, tmp_path)
     output_dir = output_base / "abc12345"
     output_dir.mkdir(parents=True)
@@ -582,7 +674,11 @@ def test_expire_review_required_archives_and_deletes_output(tmp_path, monkeypatc
     record["lifecycle"]["created_at"] = 1
     record["ts"] = 1
     path.write_text(json.dumps(record))
-    server._jobs["abc12345"] = {"id": "abc12345", "status": "review_required", "output_dir": str(output_dir)}
+    server._jobs["abc12345"] = {
+        "id": "abc12345",
+        "status": "review_required",
+        "output_dir": str(output_dir),
+    }
     monkeypatch.setenv("REVIEW_RETENTION_DAYS", "0")
     mocker.patch.object(server, "_get_lidarr_key", return_value="lidarr-key")
     mocker.patch.object(server, "_blocklist_grab", return_value=True)
@@ -607,7 +703,9 @@ def test_dashboard_renders_summary_cards(tmp_path, monkeypatch):
     server._write_verification_sidecar("card12345", _result(), output_dir)
 
     client = server.app.test_client()
-    response = client.get(f"/verification?apikey={VALID_KEY}", headers={"Accept": "text/html"})
+    response = client.get(
+        f"/verification?apikey={VALID_KEY}", headers={"Accept": "text/html"}
+    )
 
     assert response.status_code == 200
     text = response.get_data(as_text=True)
@@ -630,7 +728,9 @@ def test_dashboard_highlights_needs_action_when_review_pending(tmp_path, monkeyp
     server._write_verification_sidecar("review123", review_result, output_dir)
 
     client = server.app.test_client()
-    response = client.get(f"/verification?apikey={VALID_KEY}", headers={"Accept": "text/html"})
+    response = client.get(
+        f"/verification?apikey={VALID_KEY}", headers={"Accept": "text/html"}
+    )
 
     assert response.status_code == 200
     text = response.get_data(as_text=True)

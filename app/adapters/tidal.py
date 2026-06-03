@@ -42,8 +42,11 @@ def get_session():
         if _session is not None:
             return _session
         import tidalapi
+
         s = tidalapi.Session()
-        config_dir = Path(os.environ.get("TIDAL_DL_NG_CONFIG", "/root/.config/tidal_dl_ng-dev"))
+        config_dir = Path(
+            os.environ.get("TIDAL_DL_NG_CONFIG", "/root/.config/tidal_dl_ng-dev")
+        )
         token_file = config_dir / "token.json"
         if not token_file.exists():
             raise RuntimeError(
@@ -58,7 +61,9 @@ def get_session():
             is_pkce=_use_pkce_oauth(),
         )
         if not ok:
-            raise RuntimeError("tidalapi.load_oauth_session failed — token expired? Re-login.")
+            raise RuntimeError(
+                "tidalapi.load_oauth_session failed — token expired? Re-login."
+            )
         _session = s
         log.info("TIDAL session loaded")
         return _session
@@ -215,7 +220,9 @@ class TidalAdapter:
         ctx.raw_dir.mkdir(parents=True, exist_ok=True)
 
         ctx.check_cancelled()
-        ctx.set_progress(stage="configuring", percent=5, message="Configuring tidal-dl-ng")
+        ctx.set_progress(
+            stage="configuring", percent=5, message="Configuring tidal-dl-ng"
+        )
         # cfg-step goes through ctx.run_subprocess so cancel signals reach it
         # and a stuck cfg doesn't ignore the worker's cancel state. Short
         # 30s timeout matches the original direct subprocess.run timeout.
@@ -229,7 +236,9 @@ class TidalAdapter:
             )
 
         ctx.check_cancelled()
-        ctx.set_progress(stage="downloading", percent=10, message="Downloading from TIDAL")
+        ctx.set_progress(
+            stage="downloading", percent=10, message="Downloading from TIDAL"
+        )
         log.info("[%s] TIDAL dl album=%s → %s", ctx.jid, album_id, ctx.raw_dir)
         result = ctx.run_subprocess(
             ["tidal-dl-ng", "dl", url],

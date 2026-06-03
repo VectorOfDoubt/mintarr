@@ -108,11 +108,23 @@ def backfill(
     # But we want the OPPOSITE: live sidecar overrides archived, so we
     # scan in priority order and the first wins.
     seen: set[str] = set()
-    counts = {"output": 0, "blocked": 0, "discarded": 0, "expired": 0, "skipped": 0, "errors": 0}
+    counts = {
+        "output": 0,
+        "blocked": 0,
+        "discarded": 0,
+        "expired": 0,
+        "skipped": 0,
+        "errors": 0,
+    }
 
     for source_name, directory in sources:
         sidecars = _scan_dir_for_sidecars(directory)
-        log.info("scanning %s (%s): %d candidate files", source_name, directory, len(sidecars))
+        log.info(
+            "scanning %s (%s): %d candidate files",
+            source_name,
+            directory,
+            len(sidecars),
+        )
         for path in sidecars:
             sidecar = _read_sidecar(path)
             if sidecar is None:
@@ -126,7 +138,12 @@ def backfill(
 
             derived_status = _derive_status_for_backfill(sidecar)
             if dry_run:
-                log.info("DRY-RUN would upsert %s (status=%s) from %s", jid, derived_status, source_name)
+                log.info(
+                    "DRY-RUN would upsert %s (status=%s) from %s",
+                    jid,
+                    derived_status,
+                    source_name,
+                )
             else:
                 state_db.upsert_from_sidecar(sidecar, derived_status=derived_status)
             counts[source_name] += 1
@@ -139,8 +156,12 @@ def backfill(
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--dry-run", action="store_true", help="Scan + report, do not write")
-    parser.add_argument("--output-base", default="/output", help="Live sidecar root (default: /output)")
+    parser.add_argument(
+        "--dry-run", action="store_true", help="Scan + report, do not write"
+    )
+    parser.add_argument(
+        "--output-base", default="/output", help="Live sidecar root (default: /output)"
+    )
     parser.add_argument("--blocked-dir", default="/config/blocked_decisions")
     parser.add_argument("--discarded-dir", default="/config/discarded")
     parser.add_argument("--expired-dir", default="/config/expired_review")
@@ -155,7 +176,15 @@ def main() -> int:
     )
 
     print(f"Backfill {'(dry-run) ' if args.dry_run else ''}complete:")
-    for k in ("output", "blocked", "discarded", "expired", "skipped", "errors", "total"):
+    for k in (
+        "output",
+        "blocked",
+        "discarded",
+        "expired",
+        "skipped",
+        "errors",
+        "total",
+    ):
         print(f"  {k}: {counts.get(k, 0)}")
     return 0
 

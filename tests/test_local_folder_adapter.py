@@ -55,6 +55,7 @@ def _seed_album(root: Path, artist: str, album: str, tracks: int = 2) -> Path:
 
 def test_local_adapter_disabled_without_env(tmp_path, monkeypatch):
     from adapters.local_folder import LocalFolderAdapter
+
     monkeypatch.delenv("LOCAL_INGEST_PATH", raising=False)
     adapter = LocalFolderAdapter(ingest_root=str(tmp_path / "does-not-exist"))
     assert adapter.is_enabled() is False
@@ -62,6 +63,7 @@ def test_local_adapter_disabled_without_env(tmp_path, monkeypatch):
 
 def test_local_adapter_enabled_when_dir_exists(tmp_path):
     from adapters.local_folder import LocalFolderAdapter
+
     adapter = LocalFolderAdapter(ingest_root=str(tmp_path))
     assert adapter.is_enabled() is True
 
@@ -78,6 +80,7 @@ def test_local_search_returns_empty_for_empty_query(tmp_path):
     test_newznab_routing.py.)
     """
     from adapters.local_folder import LocalFolderAdapter
+
     _seed_album(tmp_path, "Artist", "Album")
     adapter = LocalFolderAdapter(ingest_root=str(tmp_path))
     assert adapter.search(query="", artist="", album="") == []
@@ -88,6 +91,7 @@ def test_local_search_returns_empty_for_empty_query(tmp_path):
 
 def test_local_normalize_candidate_blocks_absolute_and_parent_paths(tmp_path):
     from adapters.local_folder import LocalFolderAdapter
+
     _seed_album(tmp_path, "Artist", "Album")
     adapter = LocalFolderAdapter(ingest_root=str(tmp_path))
 
@@ -103,6 +107,7 @@ def test_local_normalize_candidate_blocks_absolute_and_parent_paths(tmp_path):
 
 def test_local_normalize_candidate_blocks_symlinked_source_dir(tmp_path):
     from adapters.local_folder import LocalFolderAdapter
+
     ingest = tmp_path / "ingest"
     real = _seed_album(ingest, "Artist", "RealAlbum")
     (ingest / "Artist" / "LinkedAlbum").symlink_to(real, target_is_directory=True)
@@ -117,6 +122,7 @@ def test_local_normalize_candidate_blocks_symlinked_source_dir(tmp_path):
 
 def test_local_download_raw_copies_files(tmp_path):
     from adapters.local_folder import LocalFolderAdapter
+
     ingest = tmp_path / "ingest"
     src = _seed_album(ingest, "Artist", "Album", tracks=3)
     adapter = LocalFolderAdapter(ingest_root=str(ingest))
@@ -128,11 +134,15 @@ def test_local_download_raw_copies_files(tmp_path):
     assert result.file_count == 3
     assert result.total_bytes > 0
     assert sorted(p.name for p in raw_dir.rglob("*.flac")) == [
-        "01 track.flac", "02 track.flac", "03 track.flac",
+        "01 track.flac",
+        "02 track.flac",
+        "03 track.flac",
     ]
     # Source files left untouched
     assert sorted(p.name for p in src.rglob("*.flac")) == [
-        "01 track.flac", "02 track.flac", "03 track.flac",
+        "01 track.flac",
+        "02 track.flac",
+        "03 track.flac",
     ]
     # Progress was reported for copying + copied stages
     stages = [c["stage"] for c in ctx.progress_calls]
@@ -145,6 +155,7 @@ def test_local_download_raw_copies_files(tmp_path):
 
 def test_local_download_raw_blocks_path_traversal(tmp_path):
     from adapters.local_folder import LocalFolderAdapter
+
     adapter = LocalFolderAdapter(ingest_root=str(tmp_path))
     ctx = _FakeContext(jid="trav", raw_dir=tmp_path / "raw")
     with pytest.raises(RuntimeError, match="path traversal blocked"):
@@ -156,6 +167,7 @@ def test_local_download_raw_blocks_path_traversal(tmp_path):
 
 def test_local_download_raw_blocks_nested_symlink_escape(tmp_path):
     from adapters.local_folder import LocalFolderAdapter
+
     ingest = tmp_path / "ingest"
     album = _seed_album(ingest, "Artist", "Album", tracks=1)
     # Insert a symlink inside the valid album dir
@@ -174,6 +186,7 @@ def test_local_download_raw_blocks_nested_symlink_escape(tmp_path):
 
 def test_local_download_raw_raises_on_empty_dir(tmp_path):
     from adapters.local_folder import LocalFolderAdapter
+
     ingest = tmp_path / "ingest"
     empty = ingest / "Artist" / "EmptyAlbum"
     empty.mkdir(parents=True)
@@ -202,7 +215,14 @@ def test_local_executor_threads_source_type_local(tmp_path, monkeypatch):
 
     seen: dict = {}
 
-    def _capturing_trigger(jid, output_dir, worker_job_id=None, *, source_type="tidal", target_album_id=None):
+    def _capturing_trigger(
+        jid,
+        output_dir,
+        worker_job_id=None,
+        *,
+        source_type="tidal",
+        target_album_id=None,
+    ):
         seen["jid"] = jid
         seen["source_type"] = source_type
         seen["target_album_id"] = target_album_id
@@ -216,8 +236,10 @@ def test_local_executor_threads_source_type_local(tmp_path, monkeypatch):
 
     # normalize_audio probes ffprobe + flac binaries — fake all subprocess calls
     import subprocess
+
     monkeypatch.setattr(
-        subprocess, "run",
+        subprocess,
+        "run",
         lambda *a, **kw: SimpleNamespace(returncode=0, stdout="flac", stderr=""),
     )
 
@@ -227,7 +249,11 @@ def test_local_executor_threads_source_type_local(tmp_path, monkeypatch):
         raw_dir=server.DOWNLOAD_BASE / jid,
         output_dir=server.OUTPUT_BASE / jid,
     )
-    job = {"id": None, "jid": jid, "payload_json": json.dumps({"source_id": "Artist/Album"})}
+    job = {
+        "id": None,
+        "jid": jid,
+        "payload_json": json.dumps({"source_id": "Artist/Album"}),
+    }
 
     pipeline.execute_source_grab(job, adapter, ctx)
 
@@ -250,6 +276,7 @@ def local_client(tmp_path, monkeypatch):
     # Re-register local adapter pointing at tmp ingest dir
     adapters.reset_registry()
     from adapters.tidal import TidalAdapter
+
     adapters.register(TidalAdapter())
     adapters.register(LocalFolderAdapter(ingest_root=str(ingest)))
 
@@ -279,6 +306,7 @@ def test_local_ingest_endpoint_enqueues_job(local_client):
     jid = payload["nzo_ids"][0]
 
     import state_db
+
     job = state_db.get_job(payload["job_id"])
     assert job is not None
     assert job["jid"] == jid
@@ -291,6 +319,7 @@ def test_local_ingest_endpoint_rejects_invalid_path_before_job_creation(local_cl
     client, ingest = local_client
 
     import state_db
+
     before_count = 0
     try:
         with state_db._connect() as conn:
@@ -372,6 +401,7 @@ def test_local_ingest_endpoint_enqueue_dedupe_race_returns_existing_without_phan
 def test_local_ingest_endpoint_rejects_missing_adapter(local_client, monkeypatch):
     client, ingest = local_client
     import adapters
+
     # Drop the local adapter to simulate "not enabled" state
     adapters._adapters.pop("local", None)
 

@@ -92,8 +92,10 @@ class LocalFolderAdapter:
                         continue
                 try:
                     flac_files = [
-                        f for f in album_dir.iterdir()
-                        if f.is_file() and not f.is_symlink()
+                        f
+                        for f in album_dir.iterdir()
+                        if f.is_file()
+                        and not f.is_symlink()
                         and f.suffix.lower() == ".flac"
                     ]
                 except OSError:
@@ -102,18 +104,20 @@ class LocalFolderAdapter:
                     continue
                 rel = album_dir.relative_to(root).as_posix()
                 total = sum(f.stat().st_size for f in flac_files)
-                candidates.append(ReleaseCandidate(
-                    source_type=self.source_type,
-                    source_id=rel,
-                    title=f"{artist_dir.name} - {album_dir.name} (FLAC) [Local]",
-                    artist=artist_dir.name,
-                    album=album_dir.name,
-                    year=None,
-                    quality_tag="FLAC",
-                    size_bytes=total,
-                    download_url=f"local:{rel}",
-                    priority=30,
-                ))
+                candidates.append(
+                    ReleaseCandidate(
+                        source_type=self.source_type,
+                        source_id=rel,
+                        title=f"{artist_dir.name} - {album_dir.name} (FLAC) [Local]",
+                        artist=artist_dir.name,
+                        album=album_dir.name,
+                        year=None,
+                        quality_tag="FLAC",
+                        size_bytes=total,
+                        download_url=f"local:{rel}",
+                        priority=30,
+                    )
+                )
                 if len(candidates) >= 100:
                     return candidates
         return candidates

@@ -66,8 +66,12 @@ class ConnectorManifest:
                 raise ValueError(f"{name} must be non-empty")
         if not self.docs_url:
             raise ValueError("docs_url must be non-empty")
-        if self.min_supported_version is not None and not _SEMVER_RE.match(self.min_supported_version):
-            raise ValueError(f"invalid min_supported_version: {self.min_supported_version!r}")
+        if self.min_supported_version is not None and not _SEMVER_RE.match(
+            self.min_supported_version
+        ):
+            raise ValueError(
+                f"invalid min_supported_version: {self.min_supported_version!r}"
+            )
         for field_name in ("required_env", "optional_env", "capabilities"):
             values = tuple(getattr(self, field_name))
             if not all(isinstance(value, str) and value for value in values):
@@ -86,17 +90,13 @@ class ConnectorHealth:
 class Connector(Protocol):
     manifest: ConnectorManifest
 
-    def is_installed(self) -> bool:
-        ...
+    def is_installed(self) -> bool: ...
 
-    def is_enabled(self) -> bool:
-        ...
+    def is_enabled(self) -> bool: ...
 
-    def health(self) -> ConnectorHealth:
-        ...
+    def health(self) -> ConnectorHealth: ...
 
-    def detected_version(self) -> str | None:
-        ...
+    def detected_version(self) -> str | None: ...
 
 
 def manifest_to_dict(manifest: ConnectorManifest) -> dict[str, Any]:
@@ -146,4 +146,9 @@ def health_checked_now(status: str, last_error: str | None = None) -> ConnectorH
 
 
 def unix_ts_to_iso(ts: float) -> str:
-    return datetime.fromtimestamp(ts, timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    return (
+        datetime.fromtimestamp(ts, timezone.utc)
+        .replace(microsecond=0)
+        .isoformat()
+        .replace("+00:00", "Z")
+    )

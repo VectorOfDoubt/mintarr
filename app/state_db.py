@@ -22,7 +22,8 @@ log = logging.getLogger("tidalhires.state_db")
 
 _DEFAULT_DB_PATH = Path(
     os.environ.get("MINTARR_STATE_DB")
-    or os.environ.get("TIDALHIRES_STATE_DB", "/config/tidalhires_state.db")
+    or os.environ.get("TIDALHIRES_STATE_DB")
+    or "/config/tidalhires_state.db"
 )
 _db_path: Path = _DEFAULT_DB_PATH
 _lock = threading.Lock()
@@ -620,7 +621,8 @@ def enqueue_job(
                     json.dumps(payload or {}),
                 ),
             )
-            return int(cur.lastrowid)
+            row_id = cur.lastrowid
+            return int(row_id) if row_id is not None else None
     except Exception:
         log.exception("state_db.enqueue_job failed for jid=%s type=%s", jid, type)
         return None

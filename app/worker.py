@@ -129,7 +129,8 @@ _PERMANENT_ERROR_MARKERS = (
 
 
 def _retry_delay_sec(job: dict) -> int:
-    delays = _RETRY_BACKOFF_SEC.get(job.get("type"), [])
+    job_type = str(job.get("type") or "")
+    delays = _RETRY_BACKOFF_SEC.get(job_type, [])
     if not delays:
         return 0
     attempts = int(job.get("attempts") or 0)

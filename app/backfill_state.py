@@ -131,6 +131,10 @@ def backfill(
                 counts["errors"] += 1
                 continue
             jid = sidecar.get("jid")
+            if not isinstance(jid, str) or not jid:
+                counts["errors"] += 1
+                log.warning("Skipping sidecar without string jid: %s", path)
+                continue
             if jid in seen:
                 counts["skipped"] += 1
                 continue

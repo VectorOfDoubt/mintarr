@@ -931,7 +931,7 @@ def _build_records_from_db(server_mod, filters: dict) -> dict | None:
                 _json.loads(r["album_ids_json"]) if r.get("album_ids_json") else []
             )
             # Adapter: bygg sidecar-like dict slik at status_reason() + derive_status virker
-            sidecar_like = {
+            sidecar_like: dict[str, object] = {
                 "v2_verification_decision": r.get("verification_decision"),
                 "v2_import_outcome": r.get("import_outcome"),
                 "verdict": r.get("verdict"),

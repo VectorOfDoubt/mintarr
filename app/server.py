@@ -34,7 +34,7 @@ from functools import wraps
 from html import unescape as html_unescape
 from pathlib import Path
 from typing import Literal
-from urllib.parse import quote_plus, unquote_plus  # noqa: F401
+from urllib.parse import quote, quote_plus, unquote_plus  # noqa: F401
 from xml.sax.saxutils import escape as xml_escape
 
 import requests
@@ -62,7 +62,9 @@ log = logging.getLogger("tidalhires")
 app = Flask(__name__)
 
 # ---- Config ----
-API_KEY = os.environ.get("MINTARR_API_KEY") or os.environ.get("TIDALHIRES_API_KEY", "")
+API_KEY: str = (
+    os.environ.get("MINTARR_API_KEY") or os.environ.get("TIDALHIRES_API_KEY") or ""
+)
 MIN_API_KEY_LEN = 16
 if len(API_KEY) < MIN_API_KEY_LEN:
     raise RuntimeError(
@@ -1720,7 +1722,7 @@ def _manualimport_target_guard_failure(
     target_album_id: int | str | None = None,
 ) -> str | None:
     album_ids = _album_ids_from_manualimport(items)
-    if target_album_id not in (None, ""):
+    if target_album_id is not None and target_album_id != "":
         try:
             expected_album_id = int(target_album_id)
         except (TypeError, ValueError):
@@ -1763,8 +1765,10 @@ def _lidarr_album_id_from_record(record: dict) -> int | None:
     album_id = record.get("albumId")
     if album_id is None and isinstance(record.get("album"), dict):
         album_id = record["album"].get("id")
+    if album_id is None or album_id == "":
+        return None
     try:
-        return int(album_id) if album_id not in (None, "") else None
+        return int(album_id)
     except (TypeError, ValueError):
         return None
 
@@ -2010,7 +2014,7 @@ def _build_sensor_results(
         )
         detective_summary = f"Overall verdict {normalized_verdict}."
 
-    wrapper_overrides = []
+    wrapper_overrides: list[object] = []
     for item in (detective_result or {}).get("files") or []:
         wrapper_overrides.extend(item.get("wrapper_overrides") or [])
 
@@ -3415,7 +3419,7 @@ def _trigger_lidarr_import(
                 artist_name, album_title = m.group(1), m.group(2)
                 # Search Lidarr albums by name
                 search_r = requests.get(
-                    f"{api}/search?term={requests.utils.quote(artist_name)}",
+                    f"{api}/search?term={quote(artist_name)}",
                     headers={"X-Api-Key": key},
                     timeout=20,
                 )

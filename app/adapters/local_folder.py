@@ -35,9 +35,8 @@ class LocalFolderAdapter:
     source_type = "local"
 
     def __init__(self, *, ingest_root: str | None = None) -> None:
-        self._ingest_root = Path(
-            ingest_root or os.environ.get("LOCAL_INGEST_PATH", "/local-ingest")
-        )
+        root = ingest_root or os.environ.get("LOCAL_INGEST_PATH") or "/local-ingest"
+        self._ingest_root = Path(root)
 
     def is_enabled(self) -> bool:
         return self._ingest_root.is_dir()

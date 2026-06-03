@@ -14,6 +14,7 @@ import time
 import base64
 import hashlib
 import json
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import quote
@@ -88,9 +89,8 @@ class SoulseekCompletedAdapter:
         download_timeout: int | None = None,
         poll_seconds: float | None = None,
     ) -> None:
-        self._download_root = Path(
-            download_root or os.environ.get("SOULSEEK_DOWNLOAD_ROOT", "")
-        )
+        root = download_root or os.environ.get("SOULSEEK_DOWNLOAD_ROOT") or ""
+        self._download_root = Path(root)
         self._enabled_override = enabled
         self._max_files = max_files
         self._max_bytes = max_bytes
@@ -129,12 +129,12 @@ class SoulseekCompletedAdapter:
 
     @property
     def slskd_api_url(self) -> str:
-        raw = self._slskd_api_url or os.environ.get("SLSKD_API_URL", "")
+        raw = self._slskd_api_url or os.environ.get("SLSKD_API_URL") or ""
         return raw.rstrip("/")
 
     @property
     def slskd_api_key(self) -> str:
-        return self._slskd_api_key or os.environ.get("SLSKD_API_KEY", "")
+        return self._slskd_api_key or os.environ.get("SLSKD_API_KEY") or ""
 
     @property
     def search_timeout(self) -> int:
@@ -667,7 +667,7 @@ class SoulseekCompletedAdapter:
             message="Queueing Soulseek download",
             file_count=len(request.files),
         )
-        baseline = self._matching_paths(request.files)
+        baseline = set(self._matching_paths(request.files))
         self._queue_slskd_download(request)
         paths = self._wait_for_slskd_files(request, baseline=baseline, ctx=ctx)
         ctx.set_progress(stage="copying", percent=35, message="Copying Soulseek files")
@@ -752,10 +752,10 @@ class SoulseekCompletedAdapter:
                 out.extend(self._flatten_transfers(child))
             return out
         if isinstance(value, list):
-            out: list[dict] = []
+            flattened: list[dict] = []
             for child in value:
-                out.extend(self._flatten_transfers(child))
-            return out
+                flattened.extend(self._flatten_transfers(child))
+            return flattened
         return []
 
     def _matching_paths(
@@ -772,9 +772,9 @@ class SoulseekCompletedAdapter:
             basename = Path(item.filename.replace("\\", "/")).name
             candidates: list[Path] = []
             try:
-                iterator = root.rglob(basename)
+                iterator: Iterable[Path] = root.rglob(basename)
             except OSError:
-                iterator = iter(())
+                iterator = ()
             for path in iterator:
                 if path in used or path.resolve() in exclude:
                     continue

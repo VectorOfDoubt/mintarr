@@ -161,10 +161,12 @@ class TidalAdapter:
     source_type = "tidal"
 
     def __init__(self, *, config_dir: str | None = None) -> None:
-        self._config_dir = Path(
+        root = (
             config_dir
-            or os.environ.get("TIDAL_DL_NG_CONFIG", "/root/.config/tidal_dl_ng-dev")
+            or os.environ.get("TIDAL_DL_NG_CONFIG")
+            or "/root/.config/tidal_dl_ng-dev"
         )
+        self._config_dir = Path(root)
 
     def is_enabled(self) -> bool:
         return (self._config_dir / "token.json").exists()

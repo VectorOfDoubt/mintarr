@@ -44,8 +44,8 @@ the required tests for their change type.
 | Layer | Tooling | Where | Trigger |
 |---|---|---|---|
 | Unit + integration (Python) | pytest | `tests/` | Every push, every PR |
-| Static analysis | ruff (with per-file ignores) | `app/` + `tests/` | Every push, every PR |
-| Type check | mypy 1.16 | `app/` | Disabled in v0.1.0; tracked for v0.2.0 |
+| Static analysis | ruff check + ruff format | `app/` + `tests/` + `scripts/` | Every push, every PR |
+| Type check | mypy 1.16 | `app/` | Every push, every PR |
 | Container build | Docker Buildx | root `Dockerfile` | Every push, every tag |
 | Docs build | MkDocs Material | `docs/` + `mkdocs.yml` | Push to docs paths |
 | Route inventory | `scripts/inventory_flask_routes.py` | Flask app | Manual + cutover gate |
@@ -58,7 +58,7 @@ documented so future maintainers know when to introduce them.
 
 | Layer | Add when... | Likely tooling |
 |---|---|---|
-| Frontend E2E | Phase 2 dashboard redesign replaces server-rendered HTML/CSS/vanilla JS with a JavaScript framework. Whichever framework wins drives the choice (Playwright for cross-browser, Vitest + Testing Library for component, Storybook for visual). Until then, dashboard tests are server-side pytest only. | Playwright + framework-native runner |
+| Frontend E2E | Phase 2 dashboard redesign introduces HTMX + Alpine.js per ADR-0011 and adds browser-only behaviour that pytest-rendered partial tests cannot cover. Until then, dashboard tests are server-side pytest only. | Targeted Playwright tests |
 | End-to-end against a real Lidarr | An operator-reported bug shows the mocked Lidarr fixture diverges from real Lidarr behaviour in a way unit tests cannot catch. Requires a Lidarr-in-Docker fixture; cost is CI run time. | pytest + lidarr container service |
 | Performance baseline | Worker-queue or pipeline change risks regressing the N=1 single-threaded throughput recorded as the v0.1.0 baseline. Adds one pytest per measured path. | pytest-benchmark |
 | Soulseek lane | F3.5a Soulseek adapter implementation lands (post-cutover). Tests cover completed-folder validation, settle window, partial-marker rejection. | pytest with mocked slskd HTTP |

@@ -1,8 +1,8 @@
 # Mintarr — Documentation Index
 
 > **Type:** Meta-document. Lists every planned Mintarr document, its status, owner and dependencies.
-> **Version:** 0.13 — 2026-06-03
-> **Status:** Public-repo tracker. Documentation set drafted. License AGPL-3.0-only. Language Python 3.12+ (ADR-0010). Cutover strategy: clean new repo, no inherited history ([MINTARR_CUTOVER_PLAYBOOK.md](architecture/MINTARR_CUTOVER_PLAYBOOK.md)). HTTP_API_v1 and SIDECAR_FORMAT_v2 runtime-validated and locked. F4.1-F4.3 landed post-cutover; F3.5a Soulseek completed-folder ingest is implemented. v0.2.0 docs skeletons for troubleshooting, observability, and use cases are drafted.
+> **Version:** 0.14 — 2026-06-03
+> **Status:** Public-repo tracker. Documentation set drafted. License AGPL-3.0-only. Language Python 3.12+ (ADR-0010). Cutover strategy: clean new repo, no inherited history ([MINTARR_CUTOVER_PLAYBOOK.md](architecture/MINTARR_CUTOVER_PLAYBOOK.md)). HTTP_API_v1 and SIDECAR_FORMAT_v2 runtime-validated and locked. F4.1-F4.3 landed post-cutover; F3.5a Soulseek completed-folder ingest is implemented. v0.2.0 docs skeletons for troubleshooting, observability, and use cases are drafted. ADR-0011 locks the Phase 2 frontend approach.
 > **Audience:** Project maintainers (Eivind, Claude, Codex) coordinating doc work.
 
 ---
@@ -182,6 +182,7 @@ Legend:
 | `adr/0008-strategic-positioning.md` | locked | Claude/Eivind | P0 | Locks Mintarr's positioning: "the QC and import orchestration layer Lidarr lacks". Includes boundary test for feature proposals. Referenced verbatim from `README.md`, `VISION.md`, `COMPARISON.md`. |
 | `adr/0009-runtime-hardening-conventions.md` | locked | Codex/Eivind | P0 | Locks cutover hardening conventions: authenticated/redacted fallback routes, `MINTARR_*` aliases before legacy removal, and server-injected dashboard config. |
 | `adr/0010-python-implementation-language.md` | locked | Claude/Eivind | P0 | Locks Python 3.12+ as implementation language. Prevents future rewrite-to-C#-or-Rust proposals without explicit successor ADR. |
+| `adr/0011-frontend-framework.md` | locked | Claude/Codex | P2 | Locks Phase 2 dashboard on server-rendered Flask with HTMX + Alpine.js, no Node toolchain, and no SPA framework. |
 
 ### 6.4 Specs (`docs/specs/`)
 
@@ -327,5 +328,6 @@ When Codex and Claude work in parallel, they coordinate via this index — the *
 | 0.11 | 2026-05-31 | **Codex strategic-direction review.** ADR-0010 wording tightened after codebase validation: application runtime is ~7.4k Python LOC, public contract/cutover scripts are Python while private Windows incident helpers may remain PowerShell, Phase 8 reference fixed, and Python ecosystem examples corrected. ADR table duplicate removed. No structural disagreement with ADR-0010, Phase 8, or VISION orchestration wording. |
 | 0.12 | 2026-06-01 | **Post-cutover implementation tracker update.** F4.1-F4.3 are reflected as landed public-repo work. F3.5a Soulseek completed-folder ingest is tracked as implemented with runtime docs and API spec updates. |
 | 0.13 | 2026-06-03 | **v0.2.0 docs skeletons drafted.** Added TROUBLESHOOTING.md, OBSERVABILITY.md, and USE_CASES.md; MkDocs nav and INSTALL next-step links now resolve. |
+| 0.14 | 2026-06-03 | **ADR-0011 frontend decision locked.** Phase 2 dashboard will use server-rendered Flask with HTMX + Alpine.js, vendored static assets, and no Node toolchain or SPA framework. TESTING.md updated for current ruff/mypy and targeted Playwright expectations. |
 
 > Last updated: 2026-06-03

@@ -125,7 +125,31 @@ cover:
 
 Metric names are provisional until the Phase 3 metrics spec is written.
 
-## 7. Planned alerts
+## 7. Performance Baseline
+
+The F2 worker queue is intentionally single-threaded (`N=1`) and backed by
+SQLite. See [F2 worker queue design](../design/F2_WORKER_QUEUE_DESIGN.md) for
+the design rationale.
+
+Mintarr tracks one dedicated benchmark for the mocked full source-grab pipeline:
+
+| Benchmark | Baseline | Alert threshold | Workflow |
+|---|---:|---:|---|
+| `test_full_pipeline_orchestration_benchmark` | 2.50 ms mean | >3.75 ms mean (+50%) | Performance baseline |
+
+This is not a real download-throughput number. External subprocesses and
+services are mocked, so the benchmark measures Python orchestration, local
+filesystem staging, queue/pipeline glue, and state updates. It is useful as a
+regression guard for worker/pipeline refactors, not as an operator capacity
+model.
+
+The baseline is stored in
+`tests/perf/baselines/pipeline_orchestration.json`. The dedicated performance
+workflow compares the current pytest-benchmark JSON result against that stored
+baseline. The normal pytest suite does not run this benchmark, preserving the
+fast deterministic test contract.
+
+## 8. Planned alerts
 
 Candidate alerts:
 

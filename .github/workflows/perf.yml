@@ -1,0 +1,57 @@
+name: Performance baseline
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'app/**'
+      - 'tests/perf/**'
+      - 'scripts/check_benchmark_baseline.py'
+      - 'requirements-test.txt'
+      - '.github/workflows/perf.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'app/**'
+      - 'tests/perf/**'
+      - 'scripts/check_benchmark_baseline.py'
+      - 'requirements-test.txt'
+      - '.github/workflows/perf.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: perf-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pipeline:
+    name: Mocked pipeline orchestration
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build base image
+        run: |
+          docker build -t tidalhires:local -f Dockerfile .
+
+      - name: Build test image
+        run: |
+          docker compose -f docker-compose.test.yaml build tests
+
+      - name: Run mocked pipeline benchmark
+        run: |
+          docker compose -f docker-compose.test.yaml run --rm \
+            -e RUN_PERF_BENCHMARKS=1 \
+            --entrypoint pytest \
+            tests /tests/perf --rootdir=/tests -v --tb=short \
+            --benchmark-only \
+            --benchmark-disable-gc \
+            --benchmark-json=/tests/perf/benchmark-results.json
+
+      - name: Compare baseline
+        run: |
+          python scripts/check_benchmark_baseline.py \
+            tests/perf/baselines/pipeline_orchestration.json \
+            tests/perf/benchmark-results.json

@@ -60,7 +60,6 @@ documented so future maintainers know when to introduce them.
 |---|---|---|
 | Frontend E2E | Phase 2 dashboard redesign introduces HTMX + Alpine.js per ADR-0011 and adds browser-only behaviour that pytest-rendered partial tests cannot cover. Until then, dashboard tests are server-side pytest only. | Targeted Playwright tests |
 | End-to-end against a real Lidarr | An operator-reported bug shows the mocked Lidarr fixture diverges from real Lidarr behaviour in a way unit tests cannot catch. Requires a Lidarr-in-Docker fixture; cost is CI run time. | pytest + lidarr container service |
-| Performance baseline | Worker-queue or pipeline change risks regressing the N=1 single-threaded throughput recorded as the v0.1.0 baseline. Adds one pytest per measured path. | pytest-benchmark |
 | Soulseek lane | F3.5a Soulseek adapter implementation lands (post-cutover). Tests cover completed-folder validation, settle window, partial-marker rejection. | pytest with mocked slskd HTTP |
 | Container security scan | Operator or maintainer requests, OR repo grows to handle PII / regulated content (will not happen by design). | trivy / grype in CI |
 | Dependency licence scan | New AGPL-incompatible dependency proposed in a PR. | pip-licenses + manual review against ADR-0005 |
@@ -69,6 +68,32 @@ documented so future maintainers know when to introduce them.
 If you think a layer is needed but the condition above has not been
 met, open an issue rather than adding the layer in your PR — adding
 test infrastructure is its own change.
+
+### 2.3 Performance baseline
+
+Mintarr has one dedicated performance workflow for the F2/F3 mocked full
+source-grab pipeline. It is intentionally separate from the normal pytest suite
+because the main suite should stay fast and deterministic.
+
+Run it locally with:
+
+```bash
+docker build -t tidalhires:local -f Dockerfile .
+docker compose -f docker-compose.test.yaml build tests
+docker compose -f docker-compose.test.yaml run --rm \
+    -e RUN_PERF_BENCHMARKS=1 \
+    --entrypoint pytest tests \
+    /tests/perf --rootdir=/tests -v --tb=short \
+    --benchmark-only --benchmark-disable-gc \
+    --benchmark-json=/tests/perf/benchmark-results.json
+python scripts/check_benchmark_baseline.py \
+    tests/perf/baselines/pipeline_orchestration.json \
+    tests/perf/benchmark-results.json
+rm -f tests/perf/benchmark-results.json
+```
+
+The benchmark mocks external subprocesses and services. Treat it as a Python
+orchestration regression guard, not as real-world download throughput.
 
 ## 3. Running tests
 

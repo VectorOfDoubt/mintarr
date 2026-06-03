@@ -1,0 +1,7 @@
+{
+  "benchmark": "test_full_pipeline_orchestration_benchmark",
+  "metric": "mean",
+  "baseline_seconds": 0.00145,
+  "max_regression_ratio": 0.5,
+  "notes": "Mocked full source-grab pipeline orchestration baseline, derived from the ubuntu-latest perf workflow (observed mean ~1.41 ms). External subprocesses and services are mocked; this measures Python orchestration and local filesystem staging, not real download throughput. With max_regression_ratio 0.5 the ceiling is ~2.18 ms. If runner timings drift, re-derive from 2-3 perf-workflow runs rather than widening the ratio."
+}

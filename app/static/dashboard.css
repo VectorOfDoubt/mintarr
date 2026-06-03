@@ -27,6 +27,45 @@
   --radius-md: 6px;
   --radius-lg: 8px;
 }
+/* Light theme — overrides the dark defaults above when the operator selects
+   light (or auto resolves to light). Applied via <html data-theme="light">.
+   Dark stays the default so the dashboard renders correctly even without JS. */
+[data-theme="light"] {
+  --bg-base: #ffffff;
+  --bg-surface: #f6f8fa;
+  --bg-elevated: #ffffff;
+  --bg-inset: #eaeef2;
+  --border-subtle: #d8dee4;
+  --border-default: #d0d7de;
+  --text-primary: #1f2328;
+  --text-secondary: #656d76;
+  --text-muted: #8c959f;
+  --text-mono: #24292f;
+  --accent-primary: #0969da;
+  --accent-primary-hover: #0860c9;
+  --status-success: #1a7f37;
+  --status-success-bg: rgba(26,127,55,0.1);
+  --status-warning: #9a6700;
+  --status-warning-bg: rgba(154,103,0,0.1);
+  --status-danger: #cf222e;
+  --status-danger-bg: rgba(207,34,46,0.1);
+  --status-neutral: #6e7781;
+  --status-neutral-bg: rgba(110,119,129,0.1);
+  --status-info: #8250df;
+  --status-info-bg: rgba(130,80,223,0.1);
+}
+.theme-switch { display: inline-flex; align-items: center; }
+.theme-btn {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-default);
+  color: var(--text-primary);
+  border-radius: var(--radius-md);
+  padding: 2px 8px;
+  font-size: 13px;
+  line-height: 20px;
+  cursor: pointer;
+}
+.theme-btn:hover { border-color: var(--accent-primary); }
 * { box-sizing: border-box; }
 body {
   font-family: var(--font-sans);

@@ -148,6 +148,7 @@ nav:
   - Development:
       - Setup: development/DEVELOPMENT.md
       - Testing: development/TESTING.md
+      - Frontend assets: development/FRONTEND_ASSETS.md
       - Style guide: development/STYLE_GUIDE.md
       - Commit convention: development/COMMIT_CONVENTION.md
       - Review checklist: development/REVIEW_CHECKLIST.md

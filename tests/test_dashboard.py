@@ -104,6 +104,35 @@ def test_dashboard_js_contains_connector_rendering(monkeypatch, tmp_path):
     assert "__LIDARR_WEB_BASE__" not in body
 
 
+def test_dashboard_vendors_alpine_with_sri(monkeypatch, tmp_path):
+    """Alpine is vendored (no Node) and referenced with an SRI hash."""
+    _patch_paths(monkeypatch, tmp_path)
+    client = server.app.test_client()
+    asset = client.get("/static/vendor/alpine-3.14.1.min.js")
+    assert asset.status_code == 200
+    assert "javascript" in asset.content_type
+    shell = client.get("/dashboard").get_data(as_text=True)
+    assert "vendor/alpine-3.14.1.min.js" in shell
+    assert 'integrity="sha384-' in shell
+
+
+def test_dashboard_theme_switch_present(monkeypatch, tmp_path):
+    """Theme switch: early bootstrap, Alpine toggle, and a light palette."""
+    _patch_paths(monkeypatch, tmp_path)
+    client = server.app.test_client()
+    shell = client.get("/dashboard").get_data(as_text=True)
+    # Early no-FOUC bootstrap applies the persisted preference before paint.
+    assert 'localStorage.getItem("mintarr_theme")' in shell
+    assert 'setAttribute("data-theme"' in shell
+    # Alpine-driven toggle control.
+    assert 'class="theme-switch"' in shell
+    assert 'class="theme-btn"' in shell
+    assert "cycle()" in shell
+    # Light palette exists in the stylesheet (dark stays the :root default).
+    css = client.get("/static/dashboard.css").get_data(as_text=True)
+    assert '[data-theme="light"]' in css
+
+
 def test_dashboard_summary_returns_expected_shape(monkeypatch, tmp_path):
     _patch_paths(monkeypatch, tmp_path)
     output_dir = tmp_path / "output" / "sum12345"

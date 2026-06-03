@@ -2,7 +2,21 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
+<script>
+  // Early theme bootstrap — resolve and apply data-theme before first paint
+  // so there is no flash of the wrong theme. The toggle (Alpine) reuses this.
+  (function () {
+    var pref = localStorage.getItem("mintarr_theme") || "auto";
+    var dark = pref === "dark"
+      || (pref === "auto"
+          && window.matchMedia("(prefers-color-scheme: dark)").matches);
+    var root = document.documentElement;
+    root.setAttribute("data-theme", dark ? "dark" : "light");
+    root.setAttribute("data-theme-pref", pref);
+  })();
+</script>
 <title>TidalHires V2 Dashboard</title>
+<script defer src="{{ url_for('static', filename='vendor/alpine-3.14.1.min.js') }}" integrity="sha384-l8f0VcPi/M1iHPv8egOnY/15TDwqgbOR1anMIJWvU6nLRgZVLTLSaNqi/TOoT5Fh"></script>
 <link rel="stylesheet" href="{{ url_for('static', filename='dashboard.css') }}">
 </head>
 <body>
@@ -15,6 +29,33 @@
   <div class="refresh">
     <span class="refresh-dot" id="refresh-dot"></span>
     <span class="meta" id="refresh-status">Updated: never</span>
+    <div class="theme-switch" x-data="{
+        pref: document.documentElement.getAttribute('data-theme-pref') || 'auto',
+        apply() {
+          localStorage.setItem('mintarr_theme', this.pref);
+          var dark = this.pref === 'dark'
+            || (this.pref === 'auto'
+                && window.matchMedia('(prefers-color-scheme: dark)').matches);
+          var root = document.documentElement;
+          root.setAttribute('data-theme', dark ? 'dark' : 'light');
+          root.setAttribute('data-theme-pref', this.pref);
+        },
+        cycle() {
+          this.pref = this.pref === 'auto' ? 'light'
+            : this.pref === 'light' ? 'dark' : 'auto';
+          this.apply();
+        },
+        icon() {
+          return this.pref === 'dark' ? '\u{1F319}'
+            : this.pref === 'light' ? '☀️' : '\u{1F5A5}️';
+        }
+      }">
+      <button type="button" class="theme-btn" @click="cycle()"
+              :title="'Theme: ' + pref + ' (click to change)'"
+              :aria-label="'Theme: ' + pref">
+        <span x-text="icon()">&#x1F5A5;&#xFE0F;</span>
+      </button>
+    </div>
   </div>
 </header>
 

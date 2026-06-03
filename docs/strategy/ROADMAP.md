@@ -114,7 +114,7 @@ For the underlying positioning and what is *not* in any phase, see [VISION.md](V
 
 **Scope:**
 
-- **F3.5a Soulseek/slskd completed-folder ingest** — design locked (F3.5 design doc held in private monorepo pending v0.2.0 migration)
+- **F3.5a Soulseek/slskd completed-folder ingest** — design locked ([F3.5a completed-folder ingest design](../design/F3.5_SOULSEEK_COMPLETED_INGEST.md))
 - **F3.5b Soulseek/slskd HTTP search and download** — deferred until slskd API contract is verified against the installed version
 - **SAB/qBit completed-category ingest** — design and implementation as a single source connector family
 - **CD-rip / private-tracker torrent evidence lane** — design pending; depends on Phase 1 connector model

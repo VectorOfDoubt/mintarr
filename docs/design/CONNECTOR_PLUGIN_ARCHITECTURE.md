@@ -3,7 +3,7 @@
 > **Type:** Architecture plan for dynamic stack visibility and connector management
 > **Version:** 0.1 — 2026-05-26
 > **Status:** Draft. Written for Claude/Codex review before implementation.
-> **Related documents:** F3 source-adapter design, quality-stack roadmap, dashboard strategy and pipeline V2 plan (held in private monorepo pending v0.2.0 migration).
+> **Related documents:** [F3 source-adapter design](F3_SOURCE_ADAPTERS_DESIGN.md), [quality-stack roadmap](QUALITY_STACK_ROADMAP.md). Dashboard direction is now covered by [ROADMAP Phase 2](../strategy/ROADMAP.md) and [ADR-0011 Frontend framework](../architecture/adr/0011-frontend-framework.md).
 
 ---
 

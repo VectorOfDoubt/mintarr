@@ -68,7 +68,7 @@ SAB compatibility protocol. Subset of [SABnzbd API](https://sabnzbd.org/wiki/con
 
 `POST /api` is a compatibility fallback for clients that POST SAB-compatible `mode=...` requests to the same path used by Newznab GET requests. It has the same auth and mode handling as `/sabnzbd/api`.
 
-The `addurl` dispatcher matches the F3.2/F3.3 routing design (held in private monorepo pending v0.2.0 migration).
+The `addurl` dispatcher matches the [F3.2/F3.3 Newznab routing design](../design/F3.2_F3.3_NEWZNAB_ROUTING_DESIGN.md).
 
 ### 3.3 `GET /download/<int:album_id>.nzb` (legacy)
 

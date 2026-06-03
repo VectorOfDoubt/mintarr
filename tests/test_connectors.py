@@ -17,6 +17,10 @@ def _manifest(
     kind=None,
     required: bool = False,
     default_enabled: bool = True,
+    install_profile: str | None = None,
+    docker_service: str | None = None,
+    required_env: tuple[str, ...] = (),
+    optional_env: tuple[str, ...] = (),
 ):
     from connectors import ConnectorKind, ConnectorManifest, MANIFEST_API_VERSION
 
@@ -28,10 +32,10 @@ def _manifest(
         adapter_class=None,
         default_enabled=default_enabled,
         required=required,
-        install_profile=None,
-        docker_service=None,
-        required_env=(),
-        optional_env=(),
+        install_profile=install_profile,
+        docker_service=docker_service,
+        required_env=required_env,
+        optional_env=optional_env,
         capabilities=(),
         docs_url=f"connectors/{connector_id}/",
         min_supported_version=None,
@@ -164,6 +168,45 @@ def test_connector_payload_overlays_persisted_config():
     assert runtime["enabled"] is True
     assert runtime["mode"] == "dry_run"
     assert runtime["config"]["actor"] == "test"
+
+
+def test_connector_payload_includes_secret_safe_install_guidance():
+    import connectors
+    from connectors import ConnectorKind
+
+    connectors.reset_registry()
+
+    class _MissingSoulseek(_DummyConnector):
+        def __init__(self):
+            self.manifest = _manifest(
+                "soulseek",
+                kind=ConnectorKind.SOURCE,
+                default_enabled=False,
+                install_profile="soulseek",
+                docker_service="slskd",
+                required_env=("SOULSEEK_ENABLED", "SOULSEEK_DOWNLOAD_ROOT"),
+                optional_env=("SLSKD_API_KEY",),
+            )
+            self._installed = False
+            self._enabled = False
+
+    connectors.register(_MissingSoulseek())
+
+    item = connectors.registry_payload()["connectors"][0]
+    guidance = item["install_guidance"]
+
+    assert guidance["show"] is True
+    assert guidance["reason"] == "Dependency is missing or not reachable."
+    assert guidance["install_profile"] == "soulseek"
+    assert guidance["docker_service"] == "slskd"
+    assert guidance["required_env"] == [
+        "SOULSEEK_ENABLED",
+        "SOULSEEK_DOWNLOAD_ROOT",
+    ]
+    assert guidance["optional_env"] == ["SLSKD_API_KEY"]
+    assert any("compose profile" in action for action in guidance["actions"])
+    assert any("service is running" in action for action in guidance["actions"])
+    assert "secret" not in str(guidance).lower()
 
 
 def test_connector_config_endpoint_requires_api_key():

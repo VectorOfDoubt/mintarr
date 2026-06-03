@@ -410,6 +410,11 @@ Returns the static connector registry + runtime status. Shape defined in [`CONNE
 Runtime status includes persisted connector mode when present. If no persisted
 row exists, mode falls back to the connector manifest default.
 
+F4.4 adds `install_guidance` to each connector object. The guidance is
+secret-safe: it may include env var names, service/profile hints, docs links,
+and action text, but never env values, API keys, tokens, local private host
+paths, or Docker socket access.
+
 ### 6.10 `POST /dashboard/v1/connectors/<connector_id>/config`
 
 Validate or persist connector runtime mode.

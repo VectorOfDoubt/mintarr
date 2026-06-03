@@ -1,8 +1,8 @@
 # Mintarr — Documentation Index
 
 > **Type:** Meta-document. Lists every planned Mintarr document, its status, owner and dependencies.
-> **Version:** 0.16 — 2026-06-03
-> **Status:** Public-repo tracker. Documentation set drafted. License AGPL-3.0-only. Language Python 3.12+ (ADR-0010). Cutover strategy: clean new repo, no inherited history ([MINTARR_CUTOVER_PLAYBOOK.md](architecture/MINTARR_CUTOVER_PLAYBOOK.md)). HTTP_API_v1 and SIDECAR_FORMAT_v2 runtime-validated and locked. F4.1-F4.3 landed post-cutover; F3.5a Soulseek completed-folder ingest is implemented. v0.2.0 docs skeletons for troubleshooting, observability, and use cases are drafted. ADR-0011 locks the Phase 2 frontend approach. F2-F3.4 design docs and the quality stack roadmap are migrated and rebranded.
+> **Version:** 0.17 — 2026-06-03
+> **Status:** Public-repo tracker. Documentation set drafted. License AGPL-3.0-only. Language Python 3.12+ (ADR-0010). Cutover strategy: clean new repo, no inherited history ([MINTARR_CUTOVER_PLAYBOOK.md](architecture/MINTARR_CUTOVER_PLAYBOOK.md)). HTTP_API_v1 and SIDECAR_FORMAT_v2 runtime-validated and locked. F4.1-F4.4 landed post-cutover; F3.5a Soulseek completed-folder ingest is implemented. v0.2.0 docs skeletons for troubleshooting, observability, and use cases are drafted. ADR-0011 locks the Phase 2 frontend approach. F2-F3.4 design docs and the quality stack roadmap are migrated and rebranded.
 > **Audience:** Project maintainers (Eivind, Claude, Codex) coordinating doc work.
 
 ---
@@ -233,6 +233,7 @@ Per-feature design docs. Numbered F-series (F3.1, F3.4, F4.1, etc). Each one fol
 | `F4.1_STATIC_CONNECTOR_REGISTRY.md` | implemented | Claude/Codex | P0 | Static connector registry, built-in manifests, GET /dashboard/v1/connectors, and registry invariants landed. |
 | `F4.2_INTEGRATIONS_DASHBOARD.md` | implemented | Codex | P2 | UI tab for connector status, grouped source/verifier/output inventory, no config mutation. |
 | `F4.3_CONNECTOR_CONFIG_DRY_RUN.md` | implemented | Codex | P2 | Connector config persistence, dry-run validation, mode controls, and source runtime gates. |
+| `F4.4_CONNECTOR_INSTALL_GUIDANCE.md` | implemented | Codex | P2 | Secret-safe install guidance derived from connector manifests and rendered in the Integrations dashboard. |
 | `F3.5_SOULSEEK_COMPLETED_INGEST.md` | implemented | Codex | P1 | Soulseek completed-folder ingest through connector registry, `/soulseek/ingest`, copy-only adapter, completed-folder safety checks. |
 | `F3.5B_SOULSEEK_SLSKD_TRIGGER.md` | implemented | Codex | P1 | slskd-backed Soulseek search/download trigger through existing Newznab/SAB flow. |
 | `F5.1_RELEASE_FAMILY_MATCHING.md` | planned | Claude | P2 | Mintarr-side mitigation of Lidarr's multi-album / edition matching weakness. Locked-in feature from ADR-0007 §"Multi-album / release matching is not a fork problem". Includes: release-family scoring, track-count + track-title similarity, edition-aware import policy, dashboard explanation when Lidarr rejects, optional manual override with audit. Estimate 15-25h. |
@@ -332,5 +333,6 @@ When Codex and Claude work in parallel, they coordinate via this index — the *
 | 0.14 | 2026-06-03 | **ADR-0011 frontend decision locked.** Phase 2 dashboard will use server-rendered Flask with HTMX + Alpine.js, vendored static assets, and no Node toolchain or SPA framework. TESTING.md updated for current ruff/mypy and targeted Playwright expectations. |
 | 0.15 | 2026-06-03 | **F-series design migration batch 1.** Migrated and rebranded F2 worker queue, F3 source adapters, F3.2/F3.3 Newznab routing, and F3.4 LocalFolder from legacy private docs into public `docs/design/`. |
 | 0.16 | 2026-06-03 | **Quality roadmap migration batch 2.** Migrated and rebranded `QUALITY_STACK_ROADMAP.md` from the legacy private docs into public `docs/design/`. |
+| 0.17 | 2026-06-03 | **F4.4 connector install guidance implemented.** Added secret-safe install guidance payloads for connectors and dashboard/operator documentation for missing service/env/mount setup. |
 
 > Last updated: 2026-06-03

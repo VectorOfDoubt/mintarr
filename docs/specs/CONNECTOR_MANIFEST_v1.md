@@ -238,6 +238,17 @@ The dashboard displays each status with a distinct visual treatment (Phase 2 wor
         "version": null,
         "last_error": null,
         "last_checked_at": "2026-05-26T18:30:00Z"
+      },
+      "install_guidance": {
+        "show": false,
+        "reason": "Connector is ready.",
+        "actions": [],
+        "required_env": ["TIDAL_DL_NG_CONFIG"],
+        "optional_env": ["TIDAL_OAUTH_PKCE"],
+        "docker_service": null,
+        "install_profile": null,
+        "docs_url": "connectors/tidal/",
+        "min_supported_version": null
       }
     },
     {
@@ -268,13 +279,33 @@ The dashboard displays each status with a distinct visual treatment (Phase 2 wor
         "version": "0.7.1",
         "last_error": null,
         "last_checked_at": "2026-05-26T18:30:00Z"
+      },
+      "install_guidance": {
+        "show": false,
+        "reason": "Connector is ready.",
+        "actions": [],
+        "required_env": ["FLAC_API_URL"],
+        "optional_env": [],
+        "docker_service": "flac-detective",
+        "install_profile": null,
+        "docs_url": "connectors/flac_detective/",
+        "min_supported_version": "0.6.0"
       }
     }
   ]
 }
 ```
 
-The response is read-only in v1. Mutation endpoints (`POST /dashboard/v1/connectors/<id>/enable` etc.) land in F4.3 with the connector_config table.
+The response is secret-safe: it may include environment variable names and
+service/profile hints, but must not include environment values, tokens, API
+keys, local private host paths, or Docker socket access.
+
+`install_guidance.show=true` means the dashboard should render the guidance
+block. Typical triggers are `runtime.health` being `missing`, `blocked`, or
+`disabled`, `runtime.installed=false`, or `runtime.mode=disabled`.
+
+Connector config mutation is handled by
+`POST /dashboard/v1/connectors/<connector_id>/config`.
 
 ## 7. Connector authoring conventions
 

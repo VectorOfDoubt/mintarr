@@ -20,9 +20,37 @@ Mintarr v1 is configured through:
 
 Mintarr does not load `.env` files at runtime — Docker Compose handles that. Mintarr does not read YAML/TOML config files in v1.
 
-## 2. Core environment variables
+## 2. Connector install guidance
 
-### 2.1 Required
+The Integrations dashboard is the operator-facing view over connector setup. For
+each source, verifier, and output connector it can show:
+
+- health (`ok`, `missing`, `blocked`, `disabled`)
+- required and optional environment variable names
+- expected Docker service name
+- compose profile hint
+- minimum supported version when the connector declares one
+- documentation link
+
+This guidance is intentionally secret-safe. Mintarr shows variable names such as
+`SLSKD_API_KEY` or `LIDARR_API_KEY`, but never their values. It also avoids host
+paths in API payloads; operators should map host paths to the documented
+container paths in Compose.
+
+Use the guidance this way:
+
+1. If a connector is `missing`, check required env names and volume mounts first.
+2. If a connector lists a `docker_service`, verify that service is running and
+   reachable from the Mintarr container network.
+3. If a connector lists an `install_profile`, enable that Compose profile before
+   moving the connector to `import` mode.
+4. Keep optional connectors in `dry_run` until health and evidence look correct.
+5. Do not mount the Docker socket into Mintarr; service health uses network or
+   binary probes only.
+
+## 3. Core environment variables
+
+### 3.1 Required
 
 | Variable | Purpose | Constraint |
 |---|---|---|
@@ -30,7 +58,7 @@ Mintarr does not load `.env` files at runtime — Docker Compose handles that. M
 
 Mintarr refuses to boot if the API key is missing or too short. Pre-cutover builds also accept the legacy `TIDALHIRES_API_KEY`; after public cutover, examples and docs should use `MINTARR_API_KEY`.
 
-### 2.2 Lidarr integration
+### 3.2 Lidarr integration
 
 | Variable | Purpose | Default |
 |---|---|---|
@@ -40,7 +68,7 @@ Mintarr refuses to boot if the API key is missing or too short. Pre-cutover buil
 
 One of `LIDARR_API_KEY` or `LIDARR_CONFIG_XML` must be set. The XML extraction is preferred (avoids putting the key in Mintarr's env vars).
 
-### 2.3 Storage paths
+### 3.3 Storage paths
 
 | Variable | Purpose | Default |
 |---|---|---|
@@ -49,7 +77,7 @@ One of `LIDARR_API_KEY` or `LIDARR_CONFIG_XML` must be set. The XML extraction i
 
 Both should be mounted volumes. `DOWNLOAD_BASE` is transient (safe to wipe between container restarts); `OUTPUT_BASE` holds files actively being processed.
 
-### 2.4 External services
+### 3.4 External services
 
 | Variable | Purpose | Default |
 |---|---|---|
@@ -58,7 +86,7 @@ Both should be mounted volumes. `DOWNLOAD_BASE` is transient (safe to wipe betwe
 
 Set `BASE_URL` if Mintarr is behind a reverse proxy or if Lidarr reaches Mintarr at a different address than the request's `Host` header reports.
 
-### 2.5 Verification policy
+### 3.5 Verification policy
 
 | Variable | Purpose | Default |
 |---|---|---|
@@ -68,11 +96,11 @@ Set `BASE_URL` if Mintarr is behind a reverse proxy or if Lidarr reaches Mintarr
 
 Pre-cutover builds also accept legacy `TIDALHIRES_RESCUE_RESCAN_ENABLED`. The target public default is `false` because rescue rescans can be disruptive in some Lidarr setups; the current private runtime still defaults to `true` for backward compatibility. Enable only if you understand the implications.
 
-## 3. Source adapter configuration
+## 4. Source adapter configuration
 
 Each source adapter has its own environment variables. Adapters are dormant (return `is_enabled()=False`) until their required env vars are set and validation passes.
 
-### 3.1 TIDAL
+### 4.1 TIDAL
 
 | Variable | Purpose | Default |
 |---|---|---|
@@ -81,7 +109,7 @@ Each source adapter has its own environment variables. Adapters are dormant (ret
 
 Mount the configured directory as a volume; populate `token.json` via `tidal-dl-ng login` (see [INSTALL.md](INSTALL.md) §4.1). The adapter is enabled when `token.json` exists.
 
-### 3.2 LocalFolder
+### 4.2 LocalFolder
 
 | Variable | Purpose | Default |
 |---|---|---|
@@ -89,7 +117,7 @@ Mount the configured directory as a volume; populate `token.json` via `tidal-dl-
 
 Mount the configured path as a bind mount. The adapter is enabled when the directory exists. Source files are never modified — Mintarr copies into its work area.
 
-### 3.3 Soulseek
+### 4.3 Soulseek
 
 | Variable | Purpose | Default |
 |---|---|---|
@@ -121,7 +149,7 @@ Soulseek index benefits from an added search term. slskd-backed candidates are
 stored in `SOULSEEK_CANDIDATE_CACHE` and exposed to Lidarr as short tokens so
 download URLs stay below web-server request-line limits.
 
-## 4. Volume mounts
+## 5. Volume mounts
 
 Mintarr expects these volume mounts:
 
@@ -142,9 +170,9 @@ Tips:
 - `/downloads` can be tmpfs if you have plenty of RAM (downloads are transient)
 - `/output` and `/music` should be the same filesystem (Mintarr uses move-semantics across the boundary, and cross-filesystem moves degrade to copy+delete)
 
-## 5. Networking
+## 6. Networking
 
-### 5.1 Port mapping
+### 6.1 Port mapping
 
 Mintarr listens on port 8000 inside the container. The recommended mapping:
 
@@ -155,7 +183,7 @@ ports:
 
 Binding to `127.0.0.1` means only localhost can reach Mintarr directly. Use a reverse proxy for network access.
 
-### 5.2 Reverse proxy
+### 6.2 Reverse proxy
 
 Mintarr works behind any reverse proxy (Caddy, NGINX, Traefik). Recommended setup:
 
@@ -174,9 +202,9 @@ mintarr.example.com {
 }
 ```
 
-## 6. Authentication
+## 7. Authentication
 
-### 6.1 API key
+### 7.1 API key
 
 The `MINTARR_API_KEY` is shared by all clients (Lidarr, scripts, your browser). There is no per-user separation in v1.
 
@@ -187,7 +215,7 @@ To rotate:
 3. Restart the container
 4. Update Lidarr's indexer and download-client API key settings
 
-### 6.2 Reverse-proxy SSO
+### 7.2 Reverse-proxy SSO
 
 Reverse-proxy SSO attribution is planned, not implemented in the current runtime. Target configuration:
 
@@ -199,7 +227,7 @@ environment:
 
 When implemented, `MINTARR_REMOTE_USER_TRUSTED=true` will log the user identifier in the actions table. **Setting this without a real auth-proxy in front is unsafe** — anyone who can send the header can claim any identity.
 
-## 7. Logging
+## 8. Logging
 
 Mintarr logs to stdout (Docker captures via `docker logs`). Phase 3 work introduces structured JSON logging and Prometheus metrics. v1 logs use Python's logging module with format:
 
@@ -207,7 +235,7 @@ Mintarr logs to stdout (Docker captures via `docker logs`). Phase 3 work introdu
 2026-05-26 14:00:00,000 INFO message here
 ```
 
-### 7.1 Log levels
+### 8.1 Log levels
 
 | Variable | Purpose | Default |
 |---|---|---|
@@ -216,7 +244,7 @@ Mintarr logs to stdout (Docker captures via `docker logs`). Phase 3 work introdu
 
 Set to `DEBUG` only when debugging — debug logs are verbose. Set to `WARNING` to quiet down a chatty container.
 
-### 7.2 Secrets redaction
+### 8.2 Secrets redaction
 
 Mintarr redacts these query parameters and form fields from access logs:
 
@@ -225,7 +253,7 @@ Mintarr redacts these query parameters and form fields from access logs:
 
 This is automatic and tested. If you find a log line with an unredacted secret, that's a security bug — see [SECURITY.md](https://github.com/eivindsjursen-lab/mintarr/blob/main/SECURITY.md).
 
-## 8. Custom Format scoring (Lidarr-side, recommended)
+## 9. Custom Format scoring (Lidarr-side, recommended)
 
 Mintarr does not configure Lidarr's Custom Formats. The recommended configuration:
 
@@ -239,7 +267,7 @@ Effect: TIDAL beats LocalFolder when both are available; LocalFolder beats unsco
 
 These are starting recommendations. Operators may adjust based on their experience. If the quality profile's minimum Custom Format score is `0`, do not give Soulseek a negative score unless you also lower that minimum; otherwise Lidarr will reject Soulseek releases instead of merely ranking them lower.
 
-## 9. Worker behaviour
+## 10. Worker behaviour
 
 | Variable | Purpose | Default |
 |---|---|---|
@@ -249,7 +277,7 @@ Pre-cutover builds also accept legacy `TIDALHIRES_DISABLE_WORKER`.
 
 In production, leave the worker enabled. Mintarr's worker is N=1 (single thread) by design (full F2 worker-queue design doc planned for v0.2.0 migration).
 
-## 10. Timezone
+## 11. Timezone
 
 | Variable | Purpose | Default |
 |---|---|---|
@@ -257,7 +285,7 @@ In production, leave the worker enabled. Mintarr's worker is N=1 (single thread)
 
 Set to your local timezone for human-readable logs (e.g., `Europe/Oslo`).
 
-## 11. Reference defaults
+## 12. Reference defaults
 
 Here is the full default-values table for quick reference:
 

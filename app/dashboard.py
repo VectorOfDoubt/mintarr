@@ -1647,6 +1647,17 @@ main { padding: 16px 24px; }
 }
 .connector-link { color: var(--accent-primary); text-decoration: none; }
 .connector-link:hover { color: var(--accent-primary-hover); }
+.connector-guidance {
+  margin-top: 10px;
+  border: 1px solid var(--status-warning);
+  border-radius: var(--radius-sm);
+  background: var(--status-warning-bg);
+  padding: 8px 10px;
+  font-size: 12px;
+}
+.connector-guidance strong { display: block; margin-bottom: 4px; color: var(--text-primary); }
+.connector-guidance ul { margin: 6px 0 0 18px; padding: 0; color: var(--text-secondary); }
+.connector-guidance li { margin: 3px 0; }
 .connector-controls {
   display: flex;
   gap: 6px;
@@ -2108,6 +2119,22 @@ function tagList(items) {
   return `<span class="connector-tags">${items.map(item => `<span class="connector-tag">${esc(item)}</span>`).join('')}</span>`;
 }
 
+function renderInstallGuidance(connector) {
+  const guidance = connector.install_guidance || {};
+  if (!guidance.show) return '';
+  const actions = guidance.actions || [];
+  const actionList = actions.length
+    ? `<ul>${actions.map(item => `<li>${esc(item)}</li>`).join('')}</ul>`
+    : '';
+  return `
+    <div class="connector-guidance">
+      <strong>Install guidance</strong>
+      <div>${esc(guidance.reason || 'Connector needs attention.')}</div>
+      ${actionList}
+    </div>
+  `;
+}
+
 function renderConnectorCard(connector) {
   const manifest = connector.manifest || {};
   const runtime = connector.runtime || {};
@@ -2146,6 +2173,7 @@ function renderConnectorCard(connector) {
         <div class="k">Last check</div><div class="v">${esc(runtime.last_checked_at || 'unknown')} · ${docs}</div>
         ${err}
       </div>
+      ${renderInstallGuidance(connector)}
       <div class="connector-controls">
         <select id="connector-mode-${esc(connector.id)}" aria-label="Mode for ${esc(connector.id)}">${modeOptions}</select>
         <button onclick="saveConnectorConfig('${esc(connector.id)}', true)">Dry run</button>

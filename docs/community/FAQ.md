@@ -61,7 +61,7 @@ Yes. See [ADR-0002 single-instance arr-pattern](../architecture/adr/0002-single-
 
 ### How do I use Mintarr with reverse-proxy SSO?
 
-See [CONFIGURATION.md §6.2](../operations/CONFIGURATION.md#62-reverse-proxy-sso). Set `MINTARR_REMOTE_USER_TRUSTED=true` when you're sure the proxy is authenticating users.
+See [CONFIGURATION.md §7.2](../operations/CONFIGURATION.md#72-reverse-proxy-sso). Set `MINTARR_REMOTE_USER_TRUSTED=true` when you're sure the proxy is authenticating users.
 
 ---
 

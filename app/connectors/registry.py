@@ -6,7 +6,9 @@ import logging
 from typing import TYPE_CHECKING
 
 from .base import (
+    ConnectorHealth,
     ConnectorKind,
+    ConnectorManifest,
     ConnectorMode,
     MANIFEST_API_VERSION,
     manifest_to_dict,
@@ -94,16 +96,84 @@ def import_mode_invariant_violations() -> list[str]:
     return violations
 
 
+def install_guidance_for(
+    manifest: ConnectorManifest,
+    health: ConnectorHealth,
+    *,
+    installed: bool,
+    enabled: bool,
+    mode: str,
+) -> dict:
+    """Return secret-safe setup guidance for dashboard/API consumers."""
+    show = (
+        health.status in {"missing", "blocked", "disabled"}
+        or not installed
+        or not enabled
+        or mode == ConnectorMode.DISABLED.value
+    )
+    actions: list[str] = []
+    if manifest.install_profile:
+        actions.append(f"Enable the `{manifest.install_profile}` compose profile.")
+    if manifest.docker_service:
+        actions.append(f"Verify the `{manifest.docker_service}` service is running.")
+    if manifest.required_env:
+        names = ", ".join(f"`{name}`" for name in manifest.required_env)
+        actions.append(f"Configure required environment variable names: {names}.")
+    if manifest.kind == ConnectorKind.SOURCE and manifest.required_env:
+        actions.append(
+            "Verify required source mounts exist inside the Mintarr container."
+        )
+    if manifest.kind == ConnectorKind.VERIFIER:
+        actions.append(
+            "Verify the verifier binary or HTTP service is reachable from Mintarr."
+        )
+    if manifest.kind == ConnectorKind.OUTPUT:
+        actions.append(
+            "Verify the output service is reachable and credentials are configured."
+        )
+    if not enabled or mode == ConnectorMode.DISABLED.value:
+        actions.append(
+            "Switch the connector to dry_run or import mode after dependencies are ready."
+        )
+    if manifest.docs_url:
+        actions.append("Open the connector documentation link for exact setup steps.")
+
+    reason = "Connector is ready."
+    if health.status == "missing" or not installed:
+        reason = "Dependency is missing or not reachable."
+    elif health.status == "blocked":
+        reason = "Dependency responded but is blocked or unhealthy."
+    elif (
+        health.status == "disabled"
+        or not enabled
+        or mode == ConnectorMode.DISABLED.value
+    ):
+        reason = "Connector is disabled by configuration."
+
+    return {
+        "show": show,
+        "reason": reason,
+        "actions": actions,
+        "required_env": list(manifest.required_env),
+        "optional_env": list(manifest.optional_env),
+        "docker_service": manifest.docker_service,
+        "install_profile": manifest.install_profile,
+        "docs_url": manifest.docs_url,
+        "min_supported_version": manifest.min_supported_version,
+    }
+
+
 def connector_to_dict(connector: "Connector") -> dict:
     health = connector.health()
     config = config_for_manifest(connector.manifest)
+    installed = connector.is_installed()
     return {
         "id": connector.manifest.id,
         "kind": connector.manifest.kind.value,
         "display_name": connector.manifest.display_name,
         "manifest": manifest_to_dict(connector.manifest),
         "runtime": {
-            "installed": connector.is_installed(),
+            "installed": installed,
             "enabled": config["enabled"],
             "mode": config["mode"],
             "config": config,
@@ -112,6 +182,13 @@ def connector_to_dict(connector: "Connector") -> dict:
             "last_error": health.last_error,
             "last_checked_at": unix_ts_to_iso(health.last_checked_at),
         },
+        "install_guidance": install_guidance_for(
+            connector.manifest,
+            health,
+            installed=installed,
+            enabled=bool(config["enabled"]),
+            mode=str(config["mode"]),
+        ),
     }
 
 

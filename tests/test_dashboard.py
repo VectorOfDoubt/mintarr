@@ -66,14 +66,31 @@ def test_dashboard_html_does_not_require_apikey(monkeypatch, tmp_path):
     assert "drawer" in body
     assert "integrations-view" in body
     assert "tab-integrations" in body
+    # Assets are extracted to static files (#45); the shell only references them
+    # and injects the one server-side value via the bootstrap script.
+    assert '<link rel="stylesheet" href="/static/dashboard.css">' in body
+    assert '<script src="/static/dashboard.js"></script>' in body
+    assert "window.LIDARR_WEB_BASE =" in body
+    assert "<style>" not in body
 
 
-def test_dashboard_html_fetches_and_renders_connectors(monkeypatch, tmp_path):
+def test_dashboard_static_assets_served_without_apikey(monkeypatch, tmp_path):
+    """CSS/JS are served by Flask static, unauthenticated, with sane types."""
     _patch_paths(monkeypatch, tmp_path)
     client = server.app.test_client()
-    resp = client.get("/dashboard")
-    assert resp.status_code == 200
-    body = resp.get_data(as_text=True)
+    css = client.get("/static/dashboard.css")
+    assert css.status_code == 200
+    assert "text/css" in css.content_type
+    js = client.get("/static/dashboard.js")
+    assert js.status_code == 200
+    assert "javascript" in js.content_type
+
+
+def test_dashboard_js_contains_connector_rendering(monkeypatch, tmp_path):
+    """Connector/install-guidance logic lives in the extracted dashboard.js."""
+    _patch_paths(monkeypatch, tmp_path)
+    client = server.app.test_client()
+    body = client.get("/static/dashboard.js").get_data(as_text=True)
     assert "api('/connectors')" in body
     assert "function renderIntegrations" in body
     assert "connector-card" in body
@@ -82,6 +99,9 @@ def test_dashboard_html_fetches_and_renders_connectors(monkeypatch, tmp_path):
     assert "Install guidance" in body
     assert "/connectors/' + encodeURIComponent(connectorId) + '/config" in body
     assert "Required env" in body
+    # The server placeholder was rewired to a window global during extraction.
+    assert "const LIDARR_WEB_BASE = window.LIDARR_WEB_BASE;" in body
+    assert "__LIDARR_WEB_BASE__" not in body
 
 
 def test_dashboard_summary_returns_expected_shape(monkeypatch, tmp_path):

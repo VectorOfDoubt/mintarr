@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>TidalHires V2 Dashboard</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='dashboard.css') }}">
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>TidalHires V2 Dashboard</h1>
+    <div class="meta" id="meta">Loading...</div>
+  </div>
+  <div class="refresh">
+    <span class="refresh-dot" id="refresh-dot"></span>
+    <span class="meta" id="refresh-status">Updated: never</span>
+  </div>
+</header>
+
+<main>
+  <div class="summary-grid" id="summary-grid"></div>
+  <section class="panel warn" id="lidarr-command-panel" style="display:none">
+    <h2>Lidarr command queue</h2>
+    <div id="lidarr-command-body" class="muted">No blocking Lidarr commands.</div>
+  </section>
+  <section class="panel" id="active-jobs-panel" style="display:none">
+    <h2>Active jobs</h2>
+    <div id="active-jobs-body" class="muted">No active worker jobs.</div>
+  </section>
+  <section class="panel" id="timings-panel">
+    <h2>Pipeline timings</h2>
+    <div id="timings-body" class="muted">No timing data yet; new jobs will populate this.</div>
+  </section>
+
+  <div class="tab-bar" role="tablist" aria-label="Dashboard views">
+    <button class="tab-button active" id="tab-records" role="tab" aria-controls="records-view" onclick="showView('records')">Records</button>
+    <button class="tab-button" id="tab-integrations" role="tab" aria-controls="integrations-view" onclick="showView('integrations')">Integrations</button>
+  </div>
+
+  <section class="dashboard-view" id="records-view">
+    <div class="filter-bar">
+      <label>Filter:</label>
+      <select id="filter-status">
+        <option value="">All statuses</option>
+        <option value="needs_review">Needs review</option>
+        <option value="imported">Imported</option>
+        <option value="pending">Pending</option>
+        <option value="policy_violation">Policy alert</option>
+        <option value="failed">Failed</option>
+        <option value="blocked">Blocked</option>
+        <option value="discarded">Discarded</option>
+        <option value="promoted">Promoted</option>
+      </select>
+      <select id="filter-decision">
+        <option value="">All decisions</option>
+        <option value="ACCEPT">ACCEPT</option>
+        <option value="ACCEPT_PROVISIONAL">ACCEPT_PROVISIONAL</option>
+        <option value="REVIEW_REQUIRED">REVIEW_REQUIRED</option>
+        <option value="BLOCK">BLOCK</option>
+      </select>
+      <button onclick="clearFilters()">Clear</button>
+      <button onclick="refresh()">Refresh now</button>
+    </div>
+
+    <h2>Records</h2>
+    <table id="records-table">
+      <thead><tr>
+        <th>Status</th><th>Reason</th><th>Title</th><th>Decision</th><th>Outcome</th><th>State</th><th>Score</th><th>JID</th><th></th>
+      </tr></thead>
+      <tbody id="records-body">
+        <tr><td colspan="9" class="muted">Loading...</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section class="dashboard-view" id="integrations-view" hidden>
+    <div id="integrations-body" class="muted">Loading integrations...</div>
+  </section>
+</main>
+
+<div id="drawer-overlay" onclick="closeDrawer()"></div>
+<aside id="drawer">
+  <header>
+    <button class="close" onclick="closeDrawer()">×</button>
+    <h2 id="drawer-title" style="margin:0;border:none">Loading…</h2>
+    <div class="meta" id="drawer-jid"></div>
+  </header>
+  <div id="drawer-body">
+    <p class="muted">Loading…</p>
+  </div>
+  <div class="actions" id="drawer-actions"></div>
+</aside>
+
+<div id="modal-overlay" onclick="if(event.target===this)closeModal()">
+  <div id="modal">
+    <h3 id="modal-title"></h3>
+    <p id="modal-desc"></p>
+    <div class="actions">
+      <button class="cancel" onclick="closeModal()">Cancel</button>
+      <button id="modal-confirm">Confirm</button>
+    </div>
+  </div>
+</div>
+
+<div id="image-overlay" onclick="if(event.target===this)closeImageOverlay()">
+  <div id="image-lightbox">
+    <header>
+      <span id="image-title">Spectrum preview</span>
+      <button onclick="closeImageOverlay()">Close</button>
+    </header>
+    <img id="image-full" alt="Expanded spectrum preview">
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<div id="auth-prompt" style="display:none">
+  <div class="box">
+    <h2 style="margin:0">API key required</h2>
+    <p class="meta">Enter the TidalHires API key. It will be stored in your browser's localStorage.</p>
+    <input type="password" id="auth-key-input" placeholder="API key" autofocus>
+    <button onclick="saveKey()">Save</button>
+  </div>
+</div>
+
+<script>window.LIDARR_WEB_BASE = {{ lidarr_web_base | tojson }};</script>
+<script src="{{ url_for('static', filename='dashboard.js') }}"></script>
+
+</body>
+</html>

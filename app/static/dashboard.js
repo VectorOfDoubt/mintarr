@@ -5,7 +5,6 @@ let apikey = localStorage.getItem('tidalhires_apikey') || '';
 let refreshTimer = null;
 let lastUpdate = null;
 let activeDrawerJid = null;
-let activeView = localStorage.getItem('tidalhires_dashboard_view') || 'records';
 let lastConnectors = [];
 
 const $ = (id) => document.getElementById(id);
@@ -46,18 +45,6 @@ function init() {
   // Restore filters from localStorage
   $('filter-status').value = localStorage.getItem('tidalhires_filter_status') || '';
   $('filter-decision').value = localStorage.getItem('tidalhires_filter_decision') || '';
-  showView(activeView);
-}
-
-function showView(view) {
-  activeView = view === 'integrations' ? 'integrations' : 'records';
-  localStorage.setItem('tidalhires_dashboard_view', activeView);
-  $('records-view').hidden = activeView !== 'records';
-  $('integrations-view').hidden = activeView !== 'integrations';
-  $('tab-records').classList.toggle('active', activeView === 'records');
-  $('tab-integrations').classList.toggle('active', activeView === 'integrations');
-  $('tab-records').setAttribute('aria-selected', activeView === 'records' ? 'true' : 'false');
-  $('tab-integrations').setAttribute('aria-selected', activeView === 'integrations' ? 'true' : 'false');
 }
 
 function clearFilters() {

@@ -68,7 +68,7 @@ For the underlying positioning and what is *not* in any phase, see [VISION.md](V
 
 **Goal:** Mintarr's dashboard feels like an arr-stack tool, with a sidebar layout and Settings / System cards.
 
-**Status:** planned
+**Status:** in progress — extraction + vendored Alpine + theme switch shipped; sidebar shell shipped; Settings/System card content and live (HTMX) surfaces remain
 
 **Scope:**
 

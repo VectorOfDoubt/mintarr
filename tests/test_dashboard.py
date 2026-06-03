@@ -64,8 +64,7 @@ def test_dashboard_html_does_not_require_apikey(monkeypatch, tmp_path):
     assert "TidalHires V2 Dashboard" in body
     assert "summary-grid" in body
     assert "drawer" in body
-    assert "integrations-view" in body
-    assert "tab-integrations" in body
+    assert "integrations-body" in body
     # Assets are extracted to static files (#45); the shell only references them
     # and injects the one server-side value via the bootstrap script.
     assert '<link rel="stylesheet" href="/static/dashboard.css">' in body
@@ -131,6 +130,38 @@ def test_dashboard_theme_switch_present(monkeypatch, tmp_path):
     # Light palette exists in the stylesheet (dark stays the :root default).
     css = client.get("/static/dashboard.css").get_data(as_text=True)
     assert '[data-theme="light"]' in css
+
+
+def test_dashboard_sidebar_shell_present(monkeypatch, tmp_path):
+    """Sidebar nav (#50) replaces the tab bar with seven sections."""
+    _patch_paths(monkeypatch, tmp_path)
+    client = server.app.test_client()
+    shell = client.get("/dashboard").get_data(as_text=True)
+    # Sidebar shell with Alpine-driven section state, no old tab bar.
+    assert 'class="sidebar"' in shell
+    assert "localStorage.getItem('mintarr_section')" in shell
+    assert 'class="tab-bar"' not in shell
+    assert "showView(" not in shell
+    # All seven sections are navigable and rendered.
+    for sec in (
+        "overview",
+        "queue",
+        "history",
+        "review",
+        "connectors",
+        "settings",
+        "system",
+    ):
+        assert f"go('{sec}')" in shell
+        assert f"section==='{sec}'" in shell
+    # Existing content kept its ids inside the new sections.
+    assert 'id="summary-grid"' in shell
+    assert 'id="records-table"' in shell
+    assert 'id="integrations-body"' in shell
+    # Responsive collapse hook.
+    css = client.get("/static/dashboard.css").get_data(as_text=True)
+    assert "@media (max-width: 768px)" in css
+    assert ".nav-toggle" in css
 
 
 def test_dashboard_summary_returns_expected_shape(monkeypatch, tmp_path):

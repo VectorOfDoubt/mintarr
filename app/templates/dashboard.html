@@ -59,66 +59,99 @@
   </div>
 </header>
 
-<main>
-  <div class="summary-grid" id="summary-grid"></div>
-  <section class="panel warn" id="lidarr-command-panel" style="display:none">
-    <h2>Lidarr command queue</h2>
-    <div id="lidarr-command-body" class="muted">No blocking Lidarr commands.</div>
-  </section>
-  <section class="panel" id="active-jobs-panel" style="display:none">
-    <h2>Active jobs</h2>
-    <div id="active-jobs-body" class="muted">No active worker jobs.</div>
-  </section>
-  <section class="panel" id="timings-panel">
-    <h2>Pipeline timings</h2>
-    <div id="timings-body" class="muted">No timing data yet; new jobs will populate this.</div>
-  </section>
+<div class="app-shell" x-data="{
+    section: localStorage.getItem('mintarr_section') || 'overview',
+    navOpen: false,
+    go(s) { this.section = s; localStorage.setItem('mintarr_section', s); this.navOpen = false; }
+  }">
+  <nav class="sidebar" :class="{ open: navOpen }" aria-label="Primary">
+    <button type="button" class="nav-toggle" @click="navOpen = !navOpen"
+            :aria-expanded="navOpen ? 'true' : 'false'" aria-label="Toggle navigation">&#9776; Menu</button>
+    <ul class="nav-list">
+      <li><button type="button" class="nav-item" :class="{ active: section==='overview' }" @click="go('overview')">Overview</button></li>
+      <li><button type="button" class="nav-item" :class="{ active: section==='queue' }" @click="go('queue')">Queue</button></li>
+      <li><button type="button" class="nav-item" :class="{ active: section==='history' }" @click="go('history')">History</button></li>
+      <li><button type="button" class="nav-item" :class="{ active: section==='review' }" @click="go('review')">Review</button></li>
+      <li><button type="button" class="nav-item" :class="{ active: section==='connectors' }" @click="go('connectors')">Connectors</button></li>
+      <li><button type="button" class="nav-item" :class="{ active: section==='settings' }" @click="go('settings')">Settings</button></li>
+      <li><button type="button" class="nav-item" :class="{ active: section==='system' }" @click="go('system')">System</button></li>
+    </ul>
+  </nav>
 
-  <div class="tab-bar" role="tablist" aria-label="Dashboard views">
-    <button class="tab-button active" id="tab-records" role="tab" aria-controls="records-view" onclick="showView('records')">Records</button>
-    <button class="tab-button" id="tab-integrations" role="tab" aria-controls="integrations-view" onclick="showView('integrations')">Integrations</button>
-  </div>
+  <main>
+    <section class="dashboard-section" x-show="section==='overview'">
+      <div class="summary-grid" id="summary-grid"></div>
+      <section class="panel warn" id="lidarr-command-panel" style="display:none">
+        <h2>Lidarr command queue</h2>
+        <div id="lidarr-command-body" class="muted">No blocking Lidarr commands.</div>
+      </section>
+      <section class="panel" id="active-jobs-panel" style="display:none">
+        <h2>Active jobs</h2>
+        <div id="active-jobs-body" class="muted">No active worker jobs.</div>
+      </section>
+      <section class="panel" id="timings-panel">
+        <h2>Pipeline timings</h2>
+        <div id="timings-body" class="muted">No timing data yet; new jobs will populate this.</div>
+      </section>
+    </section>
 
-  <section class="dashboard-view" id="records-view">
-    <div class="filter-bar">
-      <label>Filter:</label>
-      <select id="filter-status">
-        <option value="">All statuses</option>
-        <option value="needs_review">Needs review</option>
-        <option value="imported">Imported</option>
-        <option value="pending">Pending</option>
-        <option value="policy_violation">Policy alert</option>
-        <option value="failed">Failed</option>
-        <option value="blocked">Blocked</option>
-        <option value="discarded">Discarded</option>
-        <option value="promoted">Promoted</option>
-      </select>
-      <select id="filter-decision">
-        <option value="">All decisions</option>
-        <option value="ACCEPT">ACCEPT</option>
-        <option value="ACCEPT_PROVISIONAL">ACCEPT_PROVISIONAL</option>
-        <option value="REVIEW_REQUIRED">REVIEW_REQUIRED</option>
-        <option value="BLOCK">BLOCK</option>
-      </select>
-      <button onclick="clearFilters()">Clear</button>
-      <button onclick="refresh()">Refresh now</button>
-    </div>
+    <section class="dashboard-section" x-show="section==='queue'" x-cloak>
+      <div class="panel"><h2>Queue</h2><p class="muted">Live worker queue lands in a later Phase 2 slice.</p></div>
+    </section>
 
-    <h2>Records</h2>
-    <table id="records-table">
-      <thead><tr>
-        <th>Status</th><th>Reason</th><th>Title</th><th>Decision</th><th>Outcome</th><th>State</th><th>Score</th><th>JID</th><th></th>
-      </tr></thead>
-      <tbody id="records-body">
-        <tr><td colspan="9" class="muted">Loading...</td></tr>
-      </tbody>
-    </table>
-  </section>
+    <section class="dashboard-section" x-show="section==='history'" x-cloak>
+      <div class="panel"><h2>History</h2><p class="muted">Completed-job history lands in a later Phase 2 slice.</p></div>
+    </section>
 
-  <section class="dashboard-view" id="integrations-view" hidden>
-    <div id="integrations-body" class="muted">Loading integrations...</div>
-  </section>
-</main>
+    <section class="dashboard-section" x-show="section==='review'" x-cloak>
+      <div class="filter-bar">
+        <label>Filter:</label>
+        <select id="filter-status">
+          <option value="">All statuses</option>
+          <option value="needs_review">Needs review</option>
+          <option value="imported">Imported</option>
+          <option value="pending">Pending</option>
+          <option value="policy_violation">Policy alert</option>
+          <option value="failed">Failed</option>
+          <option value="blocked">Blocked</option>
+          <option value="discarded">Discarded</option>
+          <option value="promoted">Promoted</option>
+        </select>
+        <select id="filter-decision">
+          <option value="">All decisions</option>
+          <option value="ACCEPT">ACCEPT</option>
+          <option value="ACCEPT_PROVISIONAL">ACCEPT_PROVISIONAL</option>
+          <option value="REVIEW_REQUIRED">REVIEW_REQUIRED</option>
+          <option value="BLOCK">BLOCK</option>
+        </select>
+        <button onclick="clearFilters()">Clear</button>
+        <button onclick="refresh()">Refresh now</button>
+      </div>
+
+      <h2>Records</h2>
+      <table id="records-table">
+        <thead><tr>
+          <th>Status</th><th>Reason</th><th>Title</th><th>Decision</th><th>Outcome</th><th>State</th><th>Score</th><th>JID</th><th></th>
+        </tr></thead>
+        <tbody id="records-body">
+          <tr><td colspan="9" class="muted">Loading...</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section class="dashboard-section" x-show="section==='connectors'" x-cloak>
+      <div id="integrations-body" class="muted">Loading integrations...</div>
+    </section>
+
+    <section class="dashboard-section" x-show="section==='settings'" x-cloak>
+      <div class="panel"><h2>Settings</h2><p class="muted">Settings cards land in a later Phase 2 slice.</p></div>
+    </section>
+
+    <section class="dashboard-section" x-show="section==='system'" x-cloak>
+      <div class="panel"><h2>System</h2><p class="muted">System cards land in a later Phase 2 slice.</p></div>
+    </section>
+  </main>
+</div>
 
 <div id="drawer-overlay" onclick="closeDrawer()"></div>
 <aside id="drawer">

@@ -1,7 +1,8 @@
-"""Sensor registry for the TidalHires quality stack.
+"""Sensor registry for the Mintarr quality stack.
 
 This is intentionally small for now: it documents and validates the current
-required sensors before optional tools such as CTDB or AcoustID are added.
+required sensors and the first optional verifier lane before optional evidence
+is allowed to affect import policy.
 """
 
 from __future__ import annotations
@@ -67,6 +68,16 @@ DEFAULT_SENSORS: tuple[SensorDefinition, ...] = (
         timeout_sec=900,
         fail_policy="block",
         applies_to=("tidal", "web", "usenet", "torrent", "soulseek"),
+    ),
+    SensorDefinition(
+        name="picard_beets_acoustid",
+        sensor_class="metadata_identity",
+        stage="metadata",
+        enabled=False,
+        required=False,
+        timeout_sec=120,
+        fail_policy="warn",
+        applies_to=("tidal", "web", "usenet", "torrent", "soulseek", "cd_rip"),
     ),
 )
 

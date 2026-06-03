@@ -132,6 +132,27 @@ def test_required_connectors_returns_subset():
     ] == ["required"]
 
 
+def test_built_in_optional_metadata_verifier_manifest():
+    import connectors
+    from connectors import ConnectorKind
+
+    manifests = {
+        connector.manifest.id: connector.manifest
+        for connector in connectors.built_in_connectors()
+    }
+    manifest = manifests["picard_beets_acoustid"]
+
+    assert manifest.kind == ConnectorKind.VERIFIER
+    assert manifest.default_enabled is False
+    assert manifest.required is False
+    assert manifest.install_profile is None
+    assert manifest.required_env == ()
+    assert manifest.optional_env == ("ACOUSTID_API_KEY",)
+    assert manifest.docs_url == "operations/CONFIGURATION.md#35-verification-policy"
+    assert "metadata_identity" in manifest.capabilities
+    assert "read_only_prepass" in manifest.capabilities
+
+
 def test_get_connectors_endpoint_requires_api_key():
     client = server.app.test_client()
     assert client.get("/dashboard/v1/connectors").status_code == 401
@@ -270,6 +291,49 @@ def test_connector_config_rejects_required_disable():
 
     assert resp.status_code == 409
     assert "required connectors must stay in import mode" in resp.get_json()["errors"]
+
+
+def test_optional_verifier_can_be_validated_in_dry_run():
+    import connectors
+    from connectors import ConnectorKind
+
+    connectors.reset_registry()
+    connectors.register(
+        _DummyConnector(
+            "source", kind=ConnectorKind.SOURCE, installed=False, enabled=False
+        )
+    )
+    connectors.register(
+        _DummyConnector(
+            "ffprobe", kind=ConnectorKind.VERIFIER, required=True, installed=True
+        )
+    )
+    connectors.register(
+        _DummyConnector(
+            "output", kind=ConnectorKind.OUTPUT, installed=True, enabled=True
+        )
+    )
+    connectors.register(
+        _DummyConnector(
+            "picard_beets_acoustid",
+            kind=ConnectorKind.VERIFIER,
+            required=False,
+            installed=False,
+            enabled=False,
+        )
+    )
+
+    client = server.app.test_client()
+    resp = client.post(
+        f"/dashboard/v1/connectors/picard_beets_acoustid/config?apikey={VALID_KEY}",
+        json={"mode": "dry_run", "dry_run": True},
+    )
+
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data["valid"] is True
+    assert data["dry_run"] is True
+    assert data["config"]["mode"] == "dry_run"
 
 
 def test_connector_config_rejects_disabling_only_output_for_import_source():

@@ -26,6 +26,18 @@ def test_registry_filters_by_source_lane():
     assert [sensor.name for sensor in sensors] == ["ffprobe", "flac_t"]
 
 
+def test_optional_metadata_identity_sensor_is_non_importing_by_default():
+    sensor = default_registry.get("picard_beets_acoustid")
+
+    assert sensor.sensor_class == "metadata_identity"
+    assert sensor.stage == "metadata"
+    assert sensor.enabled is False
+    assert sensor.required is False
+    assert sensor.fail_policy == "warn"
+    assert "soulseek" in sensor.applies_to
+    default_registry.validate_mode(mode="import")
+
+
 def test_registry_rejects_disabled_required_sensor_in_import_mode():
     registry = SensorRegistry(
         (

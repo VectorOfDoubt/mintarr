@@ -57,6 +57,9 @@ services:
       # Enables the V2 verification pipeline. Default is true; set to false
       # only if you understand the implications.
       - V2_VERIFICATION_ENABLED=true
+      # Optional future metadata-identity verifier key. The connector is
+      # disabled by default and does not affect imports in the current runtime.
+      # - ACOUSTID_API_KEY=<acoustid-api-key>
 
       # REVIEW_REQUIRED queue retention in days. Records older than this
       # are auto-expired (move to expired_review/).

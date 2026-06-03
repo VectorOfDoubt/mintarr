@@ -397,6 +397,31 @@ def built_in_connectors() -> list:
             version_args=("--version",),
             version_parser=_first_semver,
         ),
+        BinaryConnector(
+            manifest=ConnectorManifest(
+                id="picard_beets_acoustid",
+                display_name="Picard / beets / AcoustID",
+                kind=ConnectorKind.VERIFIER,
+                api_version=MANIFEST_API_VERSION,
+                adapter_class=None,
+                default_enabled=False,
+                required=False,
+                install_profile=None,
+                docker_service=None,
+                required_env=(),
+                optional_env=("ACOUSTID_API_KEY",),
+                capabilities=(
+                    "metadata_identity",
+                    "read_only_prepass",
+                    "acoustid_lookup",
+                ),
+                docs_url="operations/CONFIGURATION.md#35-verification-policy",
+                min_supported_version=None,
+            ),
+            binary="beet",
+            version_args=("--version",),
+            version_parser=_first_semver,
+        ),
         FlacDetectiveConnector(),
         LidarrConnector(
             manifest=ConnectorManifest(

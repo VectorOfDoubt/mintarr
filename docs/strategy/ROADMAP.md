@@ -48,7 +48,7 @@ For the underlying positioning and what is *not* in any phase, see [VISION.md](V
 
 **Goal:** every source, verifier, and output is a Connector with a static manifest and a uniform operator surface.
 
-**Status:** partial - F4.1-F4.4 shipped, F4.5 planned
+**Status:** partial - F4.1-F4.5 foundation shipped; optional verifier evidence runners remain future work
 
 **Scope:**
 
@@ -56,7 +56,7 @@ For the underlying positioning and what is *not* in any phase, see [VISION.md](V
 - **F4.2 Integrations dashboard tab** — UI surface for connector status (installed / enabled / mode / health / version / last error / docker service hint)
 - **F4.3 Connector enable/disable + dry-run** — `connector_config` table, UI toggles for optional connectors, hard-gate disable protection, audit trail for config changes, `dry_run` vs `import` mode
 - **F4.4 Compose profile / install guidance** — implemented ([F4.4 connector install guidance](../design/F4.4_CONNECTOR_INSTALL_GUIDANCE.md)); dashboard shows missing services / mounts / env, documented compose profiles, no app-managed docker updates
-- **F4.5 Optional verifier connectors** — Beets/Picard/AcoustID read-only prepass (planned), CUETools/CTDB connector for CD-rip lane (planned), optional sensors start in `dry_run`
+- **F4.5 Optional verifier connectors** — implemented registry/design first slice ([F4.5 optional verifier connectors](../design/F4.5_OPTIONAL_VERIFIER_CONNECTORS.md)); Picard/beets/AcoustID metadata-identity verifier defaults disabled, CUETools/CTDB connector for CD-rip lane remains planned, optional sensors start disabled or in `dry_run`
 
 **Depends on:** Phase 0 (so external contributors can author connectors against a stable contract).
 

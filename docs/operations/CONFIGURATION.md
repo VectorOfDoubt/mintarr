@@ -93,8 +93,13 @@ Set `BASE_URL` if Mintarr is behind a reverse proxy or if Lidarr reaches Mintarr
 | `V2_VERIFICATION_ENABLED` | Master toggle for V2 policy. Disabling falls back to a simpler decision logic. | `true` |
 | `REVIEW_RETENTION_DAYS` | Days a REVIEW_REQUIRED record is held before auto-expiry | `30` |
 | `MINTARR_RESCUE_RESCAN_ENABLED` | Allow Mintarr to trigger Lidarr `RescanFolder` as a fallback import path | `true` in current runtime; target public default `false` |
+| `ACOUSTID_API_KEY` | Optional key for the future Picard/beets/AcoustID metadata-identity verifier. Shown in connector guidance by name only. | unset |
 
 Pre-cutover builds also accept legacy `TIDALHIRES_RESCUE_RESCAN_ENABLED`. The target public default is `false` because rescue rescans can be disruptive in some Lidarr setups; the current private runtime still defaults to `true` for backward compatibility. Enable only if you understand the implications.
+
+The `picard_beets_acoustid` verifier connector is registered as an optional
+metadata prepass. It defaults to disabled, may be tested in `dry_run`, and does
+not write tags or affect import decisions in the current runtime.
 
 ## 4. Source adapter configuration
 

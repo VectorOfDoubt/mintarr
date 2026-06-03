@@ -1,8 +1,8 @@
 # Mintarr — Documentation Index
 
 > **Type:** Meta-document. Lists every planned Mintarr document, its status, owner and dependencies.
-> **Version:** 0.17 — 2026-06-03
-> **Status:** Public-repo tracker. Documentation set drafted. License AGPL-3.0-only. Language Python 3.12+ (ADR-0010). Cutover strategy: clean new repo, no inherited history ([MINTARR_CUTOVER_PLAYBOOK.md](architecture/MINTARR_CUTOVER_PLAYBOOK.md)). HTTP_API_v1 and SIDECAR_FORMAT_v2 runtime-validated and locked. F4.1-F4.4 landed post-cutover; F3.5a Soulseek completed-folder ingest is implemented. v0.2.0 docs skeletons for troubleshooting, observability, and use cases are drafted. ADR-0011 locks the Phase 2 frontend approach. F2-F3.4 design docs and the quality stack roadmap are migrated and rebranded.
+> **Version:** 0.18 — 2026-06-03
+> **Status:** Public-repo tracker. Documentation set drafted. License AGPL-3.0-only. Language Python 3.12+ (ADR-0010). Cutover strategy: clean new repo, no inherited history ([MINTARR_CUTOVER_PLAYBOOK.md](architecture/MINTARR_CUTOVER_PLAYBOOK.md)). HTTP_API_v1 and SIDECAR_FORMAT_v2 runtime-validated and locked. F4.1-F4.5 foundation landed post-cutover; F3.5a Soulseek completed-folder ingest is implemented. v0.2.0 docs skeletons for troubleshooting, observability, and use cases are drafted. ADR-0011 locks the Phase 2 frontend approach. F2-F3.4 design docs and the quality stack roadmap are migrated and rebranded.
 > **Audience:** Project maintainers (Eivind, Claude, Codex) coordinating doc work.
 
 ---
@@ -234,6 +234,7 @@ Per-feature design docs. Numbered F-series (F3.1, F3.4, F4.1, etc). Each one fol
 | `F4.2_INTEGRATIONS_DASHBOARD.md` | implemented | Codex | P2 | UI tab for connector status, grouped source/verifier/output inventory, no config mutation. |
 | `F4.3_CONNECTOR_CONFIG_DRY_RUN.md` | implemented | Codex | P2 | Connector config persistence, dry-run validation, mode controls, and source runtime gates. |
 | `F4.4_CONNECTOR_INSTALL_GUIDANCE.md` | implemented | Codex | P2 | Secret-safe install guidance derived from connector manifests and rendered in the Integrations dashboard. |
+| `F4.5_OPTIONAL_VERIFIER_CONNECTORS.md` | implemented | Codex | P2 | First optional metadata-identity verifier represented in connector and sensor registries, disabled by default. |
 | `F3.5_SOULSEEK_COMPLETED_INGEST.md` | implemented | Codex | P1 | Soulseek completed-folder ingest through connector registry, `/soulseek/ingest`, copy-only adapter, completed-folder safety checks. |
 | `F3.5B_SOULSEEK_SLSKD_TRIGGER.md` | implemented | Codex | P1 | slskd-backed Soulseek search/download trigger through existing Newznab/SAB flow. |
 | `F5.1_RELEASE_FAMILY_MATCHING.md` | planned | Claude | P2 | Mintarr-side mitigation of Lidarr's multi-album / edition matching weakness. Locked-in feature from ADR-0007 §"Multi-album / release matching is not a fork problem". Includes: release-family scoring, track-count + track-title similarity, edition-aware import policy, dashboard explanation when Lidarr rejects, optional manual override with audit. Estimate 15-25h. |

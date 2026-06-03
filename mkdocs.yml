@@ -171,6 +171,7 @@ nav:
       - "F4.2 Integrations dashboard": design/F4.2_INTEGRATIONS_DASHBOARD.md
       - "F4.3 Connector config dry-run": design/F4.3_CONNECTOR_CONFIG_DRY_RUN.md
       - "F4.4 Connector install guidance": design/F4.4_CONNECTOR_INSTALL_GUIDANCE.md
+      - "F4.5 Optional verifier connectors": design/F4.5_OPTIONAL_VERIFIER_CONNECTORS.md
       - "Quality stack roadmap": design/QUALITY_STACK_ROADMAP.md
 
   - Documentation Index: MINTARR_DOCUMENTATION_INDEX.md

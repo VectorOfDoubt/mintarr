@@ -352,7 +352,7 @@ The registry is populated in this order in `app/server.py`:
 2. Connectors that wrap adapters are registered next, referencing the adapter classes
 3. Standalone connectors (verifiers, outputs without adapters) are registered last
 
-Boot fails loudly if a connector references a missing adapter. Boot logs a warning (does not fail) if a `required=True` connector reports `installed=False` — operators may run Mintarr in partial-install states during setup.
+Boot fails loudly if a connector references a missing adapter. Boot logs a warning (does not fail) if a `required=True` connector reports `installed=False` — operators may run Mintarr in partial-install states during setup. Optional verifiers such as `picard_beets_acoustid` are registered in the same boot path, but default to disabled and must not affect import policy until a later policy change explicitly promotes their evidence.
 
 ## 9. Required-connector enforcement
 

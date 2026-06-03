@@ -29,5 +29,19 @@
   <div class="panel"><h2>Logs</h2><p class="muted">Log viewer lands in a later slice.</p></div>
   <div class="panel"><h2>Backup</h2><p class="muted">Backup / restore lands in a later slice.</p></div>
   <div class="panel"><h2>Updates</h2><p class="muted">Update status lands in a later slice.</p></div>
-  <div class="panel"><h2>Events</h2><p class="muted">Event feed lands in a later slice.</p></div>
+  <div class="panel">
+    <h2>Events</h2>
+    {% if events %}
+    <ul class="event-list">
+      {% for e in events %}
+      <li>
+        <span class="event-action">{{ e.action }}{% if e.result %} → {{ e.result }}{% endif %}</span>
+        <span class="event-meta muted">{{ e.actor or 'system' }} · {{ e.jid_short }} · {{ e.when }}</span>
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p class="muted">No recorded events yet.</p>
+    {% endif %}
+  </div>
 </div>

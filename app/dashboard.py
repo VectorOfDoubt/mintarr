@@ -1261,6 +1261,7 @@ def system_partial():
         return auth_resp
     try:
         import server
+        import state_db
 
         data = get_or_compute(("summary",), 10.0, lambda: _build_summary(server))
         stack = data.get("stack_health") or {}
@@ -1271,10 +1272,28 @@ def system_partial():
             "sab_emulated": queue.get("sab_emulated", 0),
             "lidarr_queue": queue.get("lidarr_queue_total"),
         }
+        events = [_audit_row(a) for a in state_db.list_actions(limit=12)]
     except Exception:
         stack = {}
         workers = {"active_jobs": 0, "sab_emulated": 0, "lidarr_queue": None}
-    return render_template("partials/system.html", stack=stack, workers=workers)
+        events = []
+    return render_template(
+        "partials/system.html", stack=stack, workers=workers, events=events
+    )
+
+
+def _audit_row(action: dict) -> dict:
+    """Flatten an audit action into the fields the Events card renders."""
+    out = dict(action)
+    out["jid_short"] = (action.get("jid") or "")[:12]
+    ts = action.get("created_at")
+    try:
+        out["when"] = (
+            datetime.fromtimestamp(float(ts)).strftime("%Y-%m-%d %H:%M") if ts else "—"
+        )
+    except (TypeError, ValueError):
+        out["when"] = "—"
+    return out
 
 
 @dashboard_bp.route("/v1/jobs/<int:job_id>", methods=["GET"])

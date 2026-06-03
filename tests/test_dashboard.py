@@ -260,6 +260,25 @@ def test_dashboard_wires_system_section(monkeypatch, tmp_path):
     assert 'id="system-live"' in shell
 
 
+def test_system_partial_renders_audit_events(monkeypatch, tmp_path):
+    """System Events card surfaces the recent audit feed (slice 7)."""
+    _patch_paths(monkeypatch, tmp_path)
+    import state_db
+    from dashboard_cache import clear
+
+    state_db.log_action("evt12345", "promote", "operator", "ok", {"note": "x"})
+    clear()
+    client = server.app.test_client()
+    body = client.get(f"/dashboard/v1/system/partial?apikey={VALID_KEY}").get_data(
+        as_text=True
+    )
+    assert "Events" in body
+    assert "event-list" in body
+    assert "promote" in body
+    assert "evt12345" in body
+    assert "Event feed lands in a later slice" not in body  # placeholder gone
+
+
 def test_dashboard_settings_ui_card(monkeypatch, tmp_path):
     """Settings UI card is an Alpine form persisting prefs client-side (slice 6)."""
     _patch_paths(monkeypatch, tmp_path)

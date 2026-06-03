@@ -215,6 +215,11 @@ main { flex: 1 1 auto; min-width: 0; padding: 16px 24px; }
   padding: 4px 0; color: var(--text-secondary);
 }
 .sys-kv span:last-child { color: var(--text-primary); font-family: var(--font-mono); }
+.event-list { list-style: none; margin: 0; padding: 0; }
+.event-list li { padding: 5px 0; border-bottom: 1px solid var(--border-subtle); }
+.event-list li:last-child { border-bottom: none; }
+.event-action { display: block; }
+.event-meta { font-size: 11px; }
 .settings-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));

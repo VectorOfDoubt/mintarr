@@ -1418,6 +1418,7 @@ def _build_record_detail(server_mod, jid: str) -> dict | None:
             "review_reason": review_reason,
         },
         "release_identity": _release_identity_detail(sidecar),
+        "release_switch_events": _release_switch_events(jid),
         "lifecycle": sidecar.get("lifecycle") or {},
         "sensors": sidecar.get("sensors") or [],
         "files": sidecar.get("files") or [],
@@ -1435,6 +1436,56 @@ def _build_record_detail(server_mod, jid: str) -> dict | None:
         "timings": timings,
         "available_actions": actions,
     }
+
+
+def _release_switch_events(jid: str) -> list[dict]:
+    """Read-only release-switch audit trail for a record (ADR-0013 / #70 req 10).
+
+    Surfaces what the release-switch strategy proposed/applied/restored. Reads
+    the state_db audit log only — no Lidarr call, no mutation.
+    """
+    try:
+        import json as _json
+
+        import state_db
+
+        rows = state_db.list_actions(jid=jid, limit=50)
+    except Exception:
+        return []
+    events: list[dict] = []
+    for row in rows:
+        if row.get("action") != "release_switch":
+            continue
+        raw = row.get("details_json")
+        try:
+            details = _json.loads(raw) if isinstance(raw, str) else (raw or {})
+        except Exception:
+            details = {}
+        if not isinstance(details, dict):
+            details = {}
+        ts = row.get("created_at")
+        try:
+            when = (
+                datetime.fromtimestamp(float(ts)).strftime("%Y-%m-%d %H:%M")
+                if ts
+                else "—"
+            )
+        except (TypeError, ValueError):
+            when = "—"
+        events.append(
+            {
+                "event": details.get("event") or row.get("result") or "",
+                "mode": details.get("mode") or "",
+                "actor": row.get("actor") or "",
+                "result": details.get("result") or row.get("result") or "",
+                "old_release_id": details.get("old_release_id"),
+                "new_release_id": details.get("new_release_id"),
+                "confidence": details.get("confidence"),
+                "reasons": details.get("reasons") or [],
+                "when": when,
+            }
+        )
+    return events
 
 
 def _release_identity_detail(sidecar: dict) -> dict | None:

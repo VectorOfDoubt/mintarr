@@ -220,6 +220,12 @@ main { flex: 1 1 auto; min-width: 0; padding: 16px 24px; }
 .event-list li:last-child { border-bottom: none; }
 .event-action { display: block; }
 .event-meta { font-size: 11px; }
+.switch-event-list { list-style: none; margin: 0; padding: 0; }
+.switch-event-list li { padding: 5px 0; border-bottom: 1px solid var(--border-subtle); }
+.switch-event-list li:last-child { border-bottom: none; }
+.switch-event { display: block; font-family: var(--font-mono); }
+.switch-meta { font-size: 11px; display: block; }
+.switch-reasons { margin: 2px 0 0; padding-left: 16px; font-size: 11px; color: var(--text-secondary); }
 .audit-download { float: right; font-size: 11px; font-weight: normal; color: var(--accent-primary); cursor: pointer; text-decoration: none; }
 .audit-download:hover { text-decoration: underline; }
 .settings-grid {

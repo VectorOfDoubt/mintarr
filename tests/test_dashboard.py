@@ -318,6 +318,48 @@ def test_dashboard_topbar_search(monkeypatch, tmp_path):
     assert "goto-section" in js
 
 
+def test_record_detail_includes_release_switch_events(monkeypatch, tmp_path):
+    """Release-switch audit trail surfaces in the record detail (read-only, #70 req 10)."""
+    _patch_paths(monkeypatch, tmp_path)
+    import state_db
+    from dashboard_cache import clear
+
+    output_dir = tmp_path / "output" / "sw123456"
+    output_dir.mkdir(parents=True)
+    server._write_verification_sidecar("sw123456", _result(jid="sw123456"), output_dir)
+    state_db.log_action(
+        jid="sw123456",
+        action="release_switch",
+        actor="mintarr_auto_high_confidence",
+        result="ok",
+        details={
+            "event": "applied",
+            "mode": "auto_high_confidence",
+            "old_release_id": 11,
+            "new_release_id": 22,
+            "reasons": ["best score 96.0 >= 95.0"],
+        },
+    )
+    clear()
+    client = server.app.test_client()
+    resp = client.get(f"/dashboard/v1/record/sw123456?apikey={VALID_KEY}")
+    assert resp.status_code == 200
+    events = resp.get_json().get("release_switch_events")
+    assert events and len(events) >= 1
+    assert events[0]["event"] == "applied"
+    assert events[0]["new_release_id"] == 22
+    assert events[0]["mode"] == "auto_high_confidence"
+
+
+def test_dashboard_js_renders_release_switch_events(monkeypatch, tmp_path):
+    """The drawer renders the release-switch audit section."""
+    _patch_paths(monkeypatch, tmp_path)
+    client = server.app.test_client()
+    js = client.get("/static/dashboard.js").get_data(as_text=True)
+    assert "function renderReleaseSwitchEvents" in js
+    assert "d.release_switch_events" in js
+
+
 def test_system_partial_renders_audit_events(monkeypatch, tmp_path):
     """System Events card surfaces the recent audit feed (slice 7)."""
     _patch_paths(monkeypatch, tmp_path)

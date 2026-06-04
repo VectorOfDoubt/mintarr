@@ -465,6 +465,27 @@ function inlineList(items, fallback='—') {
   return items.map(item => esc(String(item))).join(', ');
 }
 
+function renderReleaseSwitchEvents(events) {
+  if (!events || !events.length) return '';
+  const items = events.map(e => {
+    const reasons = (e.reasons || []).length
+      ? `<ul class="switch-reasons">${e.reasons.map(r => `<li>${esc(String(r))}</li>`).join('')}</ul>`
+      : '';
+    const result = e.result && e.result !== e.event ? ' · ' + esc(String(e.result)) : '';
+    return `<li>
+      <span class="switch-event">${esc(String(e.event || ''))}${result}</span>
+      <span class="switch-meta muted">${esc(String(e.mode || ''))} · ${esc(String(e.old_release_id ?? '—'))} → ${esc(String(e.new_release_id ?? '—'))} · ${esc(String(e.when || ''))}</span>
+      ${reasons}
+    </li>`;
+  }).join('');
+  return `
+    <section>
+      <h3>Release switch audit</h3>
+      <ul class="switch-event-list">${items}</ul>
+    </section>
+  `;
+}
+
 function renderReleaseIdentity(identity) {
   if (!identity) return '';
   const observed = identity.observed || {};
@@ -556,6 +577,7 @@ function renderDrawer(d) {
       <div class="kvrow"><span class="k">Overrides</span><span class="v">${esc(overrides)}</span></div>
     </section>
     ${renderReleaseIdentity(d.release_identity)}
+    ${renderReleaseSwitchEvents(d.release_switch_events)}
     <section>
       <h2>Score components</h2>
       ${compsRows || '<p class="muted">No component data</p>'}

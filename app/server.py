@@ -33,7 +33,7 @@ from email.utils import format_datetime
 from functools import wraps
 from html import unescape as html_unescape
 from pathlib import Path
-from typing import Literal
+from typing import Literal, cast
 from urllib.parse import quote, quote_plus, unquote_plus  # noqa: F401
 from xml.sax.saxutils import escape as xml_escape
 
@@ -96,9 +96,12 @@ TIDAL_DL_NG_CONFIG = os.environ.get(
 )
 JOBS_FILE = Path("/config/jobs.json")
 DECISIONS_LOG = Path("/config/decisions.jsonl")  # append-only audit-trail
+RELEASE_SWITCH_AUDIT_LOG = Path("/config/release_switch_audit.jsonl")
 BLOCKED_DECISIONS_DIR = Path("/config/blocked_decisions")
 DISCARDED_DIR = Path("/config/discarded")
 EXPIRED_REVIEW_DIR = Path("/config/expired_review")
+RELEASE_SWITCH_AUTO_MIN_SCORE = 95.0
+RELEASE_SWITCH_AUTO_MIN_MARGIN = 15.0
 
 SENSITIVE_REQUEST_KEYS = {
     "apikey",
@@ -1720,6 +1723,300 @@ def _is_release_family_rejection(item: dict) -> bool:
     return _release_family_is_release_family_rejection(item)
 
 
+ReleaseSwitchStrategy = Literal["disabled", "review", "auto_high_confidence"]
+
+
+def _release_switch_strategy() -> ReleaseSwitchStrategy:
+    raw = os.environ.get("MINTARR_RELEASE_SWITCH_STRATEGY", "disabled").strip().lower()
+    if raw in {"disabled", "review", "auto_high_confidence"}:
+        return cast(ReleaseSwitchStrategy, raw)
+    log.warning("Invalid MINTARR_RELEASE_SWITCH_STRATEGY=%r; using disabled", raw)
+    return "disabled"
+
+
+def _has_release_family_rejection(items: list[dict]) -> bool:
+    return any(
+        item.get("rejections") and _is_release_family_rejection(item) for item in items
+    )
+
+
+def _release_switch_allowed_for_result(result: VerificationResult) -> bool:
+    hard_audio_overrides = {"codec_mismatch", "flac_t_fail", "validator_error"}
+    if result.verification_decision == "BLOCK":
+        return False
+    if hard_audio_overrides.intersection(result.overrides):
+        return False
+    if result.identity_decision == IdentityDecision.WRONG_ALBUM.value:
+        return False
+    return True
+
+
+def _release_switch_audit(jid: str, event: str, **details) -> dict:
+    record = _with_log_timestamps({"jid": jid, "event": event, **details})
+    try:
+        RELEASE_SWITCH_AUDIT_LOG.parent.mkdir(parents=True, exist_ok=True)
+        with open(RELEASE_SWITCH_AUDIT_LOG, "a") as f:
+            f.write(json.dumps(record, default=str) + "\n")
+    except Exception:
+        log.exception("[%s] release-switch audit write failed", jid)
+    try:
+        import state_db
+
+        state_db.log_action(
+            jid=jid,
+            action="release_switch",
+            actor=str(details.get("actor") or details.get("mode") or "mintarr"),
+            result=str(details.get("result") or event),
+            details={"event": event, **details},
+        )
+    except Exception:
+        pass
+    return record
+
+
+def _release_switch_candidate_for_album(
+    jid: str,
+    aid: int,
+    *,
+    api: str,
+    key: str,
+    file_count: int,
+    downloaded_names: set[str],
+) -> dict | None:
+    album = requests.get(
+        f"{api}/album/{aid}", headers={"X-Api-Key": key}, timeout=15
+    ).json()
+    current_rel = (album.get("currentRelease") or {}).get("id")
+    releases = album.get("releases", []) or []
+    scored = []
+    for rel in releases:
+        rel_id = rel.get("id")
+        track_titles = set()
+        try:
+            tr = requests.get(
+                f"{api}/track?albumReleaseId={rel_id}",
+                headers={"X-Api-Key": key},
+                timeout=15,
+            ).json()
+            track_titles = _track_title_names(tr)
+        except Exception:
+            log.debug(
+                "[%s] release-switch track-title lookup failed", jid, exc_info=True
+            )
+        total = _score_release_match(file_count, downloaded_names, rel, track_titles)
+        scored.append((total, len(track_titles), rel_id, rel))
+    if not scored:
+        return None
+    scored.sort(key=lambda row: row[0], reverse=True)
+    best_score, best_title_count, best_id, best = scored[0]
+    current_score = next(
+        (score for score, _, rel_id, _ in scored if rel_id == current_rel),
+        0.0,
+    )
+    return {
+        "album": album,
+        "album_id": aid,
+        "current_release_id": current_rel,
+        "best_release_id": best_id,
+        "best_release": best,
+        "best_score": best_score,
+        "current_score": current_score,
+        "margin": best_score - current_score,
+        "best_track_count": best.get("trackCount"),
+        "best_title_count": best_title_count,
+        "release_count": len(scored),
+    }
+
+
+def _apply_release_switch_candidate(
+    jid: str,
+    candidate: dict,
+    *,
+    api: str,
+    key: str,
+    mode: ReleaseSwitchStrategy,
+    actor: str,
+    reasons: list[str],
+) -> dict | None:
+    old_release_id = candidate.get("current_release_id")
+    new_release_id = candidate.get("best_release_id")
+    if not new_release_id or new_release_id == old_release_id:
+        return None
+
+    album = candidate["album"]
+    snapshot = json.loads(json.dumps(album))
+    album["albumReleaseId"] = new_release_id
+    for rel in album.get("releases") or []:
+        rel["monitored"] = rel.get("id") == new_release_id
+    audit_base = {
+        "mode": mode,
+        "actor": actor,
+        "album_id": candidate.get("album_id"),
+        "old_release_id": old_release_id,
+        "new_release_id": new_release_id,
+        "confidence": candidate.get("best_score"),
+        "current_score": candidate.get("current_score"),
+        "margin": candidate.get("margin"),
+        "reasons": reasons,
+        "snapshot": snapshot,
+    }
+    _release_switch_audit(jid, "attempt", result="attempt", **audit_base)
+    put_r = requests.put(
+        f"{api}/album/{candidate['album_id']}",
+        json=album,
+        headers={"X-Api-Key": key},
+        timeout=30,
+    )
+    result = "ok" if 200 <= put_r.status_code < 300 else f"http_{put_r.status_code}"
+    audit = _release_switch_audit(
+        jid,
+        "applied" if result == "ok" else "failed",
+        result=result,
+        lidarr_status_code=put_r.status_code,
+        **audit_base,
+    )
+    return audit if result == "ok" else None
+
+
+def _maybe_auto_release_switch(
+    jid: str,
+    items: list[dict],
+    result: VerificationResult,
+    *,
+    api: str,
+    key: str,
+    output_dir: Path,
+) -> list[dict]:
+    strategy = _release_switch_strategy()
+    if strategy != "auto_high_confidence":
+        if strategy == "review" and _has_release_family_rejection(items):
+            if _release_switch_allowed_for_result(result):
+                _release_switch_audit(
+                    jid,
+                    "proposed",
+                    result="review_required",
+                    mode=strategy,
+                    actor="mintarr",
+                    reasons=[
+                        "release-family rejection present; operator review required"
+                    ],
+                )
+            else:
+                _release_switch_audit(
+                    jid,
+                    "skipped",
+                    result="policy_not_allowed",
+                    mode=strategy,
+                    actor="mintarr",
+                    decision=result.verification_decision,
+                    identity_decision=result.identity_decision,
+                    overrides=result.overrides,
+                )
+        return []
+    if not _release_switch_allowed_for_result(result):
+        _release_switch_audit(
+            jid,
+            "skipped",
+            result="policy_not_allowed",
+            mode=strategy,
+            actor="mintarr",
+            decision=result.verification_decision,
+            identity_decision=result.identity_decision,
+            overrides=result.overrides,
+        )
+        return []
+    if not _has_release_family_rejection(items):
+        return []
+
+    file_count = _count_audio_files(output_dir)
+    if file_count < 4:
+        return []
+    downloaded_names = _downloaded_track_names(output_dir)
+    applied: list[dict] = []
+    for aid in _album_ids_from_manualimport(items):
+        try:
+            candidate = _release_switch_candidate_for_album(
+                jid,
+                aid,
+                api=api,
+                key=key,
+                file_count=file_count,
+                downloaded_names=downloaded_names,
+            )
+            if not candidate:
+                continue
+            if candidate["best_release_id"] == candidate["current_release_id"]:
+                continue
+            if candidate["best_score"] < RELEASE_SWITCH_AUTO_MIN_SCORE:
+                continue
+            if candidate["margin"] < RELEASE_SWITCH_AUTO_MIN_MARGIN:
+                continue
+            audit = _apply_release_switch_candidate(
+                jid,
+                candidate,
+                api=api,
+                key=key,
+                mode=strategy,
+                actor="mintarr_auto_high_confidence",
+                reasons=[
+                    "release-family rejection present",
+                    f"best score {candidate['best_score']:.1f} >= {RELEASE_SWITCH_AUTO_MIN_SCORE:.1f}",
+                    f"margin {candidate['margin']:.1f} >= {RELEASE_SWITCH_AUTO_MIN_MARGIN:.1f}",
+                ],
+            )
+            if audit:
+                applied.append(audit)
+        except Exception:
+            log.exception("[%s] release-switch failed for album %s", jid, aid)
+    return applied
+
+
+def _restore_release_switches(
+    jid: str,
+    audits: list[dict],
+    *,
+    api: str,
+    key: str,
+    trigger: str,
+) -> None:
+    for audit in reversed(audits):
+        snapshot = audit.get("snapshot")
+        album_id = audit.get("album_id")
+        if not snapshot or not album_id:
+            continue
+        try:
+            r = requests.put(
+                f"{api}/album/{album_id}",
+                json=snapshot,
+                headers={"X-Api-Key": key},
+                timeout=30,
+            )
+            result = "ok" if 200 <= r.status_code < 300 else f"http_{r.status_code}"
+            _release_switch_audit(
+                jid,
+                "restored",
+                result=result,
+                actor="mintarr_restore",
+                mode=audit.get("mode"),
+                album_id=album_id,
+                old_release_id=audit.get("new_release_id"),
+                new_release_id=audit.get("old_release_id"),
+                trigger=trigger,
+                lidarr_status_code=r.status_code,
+            )
+        except Exception as exc:
+            _release_switch_audit(
+                jid,
+                "restore_failed",
+                result="exception",
+                actor="mintarr_restore",
+                mode=audit.get("mode"),
+                album_id=album_id,
+                trigger=trigger,
+                error=str(exc),
+            )
+
+
 def _album_ids_from_manualimport(items: list[dict]) -> list[int]:
     return sorted(
         {i["album"]["id"] for i in items if i.get("album") and i["album"].get("id")}
@@ -3237,120 +3534,6 @@ def _trigger_lidarr_import(
 
     items = _lookup()
 
-    # 1.5. Lidarr 80%-match-bug workaround: auto-pick albumRelease that matches track-count
-    # Lidarr often has many MBz releases (standard, deluxe, expanded). If the downloaded album
-    # has a track-count matching a DIFFERENT release than the active one, switch the active release first.
-    file_count = _count_audio_files(output_dir)
-    initial_album_ids = _album_ids_from_manualimport(items)
-    if items and file_count >= 4:  # skip for small/single-track items
-        rejected_due_to_match = any(
-            any(
-                "match is not close enough" in (r.get("reason", "") or "")
-                or "missing tracks" in (r.get("reason", "") or "").lower()
-                or "unmatched tracks" in (r.get("reason", "") or "").lower()
-                for r in (i.get("rejections") or [])
-            )
-            for i in items
-        )
-        if rejected_due_to_match and initial_album_ids:
-            log.warning(
-                "[%s] Lidarr 80%%-match-bug detected — trying auto-release-switch", jid
-            )
-            # Build set of track names from downloaded files, normalised for remaster/edition noise.
-            downloaded_names = _downloaded_track_names(output_dir)
-            log.info(
-                "[%s] downloaded track-names sample: %s",
-                jid,
-                list(downloaded_names)[:3],
-            )
-
-            for aid in initial_album_ids:
-                try:
-                    album = requests.get(
-                        f"{api}/album/{aid}", headers={"X-Api-Key": key}, timeout=15
-                    ).json()
-                    current_rel = (album.get("currentRelease") or {}).get("id")
-                    releases = album.get("releases", [])
-                    # Score each release: track-count proximity + name overlap
-                    scored = []
-                    for rel in releases:
-                        rel_tracks = rel.get("trackCount", 0)
-                        # Fetch track titles for this release
-                        rel_id = rel.get("id")
-                        track_titles = set()
-                        try:
-                            tr = requests.get(
-                                f"{api}/track?albumReleaseId={rel_id}",
-                                headers={"X-Api-Key": key},
-                                timeout=15,
-                            ).json()
-                            track_titles = _track_title_names(tr)
-                        except Exception:
-                            pass
-                        # Score: track-count-match (40%) + normalised name overlap (60%).
-                        total = _score_release_match(
-                            file_count, downloaded_names, rel, track_titles
-                        )
-                        scored.append(
-                            (total, rel_tracks, len(track_titles), rel_id, rel)
-                        )
-                    if not scored:
-                        log.warning(
-                            "[%s] No releases to switch to for album %s", jid, aid
-                        )
-                        continue
-                    scored.sort(reverse=True)  # highest score first
-                    best_score, best_tracks, _, best_id, best = scored[0]
-                    log.info(
-                        "[%s] Release-scoring for album %s: best=%s (score=%.1f, tracks=%s) of %d candidates",
-                        jid,
-                        aid,
-                        best_id,
-                        best_score,
-                        best_tracks,
-                        len(scored),
-                    )
-
-                    if best_score < 50:
-                        log.warning(
-                            "[%s] Best release score is too low (%.1f) — probably wrong Tidal album. Skipping switch.",
-                            jid,
-                            best_score,
-                        )
-                        continue
-
-                    if best_id and best_id != current_rel:
-                        album["albumReleaseId"] = best_id
-                        for rel in releases:
-                            rel["monitored"] = rel["id"] == best_id
-                        put_r = requests.put(
-                            f"{api}/album/{aid}",
-                            json=album,
-                            headers={"X-Api-Key": key},
-                            timeout=30,
-                        )
-                        log.info(
-                            "[%s] Switched album %s to release %s (tracks=%s, score=%.1f, was %s) HTTP=%s",
-                            jid,
-                            aid,
-                            best_id,
-                            best_tracks,
-                            best_score,
-                            current_rel,
-                            put_r.status_code,
-                        )
-                except Exception:
-                    log.exception("[%s] release-switch failed for album %s", jid, aid)
-            # Re-fetch manualimport candidates with the new release active.
-            time.sleep(2)
-            items = _lookup()
-            log.info(
-                "[%s] After release-switch: %d candidates (%d accepted)",
-                jid,
-                len(items),
-                sum(1 for i in items if not i.get("rejections")),
-            )
-
     # 2. Fetch existing quality for matching album(s)
     album_ids = _album_ids_from_manualimport(items)
     existing_kbps = 0
@@ -3754,6 +3937,31 @@ def _trigger_lidarr_import(
                 title=_jobs.get(jid, {}).get("title", ""),
             )
 
+    release_switch_audits = _maybe_auto_release_switch(
+        jid,
+        items,
+        v2_result,
+        api=api,
+        key=key,
+        output_dir=output_dir,
+    )
+
+    def _restore_after_release_switch(trigger: str) -> None:
+        if release_switch_audits:
+            _restore_release_switches(
+                jid, release_switch_audits, api=api, key=key, trigger=trigger
+            )
+
+    if release_switch_audits:
+        time.sleep(2)
+        items = _lookup()
+        log.info(
+            "[%s] After release-switch: %d candidates (%d accepted)",
+            jid,
+            len(items),
+            sum(1 for i in items if not i.get("rejections")),
+        )
+
     # Lidarr's path to our output (same bind mount as OUTPUT_BASE, translated
     # through MINTARR_LIDARR_COMPLETE_ROOT).
     lidarr_path = _lidarr_complete_path(jid)
@@ -3795,6 +4003,7 @@ def _trigger_lidarr_import(
         )
         _write_sidecar_maybe(v2_result, output_dir)
         _mark_import_failed(jid, reason)
+        _restore_after_release_switch("manualimport_rejected")
         _cleanup_lidarr_queue(jid, api, key)
         return
     items = r.json()
@@ -3889,6 +4098,9 @@ def _trigger_lidarr_import(
                                             )
                                             _write_sidecar_maybe(v2_result, output_dir)
                                             _mark_import_failed(jid, reason)
+                                            _restore_after_release_switch(
+                                                "rescue_failed"
+                                            )
                                             _cleanup_lidarr_queue(jid, api, key)
                                         return
                                     break
@@ -3914,6 +4126,7 @@ def _trigger_lidarr_import(
         )
         _write_sidecar_maybe(v2_result, output_dir)
         _mark_import_failed(jid, reason)
+        _restore_after_release_switch("manualimport_zero_imported")
         _cleanup_lidarr_queue(jid, api, key)
         return
 
@@ -3943,6 +4156,7 @@ def _trigger_lidarr_import(
         )
         _write_sidecar_maybe(v2_result, output_dir)
         _mark_import_failed(jid, guard_reason)
+        _restore_after_release_switch("manualimport_rejected")
         _cleanup_lidarr_queue(jid, api, key)
         return
 
@@ -3995,6 +4209,7 @@ def _trigger_lidarr_import(
         )
         _write_sidecar_maybe(v2_result, output_dir)
         _mark_import_failed(jid, reason)
+        _restore_after_release_switch("manualimport_rejected")
         _cleanup_lidarr_queue(jid, api, key)
         return
 
@@ -4065,6 +4280,7 @@ def _trigger_lidarr_import(
         )
         _set_v2_import_outcome(v2_result, "PENDING")
         _write_sidecar_maybe(v2_result, output_dir)
+        _restore_after_release_switch("manualimport_timeout")
         with _jobs_lock:
             _jobs[jid]["warning"] = "Lidarr ManualImport pending"
             _save_jobs()
@@ -4108,6 +4324,7 @@ def _trigger_lidarr_import(
             )
             _write_sidecar_maybe(v2_result, output_dir)
             _mark_import_failed(jid, reason)
+            _restore_after_release_switch("rescue_failed")
             _cleanup_lidarr_queue(jid, api, key)
     except Exception:
         log.exception("[%s] Rescue failed", jid)
@@ -4130,6 +4347,7 @@ def _trigger_lidarr_import(
         )
         _write_sidecar_maybe(v2_result, output_dir)
         _mark_import_failed(jid, reason)
+        _restore_after_release_switch("rescue_failed")
         _cleanup_lidarr_queue(jid, api, key)
 
 

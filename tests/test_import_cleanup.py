@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import json
 import os
 from types import SimpleNamespace
 from unittest.mock import ANY
 
 import server
+from verification import VerificationResult
 
 
 def _response(status_code=200, payload=None, text=""):
@@ -29,6 +31,26 @@ def _assert_queue_cleanup(delete_mock, api: str, key: str, qid: int):
         headers={"X-Api-Key": key},
         timeout=10,
     )
+
+
+def _release_family_items(jid: str, count: int = 4) -> list[dict]:
+    return [
+        {
+            "path": f"/downloads/TidalHiRes/complete/{jid}/{idx:02d} - Track {idx}.flac",
+            "artist": {"id": 10},
+            "album": {"id": 20, "currentRelease": {"id": 30}},
+            "albumReleaseId": 30,
+            "tracks": [{"id": 100 + idx, "title": f"Track {idx}"}],
+            "quality": {"quality": {"name": "FLAC 24bit"}},
+            "rejections": [
+                {
+                    "reason": "Album match is not close enough: 70.1 % vs 80 %",
+                    "type": "permanent",
+                }
+            ],
+        }
+        for idx in range(1, count + 1)
+    ]
 
 
 def test_rescue_place_and_rescan_can_be_disabled(monkeypatch, mocker):
@@ -716,6 +738,168 @@ def test_release_family_rejections_are_force_imported_after_verification(
     assert post_mock.call_count == 2
     assert server._jobs[jid]["status"] == "completed"
     assert server._jobs[jid]["hidden_from_lidarr"] is True
+
+
+def test_release_switch_default_disabled_does_not_put_album(
+    tmp_path, mocker, monkeypatch
+):
+    jid = "swdisabled1"
+    output_dir = tmp_path / jid
+    output_dir.mkdir()
+    for idx in range(1, 5):
+        (output_dir / f"{idx:02d} - Track {idx}.flac").write_bytes(b"flac")
+
+    api = "http://lidarr/api/v1"
+    key = "lidarr-key"
+    _seed_job(jid)
+    manualimport_items = _release_family_items(jid, count=4)
+    monkeypatch.delenv("MINTARR_RELEASE_SWITCH_STRATEGY", raising=False)
+    mocker.patch.dict(os.environ, {"LIDARR_API_URL": api})
+    mocker.patch.object(server, "_get_lidarr_key", return_value=key)
+    mocker.patch.object(server, "_log_decision")
+    mocker.patch.object(server, "_save_jobs")
+
+    trackfile_calls = {"count": 0}
+
+    def fake_get(url, **kwargs):
+        if url == f"{api}/manualimport":
+            return _response(payload=manualimport_items)
+        if url == f"{api}/trackfile?albumId=20":
+            trackfile_calls["count"] += 1
+            if trackfile_calls["count"] == 1:
+                return _response(payload=[])
+            return _response(payload=[{"id": idx} for idx in range(4)])
+        if url == f"{api}/album/20":
+            return _response(payload={"id": 20, "statistics": {"trackCount": 4}})
+        if url == f"{api}/queue?pageSize=200":
+            return _response(payload={"records": [{"id": 55, "downloadId": jid}]})
+        raise AssertionError(f"unexpected GET {url}")
+
+    def fake_post(url, **kwargs):
+        if url == "http://host.docker.internal:8889/analyze":
+            return _response(payload={"overall_verdict": "AUTHENTIC", "file_count": 4})
+        if url == f"{api}/command":
+            return _response(status_code=201, payload={"id": 123})
+        raise AssertionError(f"unexpected POST {url}")
+
+    mocker.patch("requests.get", side_effect=fake_get)
+    mocker.patch("requests.post", side_effect=fake_post)
+    put_mock = mocker.patch("requests.put")
+    delete_mock = mocker.patch(
+        "requests.delete", return_value=_response(status_code=204)
+    )
+
+    server._trigger_lidarr_import(jid, output_dir)
+
+    put_mock.assert_not_called()
+    delete_mock.assert_not_called()
+    assert server._jobs[jid]["status"] == "completed"
+
+
+def test_release_switch_disallowed_for_audio_block_and_wrong_album():
+    blocked = VerificationResult(
+        jid="switchblk",
+        score=0,
+        verification_decision="BLOCK",
+        overrides=["codec_mismatch"],
+    )
+    wrong_album = VerificationResult(
+        jid="switchwrong",
+        score=100,
+        verification_decision="ACCEPT",
+        identity_decision="WRONG_ALBUM",
+    )
+
+    assert server._release_switch_allowed_for_result(blocked) is False
+    assert server._release_switch_allowed_for_result(wrong_album) is False
+
+
+def test_release_switch_auto_restores_previous_release_on_import_failure(
+    tmp_path, mocker, monkeypatch
+):
+    jid = "swautorestore"
+    output_dir = tmp_path / jid
+    output_dir.mkdir()
+    for idx in range(1, 5):
+        (output_dir / f"{idx:02d} - Track {idx}.flac").write_bytes(b"flac")
+
+    api = "http://lidarr/api/v1"
+    key = "lidarr-key"
+    _seed_job(jid)
+    audit_log = tmp_path / "release_switch_audit.jsonl"
+    manualimport_calls = {"count": 0}
+    album_payload = {
+        "id": 20,
+        "currentRelease": {"id": 30},
+        "albumReleaseId": 30,
+        "statistics": {"trackCount": 4, "trackFileCount": 0},
+        "releases": [
+            {"id": 30, "trackCount": 2, "monitored": True},
+            {"id": 40, "trackCount": 4, "monitored": False},
+        ],
+    }
+
+    monkeypatch.setenv("MINTARR_RELEASE_SWITCH_STRATEGY", "auto_high_confidence")
+    mocker.patch.dict(os.environ, {"LIDARR_API_URL": api})
+    mocker.patch.object(server, "RELEASE_SWITCH_AUDIT_LOG", audit_log)
+    mocker.patch.object(server, "_get_lidarr_key", return_value=key)
+    mocker.patch.object(server, "_log_decision")
+    mocker.patch.object(server, "_save_jobs")
+    mocker.patch.object(server.time, "sleep")
+
+    def fake_get(url, **kwargs):
+        if url == f"{api}/manualimport":
+            manualimport_calls["count"] += 1
+            if manualimport_calls["count"] == 1:
+                return _response(payload=_release_family_items(jid, count=4))
+            return _response(payload=[])
+        if url == f"{api}/trackfile?albumId=20":
+            return _response(payload=[])
+        if url == f"{api}/album/20":
+            return _response(payload=json.loads(json.dumps(album_payload)))
+        if url == f"{api}/track?albumReleaseId=30":
+            return _response(
+                payload=[
+                    {"id": 101, "title": "Intro"},
+                    {"id": 102, "title": "Outro"},
+                ]
+            )
+        if url == f"{api}/track?albumReleaseId=40":
+            return _response(
+                payload=[
+                    {"id": 101, "title": "Track 1"},
+                    {"id": 102, "title": "Track 2"},
+                    {"id": 103, "title": "Track 3"},
+                    {"id": 104, "title": "Track 4"},
+                ]
+            )
+        if url == f"{api}/queue?pageSize=200":
+            return _response(payload={"records": [{"id": 77, "downloadId": jid}]})
+        raise AssertionError(f"unexpected GET {url}")
+
+    def fake_post(url, **kwargs):
+        if url == "http://host.docker.internal:8889/analyze":
+            return _response(payload={"overall_verdict": "AUTHENTIC", "file_count": 4})
+        raise AssertionError(f"unexpected POST {url}")
+
+    mocker.patch("requests.get", side_effect=fake_get)
+    mocker.patch("requests.post", side_effect=fake_post)
+    put_mock = mocker.patch("requests.put", return_value=_response(status_code=200))
+    delete_mock = mocker.patch(
+        "requests.delete", return_value=_response(status_code=204)
+    )
+
+    server._trigger_lidarr_import(jid, output_dir)
+
+    assert put_mock.call_count == 2
+    switched_album = put_mock.call_args_list[0].kwargs["json"]
+    restored_album = put_mock.call_args_list[1].kwargs["json"]
+    assert switched_album["albumReleaseId"] == 40
+    assert restored_album["albumReleaseId"] == 30
+    events = [json.loads(line) for line in audit_log.read_text().splitlines()]
+    assert [event["event"] for event in events] == ["attempt", "applied", "restored"]
+    assert events[-1]["trigger"] == "manualimport_zero_imported"
+    _assert_queue_cleanup(delete_mock, api, key, 77)
 
 
 def test_validator_fail_closed_cleans_lidarr_queue(tmp_path, mocker):

@@ -132,23 +132,31 @@ Healthy idle state usually means:
 
 During a grab, active jobs and queue rows are expected.
 
-## 6. Planned metrics
+## 6. Metrics (`/metrics`)
 
-Phase 3 introduces a Prometheus `/metrics` endpoint. The initial catalogue should
-cover:
+Mintarr exposes a Prometheus endpoint at **`GET /metrics`**. It is
+**unauthenticated** by convention — like `/health` — so a Prometheus scraper on
+the private network can pull without a key. It exposes operational counts only
+(no secrets) and is **state-derived from the local database**, so a scrape never
+calls Lidarr and stays fast and independent of external-service availability.
 
-| Metric | Type | Purpose |
-|---|---|---|
-| `mintarr_jobs_active` | Gauge | active worker jobs |
-| `mintarr_jobs_total` | Counter | jobs by source/type/result |
-| `mintarr_imports_total` | Counter | import outcomes |
-| `mintarr_verification_decisions_total` | Counter | ACCEPT / REVIEW_REQUIRED / BLOCK |
-| `mintarr_lidarr_queue_total` | Gauge | Lidarr tracked-download queue size |
-| `mintarr_lidarr_blocking_commands` | Gauge | blocking Lidarr commands |
-| `mintarr_connector_health` | Gauge | connector health by connector id |
-| `mintarr_pipeline_stage_seconds` | Histogram | per-stage timing |
+```bash
+curl -s http://127.0.0.1:5025/metrics
+```
 
-Metric names are provisional until the Phase 3 metrics spec is written.
+Currently exposed:
+
+| Metric | Type | Labels | Purpose |
+|---|---|---|---|
+| `mintarr_up` | Gauge | — | `1` while the app is serving |
+| `mintarr_records` | Gauge | `status` | records by derived status (imported, needs_review, blocked, …) |
+| `mintarr_jobs` | Gauge | `state` | worker jobs by state (queued, running, completed, failed, …) |
+| `mintarr_active_jobs` | Gauge | — | active worker jobs (queued/running/cancelling) |
+
+Planned for later slices (cumulative event counters + histograms, which require
+instrumentation rather than current-state gauges): import outcomes, V2 decision
+counts, release-identity decisions, release-switch events, Lidarr queue/command
+health, connector health, and per-stage pipeline timing histograms.
 
 ## 7. Performance Baseline
 

@@ -5334,6 +5334,20 @@ def health():
         return jsonify({"status": "degraded"}), 503
 
 
+@app.route("/metrics")
+def metrics():
+    """Prometheus metrics (Phase 3 slice 2).
+
+    Unauthenticated by convention, like /health, so a Prometheus scraper on the
+    private network can pull without a key. Exposes operational counts only —
+    no secrets. State-derived; does not call Lidarr.
+    """
+    from metrics import render_metrics
+
+    body, content_type = render_metrics()
+    return Response(body, mimetype=content_type)
+
+
 @app.route("/jobs")
 @require_apikey
 def jobs():

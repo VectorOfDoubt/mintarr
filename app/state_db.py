@@ -534,6 +534,22 @@ def set_connector_config(
         return None
 
 
+def count_jobs_by_state() -> dict[str, int]:
+    """Aggregate worker-job count per state (for /metrics queue depth)."""
+    if not _ensure_initialized():
+        return {}
+    try:
+        with _lock, _connect() as conn:
+            rows = conn.execute(
+                "SELECT state, COUNT(*) AS n FROM jobs "
+                "WHERE state IS NOT NULL GROUP BY state"
+            ).fetchall()
+            return {r["state"]: r["n"] for r in rows}
+    except Exception:
+        log.exception("state_db.count_jobs_by_state failed")
+        return {}
+
+
 def count_by_status() -> dict[str, int]:
     """Aggregate count per derived_status for summary cards."""
     if not _ensure_initialized():

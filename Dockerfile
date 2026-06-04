@@ -13,6 +13,7 @@ RUN pip install --no-cache-dir \
     flask==3.1.3 \
     gunicorn==26.0.0 \
     mutagen==1.47.0 \
+    prometheus-client==0.21.1 \
     requests==2.32.5
 
 # The pinned Radexito CLI still defaults stored tokens to non-PKCE OAuth,

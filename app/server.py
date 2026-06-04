@@ -47,6 +47,15 @@ from adapters.tidal import (  # noqa: F401
     search_albums as _search_albums,
 )
 from dashboard import dashboard_bp
+from release_family import (
+    AUDIO_SUFFIXES,
+    is_release_family_rejection as _release_family_is_release_family_rejection,
+    normalized_track_names_from_titles as _release_family_track_names_from_titles,
+    normalize_track_title_for_match as _release_family_normalize_track_title,
+    rejection_reasons as _release_family_rejection_reasons,
+    score_lidarr_release_match as _release_family_score_lidarr_release,
+    track_title_names as _release_family_track_title_names,
+)
 from sensor_registry import default_registry
 from verification import (
     ImportOutcome,
@@ -1655,13 +1664,6 @@ QUALITY_KBPS = {
     "WavPack": 1411,
 }
 
-AUDIO_SUFFIXES = (".flac", ".m4a", ".mp3", ".ogg", ".aac")
-RELEASE_FAMILY_REJECTION_MARKERS = (
-    "match is not close enough",
-    "missing tracks",
-    "unmatched tracks",
-)
-
 
 def _count_audio_files(output_dir: Path) -> int:
     return sum(
@@ -1678,70 +1680,37 @@ def _has_flac_files(output_dir: Path) -> bool:
 
 
 def _normalize_track_title_for_match(title: str) -> str:
-    """Normalize remaster/edition noise while preserving alternate-version identity."""
-    path = Path(title)
-    normalized = path.stem if path.suffix.lower() in AUDIO_SUFFIXES else title
-    normalized = re.sub(
-        r"^\s*(?:disc\s*)?\d{1,2}[\s._-]+(?:\d{1,2}[\s._-]+)?",
-        "",
-        normalized,
-        flags=re.I,
-    )
-    if " - " in normalized:
-        normalized = normalized.rsplit(" - ", 1)[-1]
-    normalized = re.sub(
-        r"[\[(]\s*(?:\d{4}\s+)?(?:remaster(?:ed)?|remix(?:ed)?|anniversary remaster)\s*[\])]",
-        "",
-        normalized,
-        flags=re.I,
-    )
-    normalized = re.sub(r"\b(?:\d{4}\s+)?remaster(?:ed)?\b", "", normalized, flags=re.I)
-    normalized = re.sub(r"[^a-z0-9]+", " ", normalized.lower())
-    return re.sub(r"\s+", " ", normalized).strip()
+    return _release_family_normalize_track_title(title)
 
 
 def _downloaded_track_names(output_dir: Path) -> set[str]:
-    names = set()
-    for f in output_dir.rglob("*"):
-        if f.is_file() and f.suffix.lower() in AUDIO_SUFFIXES:
-            normalized = _normalize_track_title_for_match(f.name)
-            if normalized:
-                names.add(normalized)
-    return names
+    return _release_family_track_names_from_titles(
+        [
+            f.name
+            for f in output_dir.rglob("*")
+            if f.is_file() and f.suffix.lower() in AUDIO_SUFFIXES
+        ]
+    )
 
 
 def _track_title_names(tracks: list[dict]) -> set[str]:
-    names = set()
-    for track in tracks:
-        normalized = _normalize_track_title_for_match(track.get("title") or "")
-        if normalized:
-            names.add(normalized)
-    return names
+    return _release_family_track_title_names(tracks)
 
 
 def _score_release_match(
     file_count: int, downloaded_names: set[str], rel: dict, track_titles: set[str]
 ) -> float:
-    rel_tracks = int(rel.get("trackCount") or len(track_titles) or 0)
-    count_score = max(0, 100 - abs(rel_tracks - file_count) * 10)
-    if downloaded_names and track_titles:
-        matches = sum(1 for name in downloaded_names if name in track_titles)
-        name_score = (matches / len(downloaded_names)) * 100
-    else:
-        name_score = 50
-    return count_score * 0.4 + name_score * 0.6
+    return _release_family_score_lidarr_release(
+        file_count, downloaded_names, rel, track_titles
+    )
 
 
 def _rejection_reasons(item: dict) -> list[str]:
-    return [str(r.get("reason", "")).lower() for r in item.get("rejections") or []]
+    return _release_family_rejection_reasons(item)
 
 
 def _is_release_family_rejection(item: dict) -> bool:
-    reasons = _rejection_reasons(item)
-    return bool(reasons) and all(
-        any(marker in reason for marker in RELEASE_FAMILY_REJECTION_MARKERS)
-        for reason in reasons
-    )
+    return _release_family_is_release_family_rejection(item)
 
 
 def _album_ids_from_manualimport(items: list[dict]) -> list[int]:

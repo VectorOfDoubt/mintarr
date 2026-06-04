@@ -192,6 +192,23 @@ Each entry is one verifier's run on this record.
         "file_count": 11,
         "suspicious_files": 0
       }
+    },
+    {
+      "name": "release_identity",
+      "class": "metadata_identity",
+      "status": "warn",
+      "severity": "info",
+      "confidence": 0.3,
+      "summary": "Observed release identity evidence uses filename fallback only.",
+      "evidence": {
+        "file_count": 11,
+        "track_titles": ["track one", "track two"],
+        "artist_mbids": [],
+        "release_group_mbids": [],
+        "release_mbids": [],
+        "mutagen_available": true,
+        "tag_read_errors": 0
+      }
     }
   ]
 }
@@ -213,6 +230,29 @@ Each entry is one verifier's run on this record.
 | `duration_ms` | int \| null | yes | Sensor runtime in milliseconds when measured. |
 | `summary` | string | no | Human-readable sensor summary for dashboard display. |
 | `evidence` | object | yes | Sensor-specific evidence payload. Sensor-defined schema; not normalized. |
+
+### 7.2 `release_identity` evidence
+
+F5.1 adds a read-only `release_identity` metadata sensor. It collects observed
+release metadata from audio file tags with filename fallback and persists that
+evidence for later release-family policy. In the first implementation this
+sensor is **non-blocking**: it does not change `v2_score`,
+`v2_verification_decision`, or `v2_overrides`.
+
+Current evidence keys:
+
+| Field | Type | Description |
+|---|---|---|
+| `file_count` | int | Number of supported audio files inspected. |
+| `track_titles` | array[string] | Normalized observed track titles, from tags when possible, otherwise filenames. |
+| `artist_names` | array[string] | Artist names observed in file tags. Empty when unavailable. |
+| `album_titles` | array[string] | Album titles observed in file tags. Empty when unavailable. |
+| `artist_mbids` | array[string] | MusicBrainz artist IDs observed in tags. |
+| `release_group_mbids` | array[string] | MusicBrainz release-group IDs observed in tags. |
+| `release_mbids` | array[string] | MusicBrainz release IDs observed in tags. |
+| `mutagen_available` | bool | Whether the Mutagen reader was importable at runtime. |
+| `tag_read_errors` | int | Number of files where tag reading failed before filename fallback. |
+| `files` | array[object] | Per-file metadata evidence: path, raw title, normalized title, optional artist/album/MBIDs, tag source, and tag-read error. |
 
 ## 8. `files` array
 

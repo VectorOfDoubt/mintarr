@@ -79,6 +79,17 @@ DEFAULT_SENSORS: tuple[SensorDefinition, ...] = (
         fail_policy="warn",
         applies_to=("tidal", "web", "usenet", "torrent", "soulseek", "cd_rip"),
     ),
+    SensorDefinition(
+        name="release_identity",
+        sensor_class="metadata_identity",
+        stage="metadata",
+        enabled=True,
+        required=False,
+        timeout_sec=30,
+        fail_policy="warn",
+        applies_to=("tidal", "web", "usenet", "torrent", "soulseek", "cd_rip"),
+        evidence_schema_version="release-identity-evidence-v1",
+    ),
 )
 
 

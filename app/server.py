@@ -56,6 +56,7 @@ from release_family import (
     score_lidarr_release_match as _release_family_score_lidarr_release,
     track_title_names as _release_family_track_title_names,
 )
+from release_metadata import collect_observed_release
 from sensor_registry import default_registry
 from verification import (
     ImportOutcome,
@@ -2208,6 +2209,35 @@ def _build_sensor_results(
     ]
 
 
+def _build_release_identity_sensor(output_dir: Path) -> dict:
+    observed_evidence = collect_observed_release(output_dir)
+    if observed_evidence.observed.file_count == 0:
+        status, severity, confidence = "skipped", "info", 0.0
+        summary = "No audio files available for release identity evidence."
+    elif any(
+        file_info["tag_source"] == "mutagen" for file_info in observed_evidence.files
+    ):
+        status, severity, confidence = "pass", "none", 0.7
+        summary = (
+            "Observed release identity evidence collected from file tags with "
+            "filename fallback."
+        )
+    else:
+        status, severity, confidence = "warn", "info", 0.3
+        summary = "Observed release identity evidence uses filename fallback only."
+
+    return _sensor_result(
+        "release_identity",
+        "metadata_identity",
+        status,
+        severity,
+        confidence,
+        summary,
+        observed_evidence.to_sensor_evidence(),
+        sensor_version="mintarr-release-identity 2026-06-04",
+    )
+
+
 def _compute_verification(
     jid: str,
     output_dir: Path,
@@ -2268,6 +2298,7 @@ def _compute_verification(
         normalized_verdict=normalized_verdict,
         job_quality=job_quality,
     )
+    sensors.append(_build_release_identity_sensor(output_dir))
     files = _detective_file_evidence(detective_result, output_dir)
     decision = decide(
         score,

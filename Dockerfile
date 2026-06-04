@@ -12,6 +12,7 @@ RUN pip install --no-cache-dir \
     "git+https://github.com/Radexito/tidal-dl-ng-For-DJ.git@87ec210dfeeef23441b7c99a16123a25ec63f207" \
     flask==3.1.3 \
     gunicorn==26.0.0 \
+    mutagen==1.47.0 \
     requests==2.32.5
 
 # The pinned Radexito CLI still defaults stored tokens to non-PKCE OAuth,

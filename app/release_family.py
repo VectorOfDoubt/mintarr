@@ -32,6 +32,11 @@ class IdentityDecision(StrEnum):
 class ObservedRelease:
     file_count: int = 0
     track_titles: frozenset[str] = frozenset()
+    artist_names: frozenset[str] = frozenset()
+    album_titles: frozenset[str] = frozenset()
+    artist_mbids: frozenset[str] = frozenset()
+    release_group_mbids: frozenset[str] = frozenset()
+    release_mbids: frozenset[str] = frozenset()
     artist_mbid: str | None = None
     release_group_mbid: str | None = None
     release_mbid: str | None = None

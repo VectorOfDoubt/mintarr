@@ -58,10 +58,13 @@ def test_compute_verification_accepts_complete_authentic_album(tmp_path):
         "ffprobe",
         "flac_t",
         "flac_detective",
+        "release_identity",
     ]
     assert result.sensors[0]["status"] == "pass"
     assert result.sensors[1]["status"] == "pass"
     assert result.sensors[2]["evidence"]["overall_verdict"] == "AUTHENTIC"
+    assert result.sensors[3]["class"] == "metadata_identity"
+    assert result.sensors[3]["evidence"]["track_titles"] == ["01"]
 
 
 def test_compute_verification_validator_error_blocks(tmp_path):

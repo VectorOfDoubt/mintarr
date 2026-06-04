@@ -184,6 +184,7 @@ Legend:
 | `adr/0010-python-implementation-language.md` | locked | Claude/Eivind | P0 | Locks Python 3.12+ as implementation language. Prevents future rewrite-to-C#-or-Rust proposals without explicit successor ADR. |
 | `adr/0011-frontend-framework.md` | locked | Claude/Codex | P2 | Locks Phase 2 dashboard on server-rendered Flask with HTMX + Alpine.js, no Node toolchain, and no SPA framework. |
 | `adr/0012-qc-import-gate-scope.md` | locked | Claude/Eivind | P1 | Scopes Mintarr as the QC import gate for Mintarr-routed sources only (own lanes + operator-routed completed folders); Lidarr-client discovery is onboarding, universal gate deferred to a future ADR. |
+| `adr/0013-release-family-identity-policy.md` | locked | Claude/Codex/Eivind | P2 | Locks the F5.1 release-family identity-policy architecture: Lidarr-first metadata, MusicBrainz advisory evidence, separate audio/identity axes, confidence/abstain behavior, and default-off audited release switching. |
 
 ### 6.4 Specs (`docs/specs/`)
 
@@ -338,5 +339,6 @@ When Codex and Claude work in parallel, they coordinate via this index — the *
 | 0.16 | 2026-06-03 | **Quality roadmap migration batch 2.** Migrated and rebranded `QUALITY_STACK_ROADMAP.md` from the legacy private docs into public `docs/design/`. |
 | 0.17 | 2026-06-03 | **F4.4 connector install guidance implemented.** Added secret-safe install guidance payloads for connectors and dashboard/operator documentation for missing service/env/mount setup. |
 | 0.18 | 2026-06-03 | **ADR-0012 QC import-gate scope locked.** Mintarr is the QC import gate for Mintarr-routed sources only (its own lanes + operator-routed completed folders); reading Lidarr's download-client config is onboarding/discovery, not a coverage guarantee, and the universal "QC everything Lidarr imports" gate is a deferred future phase. |
+| 0.19 | 2026-06-04 | **ADR-0013 release-family identity policy drafted.** F5.1 is framed as a separate identity-policy axis beside audio QC: Lidarr-first expected metadata, MusicBrainz/advisory identity evidence, confidence/abstain behavior, and default-off audited release switching. |
 
-> Last updated: 2026-06-03
+> Last updated: 2026-06-04

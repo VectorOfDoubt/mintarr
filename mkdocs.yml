@@ -130,6 +130,7 @@ nav:
           - "ADR-0010 Python implementation language": architecture/adr/0010-python-implementation-language.md
           - "ADR-0011 Frontend framework": architecture/adr/0011-frontend-framework.md
           - "ADR-0012 QC import-gate scope": architecture/adr/0012-qc-import-gate-scope.md
+          - "ADR-0013 Release-family identity policy": architecture/adr/0013-release-family-identity-policy.md
 
   - Specs:
       - "Adapter Protocol v1": specs/ADAPTER_PROTOCOL_v1.md

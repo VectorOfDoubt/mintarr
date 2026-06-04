@@ -22,5 +22,7 @@ def test_metrics_endpoint_is_unauthenticated():
     resp = client.get("/metrics")
     assert resp.status_code == 200
     assert "text/plain" in resp.content_type
+    # content_type set verbatim — no duplicated charset param.
+    assert resp.content_type.lower().count("charset") <= 1
     body = resp.get_data(as_text=True)
     assert "mintarr_up" in body

@@ -5345,7 +5345,9 @@ def metrics():
     from metrics import render_metrics
 
     body, content_type = render_metrics()
-    return Response(body, mimetype=content_type)
+    # content_type= (not mimetype=) so the Prometheus charset/version params
+    # are sent verbatim without Flask appending a duplicate charset.
+    return Response(body, content_type=content_type)
 
 
 @app.route("/jobs")

@@ -5,6 +5,8 @@ from __future__ import annotations
 import os
 from types import SimpleNamespace
 
+from release_family import ObservedRelease
+from release_metadata import ObservedReleaseEvidence
 import server
 
 
@@ -47,6 +49,11 @@ def test_compute_verification_accepts_complete_authentic_album(tmp_path):
     assert result.score == 100
     assert result.verification_decision == "ACCEPT"
     assert result.import_outcome == "PENDING"
+    assert result.identity_decision == "SAME_RELEASE"
+    assert result.identity_confidence == 85.0
+    assert result.identity_reasons[0] == (
+        "Lidarr ManualImport matched every observed audio file"
+    )
     assert result.components == {
         "ffprobe": 25,
         "flac_t": 25,
@@ -65,6 +72,124 @@ def test_compute_verification_accepts_complete_authentic_album(tmp_path):
     assert result.sensors[2]["evidence"]["overall_verdict"] == "AUTHENTIC"
     assert result.sensors[3]["class"] == "metadata_identity"
     assert result.sensors[3]["evidence"]["track_titles"] == ["01"]
+    assert result.sensors[3]["evidence"]["identity_decision"] == "SAME_RELEASE"
+
+
+def test_compute_verification_blocks_wrong_album_identity_even_with_authentic_audio(
+    tmp_path, mocker
+):
+    jid = "abc12345"
+    output_dir = tmp_path / jid
+    output_dir.mkdir()
+    (output_dir / "01.flac").write_bytes(b"flac")
+    manualimport_item = _manualimport_item(jid)
+    manualimport_item["artist"]["foreignArtistId"] = "expected-artist-mbid"
+    mocker.patch.object(
+        server,
+        "collect_observed_release",
+        return_value=ObservedReleaseEvidence(
+            observed=ObservedRelease(
+                file_count=1,
+                track_titles=frozenset({"01"}),
+                artist_mbids=frozenset({"different-artist-mbid"}),
+                artist_mbid="different-artist-mbid",
+            ),
+            files=(
+                {
+                    "path": "01.flac",
+                    "title": "01",
+                    "normalized_title": "01",
+                    "artist": None,
+                    "album": None,
+                    "artist_mbids": ["different-artist-mbid"],
+                    "release_group_mbids": [],
+                    "release_mbids": [],
+                    "tag_source": "mutagen",
+                    "error": None,
+                },
+            ),
+            mutagen_available=True,
+        ),
+    )
+
+    result = server._compute_verification(
+        jid,
+        output_dir,
+        [manualimport_item],
+        verdict="AUTHENTIC",
+        detective_error=None,
+        detective_result={"files": [{"is_fake_high_res": False}]},
+        existing_kbps=320,
+        existing_label="MP3-320",
+        new_effective_kbps=3000,
+        album_ids=[20],
+        title="Artist - Album",
+    )
+
+    assert result.score == 100
+    assert result.verification_decision == "BLOCK"
+    assert result.identity_decision == "WRONG_ALBUM"
+    assert result.to_decisions_log()["reason"] == "wrong album identity"
+
+
+def test_compute_verification_routes_insufficient_identity_to_review_not_block(
+    tmp_path,
+):
+    jid = "abc12345"
+    output_dir = tmp_path / jid
+    output_dir.mkdir()
+    (output_dir / "01.flac").write_bytes(b"flac")
+
+    result = server._compute_verification(
+        jid,
+        output_dir,
+        [],
+        verdict="AUTHENTIC",
+        detective_error=None,
+        detective_result={"files": [{"is_fake_high_res": False}]},
+        existing_kbps=0,
+        existing_label="nothing",
+        new_effective_kbps=3000,
+        album_ids=[],
+        title="Artist - Album",
+    )
+
+    assert result.score == 85
+    assert result.verification_decision == "REVIEW_REQUIRED"
+    assert result.identity_decision == "INSUFFICIENT_EVIDENCE"
+    assert result.to_decisions_log()["reason"] == (
+        "insufficient release identity evidence"
+    )
+
+
+def test_compute_verification_does_not_review_non_family_lidarr_rejection(tmp_path):
+    jid = "abc12345"
+    output_dir = tmp_path / jid
+    output_dir.mkdir()
+    (output_dir / "01.flac").write_bytes(b"flac")
+    manualimport_item = _manualimport_item(jid)
+    manualimport_item["rejections"] = [
+        {"reason": "Couldn't find similar album", "type": "permanent"}
+    ]
+
+    result = server._compute_verification(
+        jid,
+        output_dir,
+        [manualimport_item],
+        verdict="AUTHENTIC",
+        detective_error=None,
+        detective_result={"files": [{"is_fake_high_res": False}]},
+        existing_kbps=0,
+        existing_label="nothing",
+        new_effective_kbps=3000,
+        album_ids=[20],
+        title="Artist - Album",
+    )
+
+    assert result.score == 85
+    assert result.verification_decision == "ACCEPT"
+    assert result.identity_decision == "SAME_RELEASE"
+    assert result.identity_confidence == 75.0
 
 
 def test_compute_verification_validator_error_blocks(tmp_path):

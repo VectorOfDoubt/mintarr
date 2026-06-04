@@ -1,7 +1,7 @@
 # Sidecar Format — v2 (`verification.json`)
 
 > **Type:** Spec / contract
-> **Version:** 2.0.2 — runtime-validated 2026-05-31
+> **Version:** 2.1.0 — runtime-validated 2026-06-04
 > **Status:** Locked. Editorial fixes allowed; semantic changes require `SIDECAR_FORMAT_v3.md` per [ADR-0004](../architecture/adr/0004-api-versioning-semver.md).
 > **Audience:** Anyone reading or writing `verification.json` files. Includes Mintarr code, external archival tools, dashboards built on top of Mintarr data, and audit consumers.
 
@@ -46,6 +46,11 @@ Mintarr atomically writes sidecars via temp-file + rename. Readers should tolera
   "v2_score": 87,
   "v2_components": { ... },
   "v2_overrides": [],
+  "release_identity_decision": "SAME_RELEASE",
+  "release_identity_confidence": 98.0,
+  "release_identity_reasons": ["matches current Lidarr release"],
+  "release_identity_best_release_id": 456,
+  "release_identity_current_release_id": 456,
   "reason": "passed validation",
   "sensors": [ ... ],
   "files": [ ... ],
@@ -70,6 +75,11 @@ Mintarr atomically writes sidecars via temp-file + rename. Readers should tolera
 | `v2_score` | int | yes | V2 score 0-100. See §6. |
 | `v2_components` | object | yes | Per-component score breakdown. See §6.1. |
 | `v2_overrides` | array of string | yes | Override tags applied. Examples: `codec_mismatch`, `flac_t_failed`, `validator_unavailable`. |
+| `release_identity_decision` | string | yes (v2.1.0+) | F5.1 release-family identity axis decision. See §4.1. Older v2 readers should default missing values to `INSUFFICIENT_EVIDENCE`. |
+| `release_identity_confidence` | number | yes (v2.1.0+) | Identity-axis confidence from 0-100. |
+| `release_identity_reasons` | array[string] | yes (v2.1.0+) | Short audit reasons for the identity decision. |
+| `release_identity_best_release_id` | int \| string \| null | yes (v2.1.0+) | Lidarr release id with the best identity match, when known. |
+| `release_identity_current_release_id` | int \| string \| null | yes (v2.1.0+) | Lidarr release id active at verification time, when known. |
 | `reason` | string | yes | Human-readable short reason for the decision. Legacy field name retained for deployed compatibility. |
 | `decision` | string | no | Legacy decision label for older dashboards/log readers. New readers should prefer `v2_verification_decision` + `v2_import_outcome`. |
 | `new_kbps` | int | no | Legacy approximate bitrate/quality signal for the new candidate. |
@@ -91,7 +101,27 @@ One of:
 | `REVIEW_REQUIRED` | Evidence is conflicting; import held for operator decision. |
 | `BLOCK` | Evidence indicates fake / mislabelled audio; import rejected and files removed. |
 
-The decision is determined by the V2 policy from sensor evidence at verify time. A sidecar's `v2_verification_decision` is immutable for the life of the record — operator promotion of a REVIEW_REQUIRED record adds a `promoted_at` timestamp under `lifecycle` but does not change the decision.
+The decision is determined by the V2 policy from sensor evidence at verify time.
+From F5.1 onward, `v2_score` remains the audio-QC score, then the
+release-family identity axis is combined with the audio decision using ADR-0013
+precedence. A sidecar's `v2_verification_decision` is immutable for the life of
+the record — operator promotion of a REVIEW_REQUIRED record adds a `promoted_at`
+timestamp under `lifecycle` but does not change the decision.
+
+### 4.1 Release-family identity decisions
+
+| Value | Effect |
+|---|---|
+| `SAME_RELEASE` | Preserve the audio-axis decision. |
+| `SAME_FAMILY` | Preserve the audio-axis decision; the best match may be another Lidarr release in the same album family. |
+| `AMBIGUOUS_EDITION` | Route audio ACCEPT / ACCEPT_PROVISIONAL to `REVIEW_REQUIRED`. Never hard-blocks on its own. |
+| `INSUFFICIENT_EVIDENCE` | Route audio ACCEPT / ACCEPT_PROVISIONAL to `REVIEW_REQUIRED`. Used when Lidarr or tag evidence is too thin. |
+| `WRONG_ALBUM` | Force `BLOCK` unless the audio axis already blocked first. Strong MBID mismatch only. |
+
+Precedence is top-to-bottom: audio hard-blocks win first, then `WRONG_ALBUM`
+blocks, then audio review wins, then ambiguous/insufficient identity routes to
+review. A clean audio result cannot rescue `WRONG_ALBUM`, and weak identity
+evidence cannot create a hard block.
 
 ## 5. `v2_import_outcome` values
 
@@ -234,10 +264,10 @@ Each entry is one verifier's run on this record.
 ### 7.2 `release_identity` evidence
 
 F5.1 adds a read-only `release_identity` metadata sensor. It collects observed
-release metadata from audio file tags with filename fallback and persists that
-evidence for later release-family policy. In the first implementation this
-sensor is **non-blocking**: it does not change `v2_score`,
-`v2_verification_decision`, or `v2_overrides`.
+release metadata from audio file tags with filename fallback and persists the
+identity result used by the release-family policy axis. The sensor never changes
+`v2_score` or `v2_overrides`; `v2_verification_decision` is changed only by the
+explicit policy combiner described in §4.1.
 
 Current evidence keys:
 
@@ -253,6 +283,14 @@ Current evidence keys:
 | `mutagen_available` | bool | Whether the Mutagen reader was importable at runtime. |
 | `tag_read_errors` | int | Number of files where tag reading failed before filename fallback. |
 | `files` | array[object] | Per-file metadata evidence: path, raw title, normalized title, optional artist/album/MBIDs, tag source, and tag-read error. |
+| `identity_decision` | string | Same value as top-level `release_identity_decision`. |
+| `identity_confidence` | number | Same value as top-level `release_identity_confidence`. |
+| `identity_reasons` | array[string] | Same value as top-level `release_identity_reasons`. |
+| `best_release_id` | int \| string \| null | Best matching Lidarr release id, when known. |
+| `current_release_id` | int \| string \| null | Lidarr current release id, when known. |
+| `score` | number | Raw identity match score from 0-100. |
+| `track_count_delta` | int \| null | Absolute difference between observed file count and expected track count. |
+| `title_similarity` | number \| null | Fraction of observed normalized titles that matched expected titles, when both sides had titles. |
 
 ## 8. `files` array
 

@@ -49,6 +49,11 @@ from adapters.tidal import (  # noqa: F401
 from dashboard import dashboard_bp
 from release_family import (
     AUDIO_SUFFIXES,
+    ExpectedRelease,
+    IdentityDecision,
+    ReleaseFamilyEvidence,
+    ReleaseIdentityResult,
+    evaluate_release_identity,
     is_release_family_rejection as _release_family_is_release_family_rejection,
     normalized_track_names_from_titles as _release_family_track_names_from_titles,
     normalize_track_title_for_match as _release_family_normalize_track_title,
@@ -62,6 +67,7 @@ from verification import (
     ImportOutcome,
     VerificationResult,
     apply_overrides,
+    combine_audio_identity_decision,
     compute_components,
     decide,
 )
@@ -1970,6 +1976,180 @@ def _manualimport_album_complete(output_dir: Path, items: list[dict]) -> bool:
     return importable_count >= audio_count
 
 
+_ARTIST_MBID_KEYS = ("foreignArtistId", "musicBrainzArtistId", "artistMbid")
+_RELEASE_GROUP_MBID_KEYS = (
+    "foreignAlbumId",
+    "musicBrainzReleaseGroupId",
+    "releaseGroupMbid",
+)
+_RELEASE_MBID_KEYS = (
+    "foreignReleaseId",
+    "musicBrainzReleaseId",
+    "releaseMbid",
+)
+
+
+def _first_nonempty_mapping_value(
+    mappings: tuple[object, ...], keys: tuple[str, ...]
+) -> str | None:
+    for mapping in mappings:
+        if not isinstance(mapping, dict):
+            continue
+        for key in keys:
+            value = mapping.get(key)
+            if value not in (None, ""):
+                return str(value)
+    return None
+
+
+def _album_release_id_from_manualimport_item(item: dict) -> int | str | None:
+    release_id = item.get("albumReleaseId") or item.get("releaseId")
+    if release_id in (None, "") and isinstance(item.get("album"), dict):
+        current_release = item["album"].get("currentRelease") or {}
+        release_id = current_release.get("id")
+    return release_id if release_id not in (None, "") else None
+
+
+def _manualimport_expected_releases(
+    items: list[dict],
+) -> tuple[tuple[ExpectedRelease, ...], int | str | None]:
+    grouped: dict[tuple[int | None, int | str | None], dict] = {}
+    current_release_id: int | str | None = None
+
+    for item in items:
+        raw_album = item.get("album")
+        album: dict = raw_album if isinstance(raw_album, dict) else {}
+        raw_artist = item.get("artist")
+        artist: dict = raw_artist if isinstance(raw_artist, dict) else {}
+        raw_current_release = album.get("currentRelease")
+        current_release: dict = (
+            raw_current_release if isinstance(raw_current_release, dict) else {}
+        )
+        if current_release_id is None and current_release.get("id") not in (None, ""):
+            current_release_id = current_release.get("id")
+
+        album_id = _lidarr_album_id_from_record(item)
+        release_id = _album_release_id_from_manualimport_item(item)
+        key = (album_id, release_id)
+        if key not in grouped:
+            grouped[key] = {
+                "album_id": album_id,
+                "release_id": release_id,
+                "track_count": 0,
+                "track_titles": set(),
+                "artist_mbid": _first_nonempty_mapping_value(
+                    (artist, item), _ARTIST_MBID_KEYS
+                ),
+                "release_group_mbid": _first_nonempty_mapping_value(
+                    (album, item), _RELEASE_GROUP_MBID_KEYS
+                ),
+                "release_mbid": _first_nonempty_mapping_value(
+                    (current_release, album, item), _RELEASE_MBID_KEYS
+                ),
+            }
+
+        raw_tracks = item.get("tracks")
+        tracks: list[dict] = raw_tracks if isinstance(raw_tracks, list) else []
+        grouped[key]["track_count"] += len(tracks) or (1 if item.get("path") else 0)
+        grouped[key]["track_titles"].update(_track_title_names(tracks))
+
+    expected = []
+    for data in grouped.values():
+        expected.append(
+            ExpectedRelease(
+                album_id=data["album_id"],
+                release_id=data["release_id"],
+                track_count=data["track_count"],
+                track_titles=frozenset(data["track_titles"]),
+                artist_mbid=data["artist_mbid"],
+                release_group_mbid=data["release_group_mbid"],
+                release_mbid=data["release_mbid"],
+                is_current=data["release_id"] == current_release_id,
+            )
+        )
+    return tuple(expected), current_release_id
+
+
+def _release_identity_result(
+    observed_evidence,
+    manualimport_items: list[dict],
+    *,
+    manualimport_complete: bool,
+) -> ReleaseIdentityResult:
+    expected_releases, current_release_id = _manualimport_expected_releases(
+        manualimport_items
+    )
+    result = evaluate_release_identity(
+        ReleaseFamilyEvidence(
+            observed=observed_evidence.observed,
+            expected_releases=expected_releases,
+            current_release_id=current_release_id,
+            lidarr_rejections=tuple(
+                reason
+                for item in manualimport_items
+                for reason in _rejection_reasons(item)
+            ),
+        )
+    )
+    if result.decision == IdentityDecision.WRONG_ALBUM:
+        return result
+    if result.decision not in {
+        IdentityDecision.AMBIGUOUS_EDITION,
+        IdentityDecision.INSUFFICIENT_EVIDENCE,
+    }:
+        return result
+
+    if manualimport_complete:
+        best_release = next(
+            (release for release in expected_releases if release.is_current),
+            expected_releases[0] if expected_releases else None,
+        )
+        return ReleaseIdentityResult(
+            decision=IdentityDecision.SAME_RELEASE,
+            confidence=max(result.confidence, 85.0),
+            best_release_id=best_release.release_id
+            if best_release
+            else current_release_id,
+            current_release_id=current_release_id,
+            score=max(result.score, 85.0),
+            track_count_delta=result.track_count_delta,
+            title_similarity=result.title_similarity,
+            reasons=(
+                "Lidarr ManualImport matched every observed audio file",
+                *result.reasons,
+            ),
+        )
+
+    has_lidarr_target_track_match = any(
+        item.get("artist")
+        and item.get("album")
+        and item.get("tracks")
+        and not _is_release_family_rejection(item)
+        for item in manualimport_items
+    )
+    if has_lidarr_target_track_match:
+        best_release = next(
+            (release for release in expected_releases if release.is_current),
+            expected_releases[0] if expected_releases else None,
+        )
+        return ReleaseIdentityResult(
+            decision=IdentityDecision.SAME_RELEASE,
+            confidence=max(result.confidence, 75.0),
+            best_release_id=best_release.release_id
+            if best_release
+            else current_release_id,
+            current_release_id=current_release_id,
+            score=max(result.score, 75.0),
+            track_count_delta=result.track_count_delta,
+            title_similarity=result.title_similarity,
+            reasons=(
+                "Lidarr ManualImport resolved target album tracks",
+                *result.reasons,
+            ),
+        )
+    return result
+
+
 def _has_fake_hi_res_signal(detective_result: dict | None) -> bool:
     if not detective_result:
         return False
@@ -2209,11 +2389,25 @@ def _build_sensor_results(
     ]
 
 
-def _build_release_identity_sensor(output_dir: Path) -> dict:
-    observed_evidence = collect_observed_release(output_dir)
+def _build_release_identity_sensor(
+    observed_evidence, identity_result: ReleaseIdentityResult
+) -> dict:
     if observed_evidence.observed.file_count == 0:
         status, severity, confidence = "skipped", "info", 0.0
         summary = "No audio files available for release identity evidence."
+    elif identity_result.decision == IdentityDecision.WRONG_ALBUM:
+        status, severity, confidence = "fail", "blocker", 1.0
+        summary = "Observed MusicBrainz identity does not match Lidarr's target album."
+    elif identity_result.decision in {
+        IdentityDecision.AMBIGUOUS_EDITION,
+        IdentityDecision.INSUFFICIENT_EVIDENCE,
+    }:
+        status, severity, confidence = (
+            "warn",
+            "warning",
+            identity_result.confidence / 100,
+        )
+        summary = "Release identity evidence is incomplete or ambiguous."
     elif any(
         file_info["tag_source"] == "mutagen" for file_info in observed_evidence.files
     ):
@@ -2226,6 +2420,19 @@ def _build_release_identity_sensor(output_dir: Path) -> dict:
         status, severity, confidence = "warn", "info", 0.3
         summary = "Observed release identity evidence uses filename fallback only."
 
+    evidence = observed_evidence.to_sensor_evidence()
+    evidence.update(
+        {
+            "identity_decision": identity_result.decision.value,
+            "identity_confidence": identity_result.confidence,
+            "identity_reasons": list(identity_result.reasons),
+            "best_release_id": identity_result.best_release_id,
+            "current_release_id": identity_result.current_release_id,
+            "score": identity_result.score,
+            "track_count_delta": identity_result.track_count_delta,
+            "title_similarity": identity_result.title_similarity,
+        }
+    )
     return _sensor_result(
         "release_identity",
         "metadata_identity",
@@ -2233,7 +2440,7 @@ def _build_release_identity_sensor(output_dir: Path) -> dict:
         severity,
         confidence,
         summary,
-        observed_evidence.to_sensor_evidence(),
+        evidence,
         sensor_version="mintarr-release-identity 2026-06-04",
     )
 
@@ -2269,11 +2476,18 @@ def _compute_verification(
         bool(detective_error) or normalized_verdict in ("UNKNOWN", "ERROR")
     )
     codec_mismatch = no_flac_files or partial_codec_mismatch
+    manualimport_complete = _manualimport_album_complete(output_dir, manualimport_items)
     components = compute_components(
         ffprobe_ok=audio_count > 0,
         flac_t_ok=not validator_error and has_flac,
         detective_verdict=normalized_verdict,
-        complete_album=_manualimport_album_complete(output_dir, manualimport_items),
+        complete_album=manualimport_complete,
+    )
+    observed_release_evidence = collect_observed_release(output_dir)
+    identity_result = _release_identity_result(
+        observed_release_evidence,
+        manualimport_items,
+        manualimport_complete=manualimport_complete,
     )
     score, overrides = apply_overrides(
         components,
@@ -2298,9 +2512,11 @@ def _compute_verification(
         normalized_verdict=normalized_verdict,
         job_quality=job_quality,
     )
-    sensors.append(_build_release_identity_sensor(output_dir))
+    sensors.append(
+        _build_release_identity_sensor(observed_release_evidence, identity_result)
+    )
     files = _detective_file_evidence(detective_result, output_dir)
-    decision = decide(
+    audio_decision = decide(
         score,
         existing_kbps,
         new_effective_kbps,
@@ -2309,6 +2525,10 @@ def _compute_verification(
         existing_track_count=existing_track_count,
         new_track_count=new_track_count,
         expected_track_count=expected_track_count,
+    )
+    decision = combine_audio_identity_decision(
+        audio_decision,
+        identity_result.decision.value,
     )
     return VerificationResult(
         jid=jid,
@@ -2326,6 +2546,11 @@ def _compute_verification(
         title=title,
         sensors=sensors,
         files=files,
+        identity_decision=identity_result.decision.value,
+        identity_confidence=identity_result.confidence,
+        identity_reasons=list(identity_result.reasons),
+        identity_best_release_id=identity_result.best_release_id,
+        identity_current_release_id=identity_result.current_release_id,
     )
 
 

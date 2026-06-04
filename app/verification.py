@@ -13,6 +13,13 @@ VerificationDecision = Literal[
     "ACCEPT", "ACCEPT_PROVISIONAL", "REVIEW_REQUIRED", "BLOCK"
 ]
 ImportOutcome = Literal["MANUAL_IMPORTED", "RESCUED", "FAILED", "SKIPPED", "PENDING"]
+ReleaseIdentityDecision = Literal[
+    "SAME_RELEASE",
+    "SAME_FAMILY",
+    "AMBIGUOUS_EDITION",
+    "INSUFFICIENT_EVIDENCE",
+    "WRONG_ALBUM",
+]
 
 
 @dataclass
@@ -33,6 +40,11 @@ class VerificationResult:
     title: str = ""
     sensors: list[dict[str, Any]] = field(default_factory=list)
     files: list[dict[str, Any]] = field(default_factory=list)
+    identity_decision: ReleaseIdentityDecision = "INSUFFICIENT_EVIDENCE"
+    identity_confidence: float = 0.0
+    identity_reasons: list[str] = field(default_factory=list)
+    identity_best_release_id: int | str | None = None
+    identity_current_release_id: int | str | None = None
     timestamp: float = 0.0
     timestamp_iso: str = ""
 
@@ -55,6 +67,11 @@ class VerificationResult:
             "v2_score": self.score,
             "v2_components": self.components,
             "v2_overrides": self.overrides,
+            "release_identity_decision": self.identity_decision,
+            "release_identity_confidence": self.identity_confidence,
+            "release_identity_reasons": self.identity_reasons,
+            "release_identity_best_release_id": self.identity_best_release_id,
+            "release_identity_current_release_id": self.identity_current_release_id,
             "sensors": self.sensors,
             "files": self.files,
         }
@@ -87,11 +104,42 @@ class VerificationResult:
             return "no flac files found"
         if "validator_error" in self.overrides:
             return "validator unavailable"
+        if (
+            self.verification_decision == "BLOCK"
+            and self.identity_decision == "WRONG_ALBUM"
+        ):
+            return "wrong album identity"
+        if (
+            self.verification_decision == "REVIEW_REQUIRED"
+            and self.identity_decision == "AMBIGUOUS_EDITION"
+        ):
+            return "ambiguous release identity"
+        if (
+            self.verification_decision == "REVIEW_REQUIRED"
+            and self.identity_decision == "INSUFFICIENT_EVIDENCE"
+        ):
+            return "insufficient release identity evidence"
         if self.existing_kbps == 0:
             return "nothing pre-existing"
         if self.new_kbps > self.existing_kbps * 1.2:
             return f"upgrade from {self.existing_label}"
         return f"score={self.score}"
+
+
+def combine_audio_identity_decision(
+    audio_decision: VerificationDecision,
+    identity_decision: ReleaseIdentityDecision,
+) -> VerificationDecision:
+    """Apply ADR-0013 top-to-bottom precedence across audio and identity axes."""
+    if audio_decision == "BLOCK":
+        return "BLOCK"
+    if identity_decision == "WRONG_ALBUM":
+        return "BLOCK"
+    if audio_decision == "REVIEW_REQUIRED":
+        return "REVIEW_REQUIRED"
+    if identity_decision in {"AMBIGUOUS_EDITION", "INSUFFICIENT_EVIDENCE"}:
+        return "REVIEW_REQUIRED"
+    return audio_decision
 
 
 def compute_components(

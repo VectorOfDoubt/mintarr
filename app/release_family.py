@@ -8,9 +8,19 @@ this module scores the evidence it is handed.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from enum import StrEnum
-from typing import Any
+import sys
+
+if sys.version_info >= (3, 11):
+    from enum import StrEnum
+else:  # Python 3.10 compatibility
+    from enum import Enum
+
+    class StrEnum(str, Enum):
+        pass
+
+
 import re
+from typing import Any
 
 AUDIO_SUFFIXES = (".flac", ".m4a", ".mp3", ".ogg", ".aac")
 RELEASE_FAMILY_REJECTION_MARKERS = (

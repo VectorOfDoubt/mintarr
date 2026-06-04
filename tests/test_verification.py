@@ -9,6 +9,7 @@ import pytest
 from verification import (
     VerificationResult,
     apply_overrides,
+    combine_audio_identity_decision,
     compute_components,
     decide,
 )
@@ -267,6 +268,11 @@ def test_verification_result_decisions_log_contains_legacy_and_v2_fields():
     record = _result(
         sensors=[{"name": "ffprobe", "status": "pass"}],
         files=[{"filename": "01.flac", "cutoff_hz": 42000}],
+        identity_decision="SAME_RELEASE",
+        identity_confidence=98.0,
+        identity_reasons=["matches current Lidarr release"],
+        identity_best_release_id=30,
+        identity_current_release_id=30,
     ).to_decisions_log()
 
     assert record["decision"] == "IMPORTED_AUTHENTIC"
@@ -276,6 +282,11 @@ def test_verification_result_decisions_log_contains_legacy_and_v2_fields():
     assert record["v2_score"] == 85
     assert record["v2_components"] == {"ffprobe": 25, "flac_t": 25, "detective": 35}
     assert record["v2_overrides"] == []
+    assert record["release_identity_decision"] == "SAME_RELEASE"
+    assert record["release_identity_confidence"] == 98.0
+    assert record["release_identity_reasons"] == ["matches current Lidarr release"]
+    assert record["release_identity_best_release_id"] == 30
+    assert record["release_identity_current_release_id"] == 30
     assert record["sensors"] == [{"name": "ffprobe", "status": "pass"}]
     assert record["files"] == [{"filename": "01.flac", "cutoff_hz": 42000}]
     json.dumps(record)
@@ -330,6 +341,40 @@ def test_legacy_reason_score_fallback():
     record = _result(existing_kbps=320, new_kbps=384, score=69).to_decisions_log()
 
     assert record["reason"] == "score=69"
+
+
+@pytest.mark.parametrize("audio_decision", ["ACCEPT", "ACCEPT_PROVISIONAL"])
+def test_identity_wrong_album_blocks_even_when_audio_passes(audio_decision):
+    assert combine_audio_identity_decision(audio_decision, "WRONG_ALBUM") == "BLOCK"
+
+
+@pytest.mark.parametrize(
+    "identity_decision", ["AMBIGUOUS_EDITION", "INSUFFICIENT_EVIDENCE"]
+)
+def test_identity_ambiguous_or_insufficient_routes_audio_accept_to_review(
+    identity_decision,
+):
+    assert (
+        combine_audio_identity_decision("ACCEPT", identity_decision)
+        == "REVIEW_REQUIRED"
+    )
+
+
+def test_identity_same_family_keeps_audio_decision():
+    assert combine_audio_identity_decision("ACCEPT_PROVISIONAL", "SAME_FAMILY") == (
+        "ACCEPT_PROVISIONAL"
+    )
+
+
+def test_audio_block_takes_precedence_over_identity():
+    assert combine_audio_identity_decision("BLOCK", "SAME_RELEASE") == "BLOCK"
+
+
+def test_audio_review_takes_precedence_over_identity_accept():
+    assert (
+        combine_audio_identity_decision("REVIEW_REQUIRED", "SAME_RELEASE")
+        == "REVIEW_REQUIRED"
+    )
 
 
 # ---- V2.1 completeness rule (added 2026-05-23) ----

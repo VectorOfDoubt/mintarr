@@ -68,7 +68,7 @@ For the underlying positioning and what is *not* in any phase, see [VISION.md](V
 
 **Goal:** Mintarr's dashboard feels like an arr-stack tool, with a sidebar layout and Settings / System cards.
 
-**Status:** in progress — extraction + vendored Alpine + theme switch shipped; sidebar shell shipped; Settings/System card content and live (HTMX) surfaces remain
+**Status:** shipped — sidebar shell with seven sections, vendored Alpine + HTMX (no Node toolchain) per [ADR-0011](../architecture/adr/0011-frontend-framework.md), dark/light/auto theme + table density, live Queue/History/System via HTMX, audit feed with CSV export, and records + topbar search. Remaining Tasks/Logs/Backup/Updates card content and server-side global search are optional follow-ups.
 
 **Scope:**
 
@@ -128,11 +128,11 @@ For the underlying positioning and what is *not* in any phase, see [VISION.md](V
 
 **Goal:** Mintarr's verification and import decisions reflect the real-world ambiguity of music release data.
 
-**Status:** planned
+**Status:** partial — F5.1 shipped; F5.2 and F5.3 planned
 
 **Scope:**
 
-- **F5.1 Release-family matching** — Mintarr-side mitigation of Lidarr's multi-album / edition / deluxe / remaster / anniversary matching weakness. Includes release-family scoring, track-count + track-title similarity, edition-aware import policy, dashboard explanation when Lidarr rejects, optional manual override with audit. This is the locked alternative-to-fork mechanism from [ADR-0007 §"Multi-album / release matching is not a fork problem"](../architecture/adr/0007-no-lidarr-fork.md).
+- **F5.1 Release-family matching** — **shipped**, architecture locked in [ADR-0013](../architecture/adr/0013-release-family-identity-policy.md). Mintarr-side mitigation of Lidarr's multi-album / edition / deluxe / remaster / anniversary matching weakness, built as a separate release-identity policy axis (two-axis audio/identity, where good audio never excuses the wrong album): Lidarr-first expected metadata with MusicBrainz/MBID as advisory evidence, read-only `mutagen` tag evidence, confidence + abstain (weak metadata → review, never block), dashboard visibility, and an opt-in **default-off** release-switch strategy with operator review-mode override (snapshot + audit + restore, same-album-only, never on `WRONG_ALBUM`/audio-`BLOCK`). The locked alternative-to-fork mechanism from [ADR-0007 §"Multi-album / release matching is not a fork problem"](../architecture/adr/0007-no-lidarr-fork.md).
 - **F5.2 Source-aware verification thresholds** — per-source confidence weighting (e.g., Soulseek requires stricter spectral pass than TIDAL); not source-aware policy until evidence justifies it
 - **F5.3 CD-rip evidence integration** — CUETools/CTDB verifier connector wired into V2 scoring as positive proof for CD-rip lane
 

@@ -472,9 +472,10 @@ function renderReleaseSwitchEvents(events) {
       ? `<ul class="switch-reasons">${e.reasons.map(r => `<li>${esc(String(r))}</li>`).join('')}</ul>`
       : '';
     const result = e.result && e.result !== e.event ? ' · ' + esc(String(e.result)) : '';
+    const actor = e.actor ? ' · ' + esc(String(e.actor)) : '';
     return `<li>
       <span class="switch-event">${esc(String(e.event || ''))}${result}</span>
-      <span class="switch-meta muted">${esc(String(e.mode || ''))} · ${esc(String(e.old_release_id ?? '—'))} → ${esc(String(e.new_release_id ?? '—'))} · ${esc(String(e.when || ''))}</span>
+      <span class="switch-meta muted">${esc(String(e.mode || ''))}${actor} · ${esc(String(e.old_release_id ?? '—'))} → ${esc(String(e.new_release_id ?? '—'))} · ${esc(String(e.when || ''))}</span>
       ${reasons}
     </li>`;
   }).join('');
@@ -615,6 +616,7 @@ function renderDrawer(d) {
     promote: {label: 'Promote', cls: 'btn-promote', desc: 'Will import these files manually even though verification flagged them. Risk is accepted.'},
     discard: {label: 'Discard', cls: 'btn-discard', desc: 'Deletes /output/' + d.jid + '/ and blocklists this grab in Lidarr.'},
     retry_import: {label: 'Retry import', cls: 'btn-retry', desc: 'Re-trigger Lidarr ManualImport. Verification is unchanged.'},
+    apply_release_switch: {label: 'Apply release switch', cls: 'btn-promote', desc: 'Switches Lidarr to the proposed album release, then retries import. Restores the prior release if import fails.'},
   };
   $('drawer-actions').innerHTML = d.available_actions.length
     ? d.available_actions.map(a => `<button class="${actionDefs[a].cls}" onclick="confirmAction('${d.jid}','${a}','${actionDefs[a].label}','${esc(actionDefs[a].desc)}')">${actionDefs[a].label}</button>`).join('')

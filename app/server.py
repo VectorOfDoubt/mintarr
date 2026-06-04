@@ -1751,6 +1751,26 @@ def _release_switch_allowed_for_result(result: VerificationResult) -> bool:
     return True
 
 
+def _release_switch_manual_review_allowed(record: dict) -> tuple[bool, str]:
+    if _release_switch_strategy() != "review":
+        return False, "release switch strategy is not review"
+    if not _is_promotable(record):
+        return False, "verification is not promotable"
+    if record.get("v2_verification_decision") == "BLOCK":
+        return False, "verification is blocked"
+    hard_audio_overrides = {"codec_mismatch", "flac_t_fail", "validator_error"}
+    overrides = set(record.get("v2_overrides") or [])
+    if hard_audio_overrides.intersection(overrides):
+        return False, "hard audio override blocks release switch"
+    identity_decision = record.get("release_identity_decision")
+    if identity_decision not in {
+        IdentityDecision.AMBIGUOUS_EDITION.value,
+        IdentityDecision.INSUFFICIENT_EVIDENCE.value,
+    }:
+        return False, "release identity is not eligible for operator switch"
+    return True, ""
+
+
 def _release_switch_audit(jid: str, event: str, **details) -> dict:
     record = _with_log_timestamps({"jid": jid, "event": event, **details})
     try:
@@ -2015,6 +2035,35 @@ def _restore_release_switches(
                 trigger=trigger,
                 error=str(exc),
             )
+
+
+def _release_switch_album_ids_for_record(
+    jid: str,
+    record: dict,
+    *,
+    api: str,
+    key: str,
+) -> list[int]:
+    try:
+        r = requests.get(
+            f"{api}/manualimport",
+            params={"folder": _lidarr_complete_path(jid)},
+            headers={"X-Api-Key": key},
+            timeout=60,
+        )
+        if r.status_code == 200:
+            album_ids = _album_ids_from_manualimport(r.json())
+            if album_ids:
+                return album_ids
+    except Exception:
+        log.exception("[%s] release-switch manualimport lookup failed", jid)
+    return sorted(
+        {
+            int(album_id)
+            for album_id in (record.get("album_ids") or [])
+            if str(album_id).isdigit()
+        }
+    )
 
 
 def _album_ids_from_manualimport(items: list[dict]) -> list[int]:
@@ -5364,6 +5413,114 @@ def verification_promote(jid: str):
         return jsonify({"error": "promote already running", "jid": jid}), 409
     try:
         payload, status = _promote_verified_import(jid, record, path)
+        return jsonify(payload), status
+    finally:
+        lock.release()
+
+
+@app.route("/verification/<jid>/release-switch", methods=["POST"])
+@require_apikey
+def verification_release_switch(jid: str):
+    path, record = _read_verification_sidecar(jid)
+    if path is None or record is None:
+        return jsonify({"error": "verification not found", "jid": jid}), 404
+
+    allowed, reason = _release_switch_manual_review_allowed(record)
+    if not allowed:
+        return jsonify({"error": reason, "jid": jid}), 409
+
+    output_dir = Path(_jobs.get(jid, {}).get("output_dir") or OUTPUT_BASE / jid)
+    if not output_dir.exists():
+        return jsonify({"error": "output directory missing", "jid": jid}), 409
+
+    lock = _get_promote_lock(jid)
+    if not lock.acquire(blocking=False):
+        return jsonify({"error": "release switch already running", "jid": jid}), 409
+    try:
+        path, record = _read_verification_sidecar(jid)
+        if path is None or record is None:
+            return jsonify({"error": "verification not found", "jid": jid}), 404
+        allowed, reason = _release_switch_manual_review_allowed(record)
+        if not allowed:
+            return jsonify({"error": reason, "jid": jid}), 409
+
+        api = os.environ.get(
+            "LIDARR_API_URL", "http://host.docker.internal:8686/api/v1"
+        )
+        key = _get_lidarr_key()
+        if not key:
+            return jsonify({"error": "lidarr api key missing", "jid": jid}), 409
+
+        file_count = _count_audio_files(output_dir)
+        downloaded_names = _downloaded_track_names(output_dir)
+        album_ids = _release_switch_album_ids_for_record(jid, record, api=api, key=key)
+        audits: list[dict] = []
+        try:
+            for aid in album_ids:
+                candidate = _release_switch_candidate_for_album(
+                    jid,
+                    aid,
+                    api=api,
+                    key=key,
+                    file_count=file_count,
+                    downloaded_names=downloaded_names,
+                )
+                if not candidate:
+                    continue
+                if candidate["best_release_id"] == candidate["current_release_id"]:
+                    continue
+                audit = _apply_release_switch_candidate(
+                    jid,
+                    candidate,
+                    api=api,
+                    key=key,
+                    mode="review",
+                    actor="operator_review",
+                    reasons=["operator-approved review-mode switch"],
+                )
+                if audit:
+                    audits.append(audit)
+        except Exception:
+            if audits:
+                _restore_release_switches(
+                    jid, audits, api=api, key=key, trigger="operator_aborted"
+                )
+            log.exception("[%s] operator release-switch failed", jid)
+            return jsonify({"error": "release switch failed", "jid": jid}), 500
+
+        if not audits:
+            return jsonify(
+                {
+                    "jid": jid,
+                    "switched": False,
+                    "message": "no eligible release switch candidate",
+                }
+            )
+
+        time.sleep(2)
+        try:
+            payload, status = _promote_verified_import(jid, record, path)
+        except Exception:
+            _restore_release_switches(
+                jid, audits, api=api, key=key, trigger="operator_import_failed"
+            )
+            log.exception("[%s] operator release-switch import failed", jid)
+            return jsonify({"error": "release switch import failed", "jid": jid}), 500
+        import_outcome = payload.get("import_outcome")
+        if import_outcome not in {"MANUAL_IMPORTED", "RESCUED"}:
+            _restore_release_switches(
+                jid,
+                audits,
+                api=api,
+                key=key,
+                trigger="operator_import_failed",
+            )
+        payload = {
+            **payload,
+            "jid": jid,
+            "switched": True,
+            "release_switch_count": len(audits),
+        }
         return jsonify(payload), status
     finally:
         lock.release()

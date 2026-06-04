@@ -604,6 +604,73 @@ def test_dashboard_record_detail_includes_available_actions(monkeypatch, tmp_pat
     assert data["files"] == []
 
 
+def test_dashboard_record_detail_includes_release_switch_action_in_review_strategy(
+    monkeypatch, tmp_path
+):
+    _patch_paths(monkeypatch, tmp_path)
+    monkeypatch.setenv("MINTARR_RELEASE_SWITCH_STRATEGY", "review")
+    output_dir = tmp_path / "output" / "switchui"
+    output_dir.mkdir(parents=True)
+    result = _result(jid="switchui", decision="REVIEW_REQUIRED", outcome="PENDING")
+    result.identity_decision = "AMBIGUOUS_EDITION"
+    server._write_verification_sidecar("switchui", result, output_dir)
+
+    client = server.app.test_client()
+    resp = client.get(f"/dashboard/v1/record/switchui?apikey={VALID_KEY}")
+
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data["release_switch_strategy"] == "review"
+    assert "apply_release_switch" in data["available_actions"]
+
+
+def test_dashboard_action_routes_apply_release_switch(monkeypatch, tmp_path, mocker):
+    _patch_paths(monkeypatch, tmp_path)
+    monkeypatch.setenv("MINTARR_RELEASE_SWITCH_STRATEGY", "review")
+    output_dir = tmp_path / "output" / "switchdo"
+    output_dir.mkdir(parents=True)
+    for idx in range(1, 5):
+        (output_dir / f"{idx:02d} - Track {idx}.flac").write_bytes(b"flac")
+    result = _result(jid="switchdo", decision="REVIEW_REQUIRED", outcome="PENDING")
+    result.identity_decision = "AMBIGUOUS_EDITION"
+    server._write_verification_sidecar("switchdo", result, output_dir)
+    server._jobs["switchdo"] = {"id": "switchdo", "output_dir": str(output_dir)}
+    mocker.patch.object(server, "_get_lidarr_key", return_value="lidarr-key")
+    mocker.patch.object(server.time, "sleep")
+    mocker.patch(
+        "requests.get",
+        return_value=type(
+            "Resp",
+            (),
+            {"status_code": 200, "json": lambda self: [{"album": {"id": 20}}]},
+        )(),
+    )
+    mocker.patch.object(
+        server,
+        "_release_switch_candidate_for_album",
+        return_value={"album_id": 20, "current_release_id": 30, "best_release_id": 40},
+    )
+    mocker.patch.object(
+        server,
+        "_apply_release_switch_candidate",
+        return_value={"album_id": 20, "old_release_id": 30, "new_release_id": 40},
+    )
+    mocker.patch.object(
+        server,
+        "_promote_verified_import",
+        return_value=({"jid": "switchdo", "import_outcome": "MANUAL_IMPORTED"}, 200),
+    )
+
+    client = server.app.test_client()
+    resp = client.post(
+        f"/dashboard/v1/action/switchdo?apikey={VALID_KEY}",
+        json={"action": "apply_release_switch"},
+    )
+
+    assert resp.status_code == 200
+    assert resp.get_json()["switched"] is True
+
+
 def test_dashboard_record_detail_includes_release_identity(monkeypatch, tmp_path):
     _patch_paths(monkeypatch, tmp_path)
     output_dir = tmp_path / "output" / "ident12"

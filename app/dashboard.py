@@ -75,12 +75,22 @@ def available_actions(rec: dict) -> list[str]:
     )
     decision = rec.get("v2_verification_decision", "")
     outcome = rec.get("v2_import_outcome", "")
+    identity_decision = rec.get("release_identity_decision", "")
     if state in ("discarded", "expired"):
         return []
     if outcome in ("MANUAL_IMPORTED", "RESCUED"):
         return []
     if decision == "REVIEW_REQUIRED" and state == "pending_review":
-        return ["promote", "discard"]
+        actions = ["promote", "discard"]
+        if identity_decision in {"AMBIGUOUS_EDITION", "INSUFFICIENT_EVIDENCE"}:
+            try:
+                import server
+
+                if server._release_switch_strategy() == "review":
+                    actions.append("apply_release_switch")
+            except Exception:
+                pass
+        return actions
     if outcome == "FAILED":
         return ["retry_import", "discard"]
     if outcome == "PENDING":
@@ -1419,6 +1429,7 @@ def _build_record_detail(server_mod, jid: str) -> dict | None:
         },
         "release_identity": _release_identity_detail(sidecar),
         "release_switch_events": _release_switch_events(jid),
+        "release_switch_strategy": server_mod._release_switch_strategy(),
         "lifecycle": sidecar.get("lifecycle") or {},
         "sensors": sidecar.get("sensors") or [],
         "files": sidecar.get("files") or [],
@@ -1677,6 +1688,7 @@ def action(jid: str):
         "promote": "verification_promote",
         "discard": "verification_discard",
         "retry_import": "verification_retry_import",
+        "apply_release_switch": "verification_release_switch",
     }
     view_name = view_map.get(requested)
     if not view_name:

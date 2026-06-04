@@ -38,6 +38,7 @@ def _result(
 def _patch_paths(monkeypatch, tmp_path):
     output_base = tmp_path / "output"
     monkeypatch.setattr(server, "OUTPUT_BASE", output_base)
+    monkeypatch.setattr(server, "JOBS_FILE", tmp_path / "jobs.json")
     monkeypatch.setattr(server, "BLOCKED_DECISIONS_DIR", tmp_path / "blocked")
     monkeypatch.setattr(server, "DISCARDED_DIR", tmp_path / "discarded")
     monkeypatch.setattr(server, "EXPIRED_REVIEW_DIR", tmp_path / "expired")
@@ -51,6 +52,7 @@ def test_verification_routes_require_apikey(tmp_path, monkeypatch):
     assert client.get("/verification").status_code == 401
     assert client.get("/verification/abc12345").status_code == 401
     assert client.post("/verification/abc12345/promote").status_code == 401
+    assert client.post("/verification/abc12345/release-switch").status_code == 401
     assert client.post("/verification/abc12345/retry-import").status_code == 401
     assert client.post("/verification/abc12345/discard").status_code == 401
 
@@ -471,6 +473,235 @@ def test_promote_failure_keeps_sidecar_retryable(tmp_path, monkeypatch, mocker):
     assert record["v2_import_outcome"] == "FAILED"
     assert "manual_promote" in record["v2_overrides"]
     assert record["lifecycle"]["state"] == "promoted"
+
+
+def _release_switch_record(
+    jid: str,
+    *,
+    identity_decision: str = "AMBIGUOUS_EDITION",
+    decision: str = "REVIEW_REQUIRED",
+    outcome: str = "PENDING",
+    overrides: list[str] | None = None,
+) -> VerificationResult:
+    result = _result(jid=jid, decision=decision, outcome=outcome, overrides=overrides)
+    result.identity_decision = identity_decision
+    result.identity_confidence = 60.0
+    result.identity_reasons = ["ambiguous edition"]
+    result.identity_current_release_id = 30
+    result.identity_best_release_id = 40
+    return result
+
+
+def test_release_switch_endpoint_rejects_guard_failures(tmp_path, monkeypatch, mocker):
+    output_base = _patch_paths(monkeypatch, tmp_path)
+    client = server.app.test_client()
+    mocker.patch.object(server, "_get_lidarr_key", return_value="lidarr-key")
+    put_mock = mocker.patch("requests.put")
+
+    cases = [
+        ("disabled", "AMBIGUOUS_EDITION", "REVIEW_REQUIRED", [], 409),
+        ("review", "WRONG_ALBUM", "REVIEW_REQUIRED", [], 409),
+        ("review", "AMBIGUOUS_EDITION", "BLOCK", [], 409),
+        ("review", "AMBIGUOUS_EDITION", "REVIEW_REQUIRED", ["codec_mismatch"], 409),
+    ]
+    for idx, (strategy, identity, decision, overrides, expected) in enumerate(cases):
+        jid = f"swguard{idx}"
+        output_dir = output_base / jid
+        output_dir.mkdir(parents=True)
+        (output_dir / "01.flac").write_bytes(b"flac")
+        server._write_verification_sidecar(
+            jid,
+            _release_switch_record(
+                jid,
+                identity_decision=identity,
+                decision=decision,
+                overrides=overrides,
+            ),
+            output_dir,
+        )
+        server._jobs[jid] = {"id": jid, "output_dir": str(output_dir)}
+        monkeypatch.setenv("MINTARR_RELEASE_SWITCH_STRATEGY", strategy)
+
+        response = client.post(f"/verification/{jid}/release-switch?apikey={VALID_KEY}")
+
+        assert response.status_code == expected
+
+    put_mock.assert_not_called()
+
+
+def test_release_switch_endpoint_applies_and_imports(tmp_path, monkeypatch, mocker):
+    output_base = _patch_paths(monkeypatch, tmp_path)
+    jid = "swapply1"
+    output_dir = output_base / jid
+    output_dir.mkdir(parents=True)
+    for idx in range(1, 5):
+        (output_dir / f"{idx:02d} - Track {idx}.flac").write_bytes(b"flac")
+    path = server._write_verification_sidecar(
+        jid, _release_switch_record(jid), output_dir
+    )
+    server._jobs[jid] = {"id": jid, "output_dir": str(output_dir)}
+    monkeypatch.setenv("MINTARR_RELEASE_SWITCH_STRATEGY", "review")
+    monkeypatch.setenv("LIDARR_API_URL", "http://lidarr/api/v1")
+    mocker.patch.object(server, "_get_lidarr_key", return_value="lidarr-key")
+    mocker.patch.object(server.time, "sleep")
+    get_mock = mocker.patch(
+        "requests.get",
+        return_value=type(
+            "Resp",
+            (),
+            {
+                "status_code": 200,
+                "json": lambda self: [{"album": {"id": 20}}],
+            },
+        )(),
+    )
+    candidate = {
+        "album_id": 20,
+        "current_release_id": 30,
+        "best_release_id": 40,
+        "best_score": 88.0,
+    }
+    candidate_mock = mocker.patch.object(
+        server, "_release_switch_candidate_for_album", return_value=candidate
+    )
+    audit = {"album_id": 20, "old_release_id": 30, "new_release_id": 40}
+    apply_mock = mocker.patch.object(
+        server, "_apply_release_switch_candidate", return_value=audit
+    )
+    promote_mock = mocker.patch.object(
+        server,
+        "_promote_verified_import",
+        return_value=({"jid": jid, "import_outcome": "MANUAL_IMPORTED"}, 200),
+    )
+    restore_mock = mocker.patch.object(server, "_restore_release_switches")
+
+    client = server.app.test_client()
+    response = client.post(f"/verification/{jid}/release-switch?apikey={VALID_KEY}")
+
+    assert response.status_code == 200
+    body = response.get_json()
+    assert body["switched"] is True
+    assert body["release_switch_count"] == 1
+    get_mock.assert_called_once()
+    candidate_mock.assert_called_once()
+    apply_mock.assert_called_once_with(
+        jid,
+        candidate,
+        api="http://lidarr/api/v1",
+        key="lidarr-key",
+        mode="review",
+        actor="operator_review",
+        reasons=["operator-approved review-mode switch"],
+    )
+    promote_mock.assert_called_once_with(jid, json.loads(path.read_text()), path)
+    restore_mock.assert_not_called()
+
+
+def test_release_switch_endpoint_restores_on_import_failure(
+    tmp_path, monkeypatch, mocker
+):
+    output_base = _patch_paths(monkeypatch, tmp_path)
+    jid = "swfail1"
+    output_dir = output_base / jid
+    output_dir.mkdir(parents=True)
+    for idx in range(1, 5):
+        (output_dir / f"{idx:02d} - Track {idx}.flac").write_bytes(b"flac")
+    path = server._write_verification_sidecar(
+        jid, _release_switch_record(jid), output_dir
+    )
+    server._jobs[jid] = {"id": jid, "output_dir": str(output_dir)}
+    monkeypatch.setenv("MINTARR_RELEASE_SWITCH_STRATEGY", "review")
+    mocker.patch.object(server, "_get_lidarr_key", return_value="lidarr-key")
+    mocker.patch.object(server.time, "sleep")
+    mocker.patch(
+        "requests.get",
+        return_value=type(
+            "Resp",
+            (),
+            {
+                "status_code": 200,
+                "json": lambda self: [{"album": {"id": 20}}],
+            },
+        )(),
+    )
+    mocker.patch.object(
+        server,
+        "_release_switch_candidate_for_album",
+        return_value={
+            "album_id": 20,
+            "current_release_id": 30,
+            "best_release_id": 40,
+        },
+    )
+    audit = {"album_id": 20, "old_release_id": 30, "new_release_id": 40}
+    mocker.patch.object(server, "_apply_release_switch_candidate", return_value=audit)
+    mocker.patch.object(
+        server,
+        "_promote_verified_import",
+        return_value=({"jid": jid, "import_outcome": "FAILED"}, 200),
+    )
+    restore_mock = mocker.patch.object(server, "_restore_release_switches")
+
+    client = server.app.test_client()
+    response = client.post(f"/verification/{jid}/release-switch?apikey={VALID_KEY}")
+
+    assert response.status_code == 200
+    assert response.get_json()["import_outcome"] == "FAILED"
+    restore_mock.assert_called_once_with(
+        jid,
+        [audit],
+        api="http://host.docker.internal:8686/api/v1",
+        key="lidarr-key",
+        trigger="operator_import_failed",
+    )
+    assert json.loads(path.read_text())["v2_verification_decision"] == "REVIEW_REQUIRED"
+
+
+def test_release_switch_endpoint_restores_when_import_raises(
+    tmp_path, monkeypatch, mocker
+):
+    output_base = _patch_paths(monkeypatch, tmp_path)
+    jid = "swraise1"
+    output_dir = output_base / jid
+    output_dir.mkdir(parents=True)
+    for idx in range(1, 5):
+        (output_dir / f"{idx:02d} - Track {idx}.flac").write_bytes(b"flac")
+    server._write_verification_sidecar(jid, _release_switch_record(jid), output_dir)
+    server._jobs[jid] = {"id": jid, "output_dir": str(output_dir)}
+    monkeypatch.setenv("MINTARR_RELEASE_SWITCH_STRATEGY", "review")
+    mocker.patch.object(server, "_get_lidarr_key", return_value="lidarr-key")
+    mocker.patch.object(server.time, "sleep")
+    mocker.patch(
+        "requests.get",
+        return_value=type(
+            "Resp",
+            (),
+            {"status_code": 200, "json": lambda self: [{"album": {"id": 20}}]},
+        )(),
+    )
+    mocker.patch.object(
+        server,
+        "_release_switch_candidate_for_album",
+        return_value={"album_id": 20, "current_release_id": 30, "best_release_id": 40},
+    )
+    audit = {"album_id": 20, "old_release_id": 30, "new_release_id": 40}
+    mocker.patch.object(server, "_apply_release_switch_candidate", return_value=audit)
+    mocker.patch.object(
+        server, "_promote_verified_import", side_effect=RuntimeError("boom")
+    )
+    restore_mock = mocker.patch.object(server, "_restore_release_switches")
+
+    client = server.app.test_client()
+    response = client.post(f"/verification/{jid}/release-switch?apikey={VALID_KEY}")
+
+    assert response.status_code == 500
+    restore_mock.assert_called_once_with(
+        jid,
+        [audit],
+        api="http://host.docker.internal:8686/api/v1",
+        key="lidarr-key",
+        trigger="operator_import_failed",
+    )
 
 
 def test_promote_retries_after_failed_manual_promote(tmp_path, monkeypatch, mocker):

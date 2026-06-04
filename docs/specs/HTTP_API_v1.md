@@ -422,6 +422,7 @@ Supported actions:
 | `promote` | Promote a REVIEW_REQUIRED record. Enqueues a `promote_import` job. |
 | `discard` | Discard a REVIEW_REQUIRED or active record. Files removed, sidecar moved to `discarded/`. |
 | `retry_import` | Retry import for a record stuck in FAILED outcome. Enqueues a `retry_import` job. |
+| `apply_release_switch` | In `MINTARR_RELEASE_SWITCH_STRATEGY=review`, apply an eligible release switch for identity-review records, retry import, and restore the prior Lidarr release if import fails. |
 
 Invalid actions or invalid record state return `409 Conflict` with a human-readable `error`.
 
@@ -530,7 +531,11 @@ Legacy promote action for REVIEW_REQUIRED records. Current runtime enqueues the 
 
 Legacy retry action for records whose verified import failed or remained pending. Current runtime enqueues the same `retry_import` worker job used by `/dashboard/v1/action/<jid>`.
 
-### 7.6 `POST /verification/<jid>/discard`
+### 7.6 `POST /verification/<jid>/release-switch`
+
+Operator-approved release-switch action for identity-review records. Available only when `MINTARR_RELEASE_SWITCH_STRATEGY=review`, the record is promotable, audio is not hard-blocked, and `release_identity_decision` is `AMBIGUOUS_EDITION` or `INSUFFICIENT_EVIDENCE`. The endpoint snapshots and audits the Lidarr release switch, runs the shared ManualImport promote flow, and restores the prior Lidarr release on non-import outcomes.
+
+### 7.7 `POST /verification/<jid>/discard`
 
 Legacy discard action for REVIEW_REQUIRED records and failed/pending manual-promote records.
 

@@ -103,6 +103,17 @@ def test_dashboard_js_contains_connector_rendering(monkeypatch, tmp_path):
     assert "__LIDARR_WEB_BASE__" not in body
 
 
+def test_dashboard_js_contains_release_identity_drawer(monkeypatch, tmp_path):
+    _patch_paths(monkeypatch, tmp_path)
+    client = server.app.test_client()
+    body = client.get("/static/dashboard.js").get_data(as_text=True)
+
+    assert "function renderReleaseIdentity" in body
+    assert "Release identity" in body
+    assert "identityBadgeClass" in body
+    assert "Observed metadata" in body
+
+
 def test_dashboard_vendors_alpine_with_sri(monkeypatch, tmp_path):
     """Alpine is vendored (no Node) and referenced with an SRI hash."""
     _patch_paths(monkeypatch, tmp_path)
@@ -549,6 +560,58 @@ def test_dashboard_record_detail_includes_available_actions(monkeypatch, tmp_pat
     assert data["status_reason"] == "Review required by policy"
     assert data["sensors"] == []
     assert data["files"] == []
+
+
+def test_dashboard_record_detail_includes_release_identity(monkeypatch, tmp_path):
+    _patch_paths(monkeypatch, tmp_path)
+    output_dir = tmp_path / "output" / "ident12"
+    output_dir.mkdir(parents=True)
+    result = _result(jid="ident12", decision="BLOCK", outcome="SKIPPED")
+    result.identity_decision = "WRONG_ALBUM"
+    result.identity_confidence = 100.0
+    result.identity_reasons = ["artist MBID mismatch"]
+    result.identity_best_release_id = 30
+    result.identity_current_release_id = 30
+    result.sensors = [
+        {
+            "name": "release_identity",
+            "status": "fail",
+            "summary": "Observed MusicBrainz identity does not match Lidarr's target album.",
+            "evidence": {
+                "identity_decision": "WRONG_ALBUM",
+                "identity_confidence": 100.0,
+                "identity_reasons": ["artist MBID mismatch"],
+                "best_release_id": 30,
+                "current_release_id": 30,
+                "score": 0.0,
+                "track_count_delta": 0,
+                "title_similarity": 1.0,
+                "lidarr_rejections": ["match is not close enough: 70.1% vs 80%"],
+                "file_count": 10,
+                "track_titles": ["one night in paris"],
+                "artist_names": ["10-cc"],
+                "album_titles": ["Sheet Music"],
+                "artist_mbids": ["wrong-artist"],
+                "release_group_mbids": ["wrong-group"],
+                "release_mbids": ["wrong-release"],
+            },
+        }
+    ]
+    server._write_verification_sidecar("ident12", result, output_dir)
+
+    client = server.app.test_client()
+    resp = client.get(f"/dashboard/v1/record/ident12?apikey={VALID_KEY}")
+
+    assert resp.status_code == 200
+    identity = resp.get_json()["release_identity"]
+    assert identity["decision"] == "WRONG_ALBUM"
+    assert identity["confidence"] == 100.0
+    assert identity["reasons"] == ["artist MBID mismatch"]
+    assert identity["best_release_id"] == 30
+    assert identity["current_release_id"] == 30
+    assert identity["lidarr_rejections"] == ["match is not close enough: 70.1% vs 80%"]
+    assert identity["observed"]["artist_names"] == ["10-cc"]
+    assert identity["observed"]["release_group_mbids"] == ["wrong-group"]
 
 
 def test_dashboard_record_detail_does_not_reconcile_review_required(

@@ -437,6 +437,69 @@ function closeDrawer() {
   $('drawer-overlay').classList.remove('open');
 }
 
+function identityBadgeClass(decision) {
+  const map = {
+    WRONG_ALBUM: 'danger',
+    AMBIGUOUS_EDITION: 'warning',
+    INSUFFICIENT_EVIDENCE: 'warning',
+    SAME_FAMILY: 'info',
+    SAME_RELEASE: 'success',
+  };
+  return map[decision] || 'neutral';
+}
+
+function fmtIdentityValue(value) {
+  if (value === null || value === undefined || value === '') return '—';
+  return String(value);
+}
+
+function fmtIdentityNumber(value, suffix='') {
+  if (value === null || value === undefined || value === '') return '—';
+  const n = Number(value);
+  if (!Number.isFinite(n)) return esc(String(value));
+  return n.toFixed(n % 1 === 0 ? 0 : 1) + suffix;
+}
+
+function inlineList(items, fallback='—') {
+  if (!items || !items.length) return fallback;
+  return items.map(item => esc(String(item))).join(', ');
+}
+
+function renderReleaseIdentity(identity) {
+  if (!identity) return '';
+  const observed = identity.observed || {};
+  const reasons = (identity.reasons || []).length
+    ? `<ul class="identity-reasons">${identity.reasons.map(r => `<li>${esc(r)}</li>`).join('')}</ul>`
+    : '<p class="muted">No release-identity reasons recorded.</p>';
+  const lidarrRejections = (identity.lidarr_rejections || []).length
+    ? `<div class="kvrow"><span class="k">Lidarr rejection</span><span class="v">${inlineList(identity.lidarr_rejections)}</span></div>`
+    : '';
+  return `
+    <section>
+      <h2>Release identity</h2>
+      <div class="kvrow"><span class="k">Decision</span><span class="v"><span class="badge ${identityBadgeClass(identity.decision)}">${esc(identity.decision || 'UNKNOWN')}</span></span></div>
+      <div class="kvrow"><span class="k">Confidence</span><span class="v">${fmtIdentityNumber(identity.confidence, '%')}</span></div>
+      <div class="kvrow"><span class="k">Best release</span><span class="v">${esc(fmtIdentityValue(identity.best_release_id))}</span></div>
+      <div class="kvrow"><span class="k">Current release</span><span class="v">${esc(fmtIdentityValue(identity.current_release_id))}</span></div>
+      <div class="kvrow"><span class="k">Identity score</span><span class="v">${fmtIdentityNumber(identity.score, '%')}</span></div>
+      <div class="kvrow"><span class="k">Track delta</span><span class="v">${esc(fmtIdentityValue(identity.track_count_delta))}</span></div>
+      <div class="kvrow"><span class="k">Title similarity</span><span class="v">${identity.title_similarity === null || identity.title_similarity === undefined ? '—' : fmtIdentityNumber(Number(identity.title_similarity) * 100, '%')}</span></div>
+      ${lidarrRejections}
+      <h3>Reasons</h3>
+      ${reasons}
+      <h3>Observed metadata</h3>
+      <div class="kvrow"><span class="k">Files</span><span class="v">${esc(fmtIdentityValue(observed.file_count))}</span></div>
+      <div class="kvrow"><span class="k">Track titles</span><span class="v">${inlineList(observed.track_titles)}</span></div>
+      <div class="kvrow"><span class="k">Artists</span><span class="v">${inlineList(observed.artist_names)}</span></div>
+      <div class="kvrow"><span class="k">Albums</span><span class="v">${inlineList(observed.album_titles)}</span></div>
+      <div class="kvrow"><span class="k">Artist MBIDs</span><span class="v">${inlineList(observed.artist_mbids)}</span></div>
+      <div class="kvrow"><span class="k">Release-group MBIDs</span><span class="v">${inlineList(observed.release_group_mbids)}</span></div>
+      <div class="kvrow"><span class="k">Release MBIDs</span><span class="v">${inlineList(observed.release_mbids)}</span></div>
+      <div class="media-note">${esc(identity.sensor_summary || 'Release identity is evaluated separately from the audio score.')}</div>
+    </section>
+  `;
+}
+
 function renderDrawer(d) {
   $('drawer-title').textContent = d.context.title || d.jid;
   $('drawer-jid').textContent = 'JID: ' + d.jid;
@@ -492,6 +555,7 @@ function renderDrawer(d) {
       <div class="kvrow"><span class="k">Score</span><span class="v">${v.score ?? '—'}</span></div>
       <div class="kvrow"><span class="k">Overrides</span><span class="v">${esc(overrides)}</span></div>
     </section>
+    ${renderReleaseIdentity(d.release_identity)}
     <section>
       <h2>Score components</h2>
       ${compsRows || '<p class="muted">No component data</p>'}

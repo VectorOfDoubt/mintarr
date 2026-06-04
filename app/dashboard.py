@@ -1417,6 +1417,7 @@ def _build_record_detail(server_mod, jid: str) -> dict | None:
             "verdict": sidecar.get("verdict"),
             "review_reason": review_reason,
         },
+        "release_identity": _release_identity_detail(sidecar),
         "lifecycle": sidecar.get("lifecycle") or {},
         "sensors": sidecar.get("sensors") or [],
         "files": sidecar.get("files") or [],
@@ -1433,6 +1434,56 @@ def _build_record_detail(server_mod, jid: str) -> dict | None:
         "media": media,
         "timings": timings,
         "available_actions": actions,
+    }
+
+
+def _release_identity_detail(sidecar: dict) -> dict | None:
+    raw_sensor = next(
+        (
+            item
+            for item in sidecar.get("sensors") or []
+            if item.get("name") == "release_identity"
+        ),
+        None,
+    )
+    sensor = raw_sensor if isinstance(raw_sensor, dict) else {}
+    raw_evidence = sensor.get("evidence")
+    evidence = raw_evidence if isinstance(raw_evidence, dict) else {}
+    decision = sidecar.get("release_identity_decision") or evidence.get(
+        "identity_decision"
+    )
+    if not decision and not evidence:
+        return None
+    reasons = sidecar.get("release_identity_reasons")
+    if not isinstance(reasons, list):
+        reasons = evidence.get("identity_reasons") or []
+    return {
+        "decision": decision or "UNKNOWN",
+        "confidence": sidecar.get("release_identity_confidence")
+        if sidecar.get("release_identity_confidence") is not None
+        else evidence.get("identity_confidence"),
+        "reasons": reasons,
+        "best_release_id": sidecar.get("release_identity_best_release_id")
+        if sidecar.get("release_identity_best_release_id") is not None
+        else evidence.get("best_release_id"),
+        "current_release_id": sidecar.get("release_identity_current_release_id")
+        if sidecar.get("release_identity_current_release_id") is not None
+        else evidence.get("current_release_id"),
+        "score": evidence.get("score"),
+        "track_count_delta": evidence.get("track_count_delta"),
+        "title_similarity": evidence.get("title_similarity"),
+        "lidarr_rejections": evidence.get("lidarr_rejections") or [],
+        "sensor_status": sensor.get("status"),
+        "sensor_summary": sensor.get("summary"),
+        "observed": {
+            "file_count": evidence.get("file_count"),
+            "track_titles": evidence.get("track_titles") or [],
+            "artist_names": evidence.get("artist_names") or [],
+            "album_titles": evidence.get("album_titles") or [],
+            "artist_mbids": evidence.get("artist_mbids") or [],
+            "release_group_mbids": evidence.get("release_group_mbids") or [],
+            "release_mbids": evidence.get("release_mbids") or [],
+        },
     }
 
 

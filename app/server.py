@@ -40,6 +40,8 @@ from xml.sax.saxutils import escape as xml_escape
 import requests
 from flask import Flask, Response, jsonify, request
 
+from logging_setup import configure_logging
+
 from adapters.tidal import (  # noqa: F401
     classify_quality as _classify_quality,
     get_session as _get_session,
@@ -72,7 +74,7 @@ from verification import (
     decide,
 )
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+configure_logging()
 log = logging.getLogger("tidalhires")
 
 app = Flask(__name__)

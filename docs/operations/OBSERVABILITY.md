@@ -37,6 +37,31 @@ docker logs mintarr --follow
 Logs should not contain API keys or OAuth tokens. Request logging redacts common
 secret fields such as `apikey`, `api_key`, `x-api-key`, `password`, and `token`.
 
+### 2.1 Log format (text or JSON)
+
+The default format is human-readable text (`%(asctime)s %(levelname)s %(message)s`)
+— unchanged from earlier releases. For ingestion into a log stack (Loki, ELK,
+etc.) set `MINTARR_LOG_FORMAT=json` to emit **one JSON object per line**:
+
+| Env | Values | Default | Effect |
+|---|---|---|---|
+| `MINTARR_LOG_FORMAT` | `text` / `json` | `text` | line format |
+| `MINTARR_LOG_LEVEL` | `DEBUG`/`INFO`/`WARNING`/`ERROR` | `INFO` | minimum level |
+
+JSON records carry a stable envelope, plus any structured `extra=` fields a log
+call attaches (e.g. `jid`, `event`, `source_type`):
+
+| Field | Meaning |
+|---|---|
+| `ts` | ISO-8601 UTC timestamp |
+| `level` | log level |
+| `component` | logger name (e.g. `tidalhires.worker`) |
+| `message` | rendered message |
+| `exc` | traceback (only on exceptions) |
+
+The formatter never adds secrets — it formats whatever was logged, so the
+redaction rules above still apply to message content.
+
 When filing issues, redact:
 
 - API keys

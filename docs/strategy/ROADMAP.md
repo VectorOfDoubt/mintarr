@@ -89,7 +89,7 @@ For the underlying positioning and what is *not* in any phase, see [VISION.md](V
 
 **Goal:** Mintarr fits cleanly into existing self-hosting observability and notification stacks.
 
-**Status:** partial — observability core shipped: structured JSON logging (`MINTARR_LOG_FORMAT=json`), Prometheus `/metrics` with a documented metric catalogue, Grafana dashboard templates under `docs/grafana/`, OpenAPI `/openapi.json` + Swagger UI at `/docs`, opt-in Apprise notifications (`MINTARR_NOTIFY_URLS`) on attention events, a read-only state backup export (`GET /backup`), optional scheduled backup zips, and a generic webhook-in (`POST /webhook/ingest`). Automated restore remains.
+**Status:** partial — observability core shipped: structured JSON logging (`MINTARR_LOG_FORMAT=json`), Prometheus `/metrics` with a documented metric catalogue, Grafana dashboard templates under `docs/grafana/`, OpenAPI `/openapi.json` + Swagger UI at `/docs`, opt-in Apprise notifications (`MINTARR_NOTIFY_URLS`) on attention events, a read-only state backup export (`GET /backup`), optional scheduled backup zips, generic webhook-in (`POST /webhook/ingest`), and an automated restore design. Restore implementation remains.
 
 **Scope:**
 
@@ -101,6 +101,8 @@ For the underlying positioning and what is *not* in any phase, see [VISION.md](V
 - Webhook-in endpoint for external triggers (n8n, IFTTT, custom scripts)
 - Backup / restore as first-class feature: scheduled backups, restore UI, sidecar + state_db export to zip
 - MkDocs Material documentation site with full-text search
+
+Restore implementation follows [Phase 3 restore endpoint design](../design/PHASE3_RESTORE_ENDPOINT_DESIGN.md): stage via endpoint, apply on restart before workers start, and never live-overwrite state in a running process.
 
 **Depends on:** Phase 1 (Connectors define what monitoring needs to surface).
 

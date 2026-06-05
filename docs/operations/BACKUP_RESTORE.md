@@ -1,7 +1,7 @@
 # Backup and Restore
 
 > **Type:** Operations / data protection
-> **Version:** 1.1 — 2026-06-05
+> **Version:** 1.2 — 2026-06-05
 > **Status:** Living document. Updates as backup tooling evolves.
 > **Audience:** Operators establishing a backup routine. Anyone recovering from data loss.
 
@@ -105,12 +105,16 @@ The endpoint is authenticated and **read-only** — it never mutates state. The 
 | `archive/{blocked,discarded,expired}/*.json` | Terminal-state sidecars |
 | `logs/decisions.jsonl`, `logs/release_switch_audit.jsonl` | Append-only audit logs |
 
-Audio files in `OUTPUT_BASE/<jid>/` are deliberately excluded — they are regenerable from source and would dominate the archive size. Restore is the manual procedure in §3; an automated restore endpoint is intentionally deferred because it overwrites state.
+Audio files in `OUTPUT_BASE/<jid>/` are deliberately excluded — they are regenerable from source and would dominate the archive size. Restore is the manual procedure in §3; the automated restore design is documented in [Phase 3 restore endpoint design](../design/PHASE3_RESTORE_ENDPOINT_DESIGN.md).
 
 This export covers the on-demand and "scheduled via your own cron + curl" cases.
 The Mintarr-managed scheduler in §2.3 writes the same zip format.
 
 ## 3. Restore procedure
+
+Automated restore is intentionally designed as a staged, restart-applied flow
+rather than a live in-process mutation. Until that implementation lands, use the
+manual procedures below.
 
 ### 3.1 Full restore
 

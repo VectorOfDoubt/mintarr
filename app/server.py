@@ -5350,6 +5350,20 @@ def metrics():
     return Response(body, content_type=content_type)
 
 
+@app.route("/openapi.json")
+@require_apikey
+def openapi_json():
+    """Machine-readable OpenAPI 3 spec (Phase 3 slice 3a).
+
+    Generated from the live routes; authenticated like the rest of the API
+    (it describes the authenticated surface). HTTP_API_v1.md stays authoritative
+    for request/response detail until this reaches parity.
+    """
+    from openapi import build_openapi
+
+    return jsonify(build_openapi(app))
+
+
 @app.route("/jobs")
 @require_apikey
 def jobs():

@@ -4,7 +4,7 @@
 > **Version:** 1.0.5 — runtime-validated 2026-06-03
 > **Status:** Locked. Editorial fixes allowed; semantic changes require `HTTP_API_v2.md` per [ADR-0004](../architecture/adr/0004-api-versioning-semver.md).
 > **Audience:** Anyone calling Mintarr's HTTP endpoints. External dashboards, alternative front-ends, monitoring scripts, automation tools. Lidarr-facing endpoints (Newznab, SAB compat) follow those external protocols and are documented here for completeness only — they are not Mintarr-versioned.
-> **Goal:** Phase 3 work replaces this hand-written spec with an auto-generated OpenAPI document. Until then, this file is authoritative.
+> **Goal:** Phase 3 work replaces this hand-written spec with an auto-generated OpenAPI document. A first machine-readable spec is now served at `GET /openapi.json` (generated from the live routes; paths + auth scheme, no body schemas yet). This file remains authoritative for request/response detail until the generated spec reaches parity.
 
 ---
 

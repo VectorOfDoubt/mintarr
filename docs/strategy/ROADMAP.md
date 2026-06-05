@@ -89,7 +89,7 @@ For the underlying positioning and what is *not* in any phase, see [VISION.md](V
 
 **Goal:** Mintarr fits cleanly into existing self-hosting observability and notification stacks.
 
-**Status:** planned
+**Status:** partial — observability core shipped: structured JSON logging (`MINTARR_LOG_FORMAT=json`), Prometheus `/metrics`, OpenAPI `/openapi.json` + Swagger UI at `/docs`, and opt-in Apprise notifications (`MINTARR_NOTIFY_URLS`) on attention events. Webhook-in, backup/restore, and Grafana dashboard templates remain.
 
 **Scope:**
 

@@ -113,10 +113,54 @@ The Mintarr-managed scheduler in §2.3 writes the same zip format.
 ## 3. Restore procedure
 
 Automated restore is intentionally designed as a staged, restart-applied flow
-rather than a live in-process mutation. Until that implementation lands, use the
-manual procedures below.
+rather than a live in-process mutation. The staging endpoints exist, but
+boot-time apply is still a later slice; until that implementation lands, use the
+manual procedures below for actual restore.
 
-### 3.1 Full restore
+### 3.1 Stage a restore for future boot-time apply
+
+Restore staging is disabled by default:
+
+```bash
+MINTARR_RESTORE_ENABLED=true
+```
+
+Stage an existing backup zip under `/config/backups` or `MINTARR_BACKUP_DIR`:
+
+```bash
+curl -fsS -X POST -H "X-Api-Key: $MINTARR_API_KEY" \
+    -H "Content-Type: application/json" \
+    --data '{"backup_path":"/config/backups/mintarr-backup-20260605-030000.zip"}' \
+    http://127.0.0.1:5025/restore
+```
+
+Or upload a backup zip:
+
+```bash
+curl -fsS -X POST -H "X-Api-Key: $MINTARR_API_KEY" \
+    -F "file=@mintarr-backup-20260605-030000.zip" \
+    http://127.0.0.1:5025/restore
+```
+
+Check staged status:
+
+```bash
+curl -fsS -H "X-Api-Key: $MINTARR_API_KEY" \
+    http://127.0.0.1:5025/restore/status
+```
+
+Cancel before restart/apply:
+
+```bash
+curl -fsS -X DELETE -H "X-Api-Key: $MINTARR_API_KEY" \
+    http://127.0.0.1:5025/restore
+```
+
+Current limitation: staging validates and records the restore request, but does
+not yet apply it on boot. Follow [Phase 3 restore endpoint design](../design/PHASE3_RESTORE_ENDPOINT_DESIGN.md)
+for the locked apply model.
+
+### 3.2 Full restore
 
 If `/config` is lost or corrupted:
 
@@ -138,7 +182,7 @@ docker logs mintarr --tail 50
 
 Mintarr's boot runs additive schema migrations. Backups from older Mintarr versions are upgraded in place during boot.
 
-### 3.2 Selective restore — only state_db
+### 3.3 Selective restore — only state_db
 
 If sidecars are intact but state_db is corrupted:
 
@@ -153,7 +197,7 @@ cp /path/to/backups/state.YYYYMMDD.db /path/to/config/mintarr_state.db
 docker compose up -d mintarr
 ```
 
-### 3.3 Selective restore — rebuild state_db from sidecars
+### 3.4 Selective restore — rebuild state_db from sidecars
 
 If state_db is corrupted AND you don't have a recent backup:
 
@@ -178,7 +222,7 @@ docker exec mintarr sqlite3 /config/mintarr_state.db "SELECT COUNT(*) FROM recor
 
 For libraries with many thousands of records, backfill can take several minutes.
 
-### 3.4 Selective restore — only sidecars
+### 3.5 Selective restore — only sidecars
 
 If state_db is intact but sidecars are missing or corrupted:
 

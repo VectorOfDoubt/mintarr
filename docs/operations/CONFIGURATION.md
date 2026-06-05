@@ -360,7 +360,20 @@ verification sidecars, terminal sidecars, and audit logs. Audio files are never
 included. The scheduler is disabled by default so upgrades do not start writing
 backup files until the operator opts in.
 
-## 12. Timezone
+## 12. Restore staging
+
+| Variable | Purpose | Default |
+|---|---|---|
+| `MINTARR_RESTORE_ENABLED` | Enable restore staging endpoints | `false` |
+| `MINTARR_RESTORE_STAGING_DIR` | Directory for staged restore zip and marker | `/config/restore_staging` |
+| `MINTARR_RESTORE_MAX_ENTRIES` | Maximum zip entries accepted by restore staging | `250000` |
+| `MINTARR_RESTORE_MAX_TOTAL_BYTES` | Maximum total uncompressed zip size | `26843545600` |
+| `MINTARR_RESTORE_MAX_ENTRY_BYTES` | Maximum single-entry uncompressed size | `2147483648` |
+
+Restore staging validates and records a restore request. It does not overwrite
+state in the running process. Boot-time apply is a later restore slice.
+
+## 13. Timezone
 
 | Variable | Purpose | Default |
 |---|---|---|
@@ -368,7 +381,7 @@ backup files until the operator opts in.
 
 Set to your local timezone for human-readable logs (e.g., `Europe/Oslo`).
 
-## 13. Reference defaults
+## 14. Reference defaults
 
 Here is the full default-values table for quick reference:
 
@@ -449,6 +462,13 @@ MINTARR_BACKUP_SCHEDULE_ENABLED=false
 MINTARR_BACKUP_INTERVAL_HOURS=24
 MINTARR_BACKUP_DIR=/config/backups
 MINTARR_BACKUP_RETENTION=30
+
+# Restore staging
+MINTARR_RESTORE_ENABLED=false
+MINTARR_RESTORE_STAGING_DIR=/config/restore_staging
+MINTARR_RESTORE_MAX_ENTRIES=250000
+MINTARR_RESTORE_MAX_TOTAL_BYTES=26843545600
+MINTARR_RESTORE_MAX_ENTRY_BYTES=2147483648
 
 # Timezone
 TZ=UTC

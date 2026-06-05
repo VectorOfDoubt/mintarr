@@ -5498,6 +5498,138 @@ def _build_state_backup_zip() -> bytes:
     )
 
 
+def _restore_enabled() -> bool:
+    return _env_bool("MINTARR_RESTORE_ENABLED", default=False)
+
+
+def _restore_staging_dir() -> Path:
+    return Path(
+        os.environ.get("MINTARR_RESTORE_STAGING_DIR", "/config/restore_staging")
+    )
+
+
+def _restore_limits():
+    from restore import RestoreLimits
+
+    return RestoreLimits(
+        max_entries=int(os.environ.get("MINTARR_RESTORE_MAX_ENTRIES", "250000")),
+        max_total_uncompressed_bytes=int(
+            os.environ.get(
+                "MINTARR_RESTORE_MAX_TOTAL_BYTES", str(25 * 1024 * 1024 * 1024)
+            )
+        ),
+        max_entry_uncompressed_bytes=int(
+            os.environ.get(
+                "MINTARR_RESTORE_MAX_ENTRY_BYTES", str(2 * 1024 * 1024 * 1024)
+            )
+        ),
+    )
+
+
+def _restore_allowed_roots() -> tuple[Path, ...]:
+    roots = [Path("/config/backups")]
+    backup_dir = Path(os.environ.get("MINTARR_BACKUP_DIR", "/config/backups"))
+    if backup_dir not in roots:
+        roots.append(backup_dir)
+    return tuple(roots)
+
+
+def _restore_actor() -> str:
+    return "api-key"
+
+
+def _restore_public_payload(payload: dict) -> dict:
+    return {
+        "status": True,
+        "restore_id": payload.get("restore_id"),
+        "state": payload.get("state"),
+        "created_at": payload.get("created_at"),
+        "restart_required": payload.get("state") == "staged",
+        "source_name": payload.get("source_name"),
+        "plan": payload.get("plan"),
+        "message": "restore staged; restart Mintarr to apply",
+    }
+
+
+@app.route("/restore", methods=["POST"])
+@require_apikey
+def restore_post():
+    """Stage a validated restore zip for boot-time apply.
+
+    Phase 3 restore slice 2: validates and stages only. It never extracts or
+    replaces runtime state; boot-time apply is a later slice.
+    """
+    if not _restore_enabled():
+        return jsonify({"status": False, "error": "restore disabled"}), 403
+
+    import restore as restore_mod
+
+    file_storage = request.files.get("file") if request.files else None
+    body = request.get_json(silent=True) or {}
+    backup_path = body.get("backup_path")
+    has_file = file_storage is not None and bool(file_storage.filename)
+    has_path = isinstance(backup_path, str) and bool(backup_path.strip())
+    if has_file == has_path:
+        return (
+            jsonify(
+                {
+                    "status": False,
+                    "error": "provide exactly one of multipart file or backup_path",
+                }
+            ),
+            400,
+        )
+
+    try:
+        if has_file:
+            payload = restore_mod.stage_restore_upload_stream(
+                file_storage.stream,
+                filename=file_storage.filename or "upload.zip",
+                staging_dir=_restore_staging_dir(),
+                limits=_restore_limits(),
+                actor=_restore_actor(),
+            )
+        else:
+            payload = restore_mod.stage_restore_from_path(
+                backup_path.strip(),
+                allowed_roots=_restore_allowed_roots(),
+                staging_dir=_restore_staging_dir(),
+                limits=_restore_limits(),
+                actor=_restore_actor(),
+            )
+    except restore_mod.RestoreValidationError as exc:
+        return jsonify({"status": False, "error": str(exc)}), 400
+    except restore_mod.RestoreStateError as exc:
+        return jsonify({"status": False, "error": str(exc)}), 409
+
+    return jsonify(_restore_public_payload(payload)), 202
+
+
+@app.route("/restore/status", methods=["GET"])
+@require_apikey
+def restore_status_get():
+    import restore as restore_mod
+
+    payload = restore_mod.restore_status(_restore_staging_dir())
+    payload["enabled"] = _restore_enabled()
+    return jsonify(payload)
+
+
+@app.route("/restore", methods=["DELETE"])
+@require_apikey
+def restore_delete():
+    if not _restore_enabled():
+        return jsonify({"status": False, "error": "restore disabled"}), 403
+
+    import restore as restore_mod
+
+    try:
+        payload = restore_mod.cancel_staged_restore(_restore_staging_dir())
+    except restore_mod.RestoreStateError as exc:
+        return jsonify({"status": False, "error": str(exc)}), 404
+    return jsonify({"status": True, **payload})
+
+
 @app.route("/docs")
 def swagger_docs():
     """Swagger UI for the OpenAPI spec (Phase 3 slice 3b).

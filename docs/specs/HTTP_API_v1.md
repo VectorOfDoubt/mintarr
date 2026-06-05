@@ -35,6 +35,7 @@ Endpoints group into five categories:
 | Health | `/health` | Liveness check |
 | Source ingest | `/local/ingest`, `/soulseek/ingest`, `/sab/ingest`, `/qbit/ingest` | Manual operator triggers per source |
 | Webhook-in | `/webhook/ingest` | Generic source-routed ingest for external automation (n8n, IFTTT, scripts) |
+| Backup / restore | `/backup`, `/restore`, `/restore/status` | State export and staged restore |
 | Dashboard | `/dashboard`, `/dashboard/v1/...` | Web UI and JSON API for it |
 | Legacy verification | `/verification`, `/decisions`, `/jobs` | Pre-dashboard V2 inspection/action endpoints retained for compatibility |
 | NZB pointer | `/download/<int>.nzb`, `/download/<source>/<id>.nzb` | NZB generation for SAB roundtrip |
@@ -273,15 +274,99 @@ Validation:
 - Unknown source, disabled adapter, or non-`import` connector mode returns `503`.
 - Duplicate active paths return the existing job.
 
-## 6. Dashboard endpoints
+## 6. State, restore, and dashboard endpoints
 
-### 6.1 `GET /dashboard`
+### 6.1 `GET /backup`
+
+Authenticated read-only export of Mintarr state as a zip. It includes the state
+DB snapshot, verification sidecars, terminal sidecars, and audit logs. It never
+includes audio files.
+
+See [Backup and restore](../operations/BACKUP_RESTORE.md) for the zip contract.
+
+### 6.2 `POST /restore`
+
+Stage a restore zip for a later boot-time apply. This endpoint is authenticated
+and disabled by default (`MINTARR_RESTORE_ENABLED=false`). It validates the zip
+and writes a restore marker under `MINTARR_RESTORE_STAGING_DIR`, but it does
+**not** extract files or overwrite state in the running process.
+
+JSON request selecting an existing backup:
+
+```http
+POST /restore
+Content-Type: application/json
+X-Api-Key: <key>
+
+{ "backup_path": "/config/backups/mintarr-backup-20260605-030000.zip" }
+```
+
+Multipart upload:
+
+```http
+POST /restore
+Content-Type: multipart/form-data
+X-Api-Key: <key>
+
+file=@mintarr-backup-20260605-030000.zip
+```
+
+Response:
+
+```json
+{
+  "status": true,
+  "restore_id": "20260605-061500-ab12cd",
+  "state": "staged",
+  "restart_required": true,
+  "source_name": "mintarr-backup-20260605-030000.zip",
+  "plan": {
+    "entry_count": 42,
+    "total_uncompressed_bytes": 123456,
+    "has_state_db": true
+  },
+  "message": "restore staged; restart Mintarr to apply"
+}
+```
+
+Validation:
+
+- Restore disabled returns `403`.
+- Missing or multiple sources (`backup_path` plus upload) return `400`.
+- `backup_path` must realpath inside `/config/backups` or `MINTARR_BACKUP_DIR`.
+- Invalid zip, unknown entries, traversal, unsafe `sidecars/<jid>` segments,
+  symlink/special-file entries, invalid SQLite, invalid JSON/JSONL, and cap
+  violations return `400`.
+- Existing pending restore marker returns `409`.
+
+### 6.3 `GET /restore/status`
+
+Authenticated. Returns whether restore is enabled and whether a restore marker
+is staged.
+
+```json
+{
+  "enabled": true,
+  "pending": true,
+  "restore_id": "20260605-061500-ab12cd",
+  "state": "staged",
+  "created_at": 1780632900.0,
+  "last_apply": null
+}
+```
+
+### 6.4 `DELETE /restore`
+
+Authenticated. Cancels a staged restore before boot-time apply starts. It removes
+the restore marker and staged zip. Returns `404` if no restore is staged.
+
+### 6.5 `GET /dashboard`
 
 Returns the dashboard HTML. Server-side rendered. Phase 2 work replaces this with a sidebar layout.
 
 The HTML shell itself does not require authentication. It stores the operator-provided API key in browser localStorage and sends it to the JSON endpoints below. No JSON variant — use the `/dashboard/v1/...` endpoints below for programmatic access.
 
-### 6.2 `GET /dashboard/v1/summary`
+### 6.6 `GET /dashboard/v1/summary`
 
 ```http
 200 OK
@@ -322,7 +407,7 @@ Content-Type: application/json
 }
 ```
 
-### 6.3 `GET /dashboard/v1/records`
+### 6.7 `GET /dashboard/v1/records`
 
 ```http
 GET /dashboard/v1/records?limit=50&offset=0&status=needs_review
@@ -368,7 +453,7 @@ Query parameters:
 | `status` | string | Filter by `derived_status` (`imported`, `needs_review`, `blocked`, `failed`, `discarded`, `expired`) |
 | `source_type` | string | Reserved for source filtering. Current implementation includes source data in detailed records and DB-backed views; UI filters may lag this parameter. |
 
-### 6.4 `GET /dashboard/v1/record/<jid>`
+### 6.8 `GET /dashboard/v1/record/<jid>`
 
 ```http
 200 OK
@@ -393,7 +478,7 @@ Related detail endpoints:
 | `GET /dashboard/v1/audio-sample/<jid>` | Short review sample when files are still available |
 | `GET /dashboard/v1/spectrum/<jid>` | Spectrum PNG when generated/cached |
 
-### 6.5 `GET /dashboard/v1/jobs`
+### 6.9 `GET /dashboard/v1/jobs`
 
 ```http
 200 OK
@@ -418,7 +503,7 @@ Related detail endpoints:
 }
 ```
 
-### 6.6 `POST /dashboard/v1/action/<jid>`
+### 6.10 `POST /dashboard/v1/action/<jid>`
 
 Unified operator-action endpoint. The request body selects the action.
 
@@ -457,15 +542,15 @@ Supported actions:
 
 Invalid actions or invalid record state return `409 Conflict` with a human-readable `error`.
 
-### 6.7 `GET /dashboard/v1/actions` and `GET /dashboard/v1/actions/<jid>`
+### 6.11 `GET /dashboard/v1/actions` and `GET /dashboard/v1/actions/<jid>`
 
 Returns the operator-action audit timeline. The unscoped endpoint supports recent global audit views; the scoped endpoint is used by the record drawer.
 
-### 6.8 `POST /dashboard/v1/jobs/<job_id>/cancel`
+### 6.12 `POST /dashboard/v1/jobs/<job_id>/cancel`
 
 Request cancellation of a running worker job. Cooperative cancel — the adapter's next `check_cancelled()` call raises `JobCancelled`.
 
-### 6.9 `GET /dashboard/v1/connectors`
+### 6.13 `GET /dashboard/v1/connectors`
 
 Returns the static connector registry + runtime status. Shape defined in [`CONNECTOR_MANIFEST_v1.md`](CONNECTOR_MANIFEST_v1.md) §6.
 
@@ -477,7 +562,7 @@ secret-safe: it may include env var names, service/profile hints, docs links,
 and action text, but never env values, API keys, tokens, local private host
 paths, or Docker socket access.
 
-### 6.10 `POST /dashboard/v1/connectors/<connector_id>/config`
+### 6.14 `POST /dashboard/v1/connectors/<connector_id>/config`
 
 Validate or persist connector runtime mode.
 
@@ -504,11 +589,11 @@ Responses include:
 - `404 Not Found` for unknown connector IDs
 - `409 Conflict` when required connector or import-mode invariants would be violated
 
-### 6.11 `GET /dashboard/v1/timings`
+### 6.15 `GET /dashboard/v1/timings`
 
 Aggregate timing statistics for performance analysis.
 
-### 6.12 `GET /decisions`
+### 6.16 `GET /decisions`
 
 ```http
 GET /decisions?limit=100

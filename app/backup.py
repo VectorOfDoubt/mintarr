@@ -9,12 +9,21 @@ later slice, since it overwrites state.
 from __future__ import annotations
 
 import io
+import logging
 import os
 import sqlite3
 import tempfile
+import threading
+import time
 import zipfile
+from collections.abc import Callable
 from collections.abc import Mapping
 from pathlib import Path
+
+log = logging.getLogger("tidalhires.backup")
+
+_scheduler_stop = threading.Event()
+_scheduler_thread: threading.Thread | None = None
 
 
 def _snapshot_sqlite(db_path: Path) -> bytes:
@@ -73,3 +82,127 @@ def build_backup_zip(
                 zf.write(lpath, f"logs/{name}")
 
     return buf.getvalue()
+
+
+def write_backup_file(
+    *,
+    build_zip: Callable[[], bytes],
+    backup_dir: Path | str,
+    retention: int,
+    now: float | None = None,
+) -> Path:
+    """Write one scheduled backup zip atomically and apply count retention.
+
+    The builder is expected to be read-only. This function only writes inside
+    ``backup_dir`` and never deletes anything except older ``mintarr-backup-*.zip``
+    files in that same directory.
+    """
+    target_dir = Path(backup_dir)
+    target_dir.mkdir(parents=True, exist_ok=True)
+
+    ts = time.strftime("%Y%m%d-%H%M%S", time.gmtime(now or time.time()))
+    target = target_dir / f"mintarr-backup-{ts}.zip"
+    suffix = 1
+    while target.exists():
+        target = target_dir / f"mintarr-backup-{ts}-{suffix}.zip"
+        suffix += 1
+
+    tmp = target_dir / f".{target.name}.tmp"
+    try:
+        tmp.write_bytes(build_zip())
+        tmp.replace(target)
+    finally:
+        try:
+            if tmp.exists():
+                tmp.unlink()
+        except OSError:
+            log.warning("failed to remove temporary backup file: %s", tmp)
+
+    prune_scheduled_backups(target_dir, retention=retention)
+    return target
+
+
+def prune_scheduled_backups(backup_dir: Path | str, *, retention: int) -> list[Path]:
+    """Delete older scheduled backup zips beyond ``retention``.
+
+    ``retention <= 0`` disables pruning. Only files matching Mintarr's scheduled
+    backup filename prefix are considered.
+    """
+    if retention <= 0:
+        return []
+    target_dir = Path(backup_dir)
+    if not target_dir.is_dir():
+        return []
+
+    backups = sorted(
+        (p for p in target_dir.glob("mintarr-backup-*.zip") if p.is_file()),
+        key=lambda p: (p.stat().st_mtime, p.name),
+        reverse=True,
+    )
+    removed: list[Path] = []
+    for old in backups[retention:]:
+        try:
+            old.unlink()
+            removed.append(old)
+        except OSError:
+            log.warning("failed to prune old backup: %s", old)
+    return removed
+
+
+def start_scheduled_backups(
+    *,
+    build_zip: Callable[[], bytes],
+    backup_dir: Path | str,
+    interval_seconds: float,
+    retention: int,
+) -> bool:
+    """Start the scheduled backup thread. Idempotent; disabled by caller config."""
+    global _scheduler_thread
+    if interval_seconds <= 0:
+        log.warning("scheduled backups not started: interval_seconds must be > 0")
+        return False
+    if _scheduler_thread is not None and _scheduler_thread.is_alive():
+        log.debug("scheduled backup thread already running")
+        return True
+
+    target_dir = Path(backup_dir)
+    _scheduler_stop.clear()
+
+    def _loop() -> None:
+        log.info(
+            "scheduled backup thread started (dir=%s interval_seconds=%s retention=%s)",
+            target_dir,
+            interval_seconds,
+            retention,
+        )
+        while not _scheduler_stop.wait(timeout=interval_seconds):
+            try:
+                written = write_backup_file(
+                    build_zip=build_zip,
+                    backup_dir=target_dir,
+                    retention=retention,
+                )
+                log.info("scheduled backup written: %s", written)
+            except Exception:
+                log.exception("scheduled backup failed")
+        log.info("scheduled backup thread exiting")
+
+    _scheduler_thread = threading.Thread(
+        target=_loop, name="mintarr-backup-scheduler", daemon=True
+    )
+    _scheduler_thread.start()
+    return True
+
+
+def stop_scheduled_backups(timeout: float = 5.0) -> None:
+    """Signal scheduler shutdown and wait. Useful in tests."""
+    global _scheduler_thread
+    _scheduler_stop.set()
+    if _scheduler_thread is not None:
+        _scheduler_thread.join(timeout=timeout)
+        if not _scheduler_thread.is_alive():
+            _scheduler_thread = None
+
+
+def is_scheduled_backup_running() -> bool:
+    return _scheduler_thread is not None and _scheduler_thread.is_alive()

@@ -58,7 +58,27 @@ The window of unavailability is whatever it takes to copy. For typical install s
 
 ### 2.3 Scheduled backups
 
-Use a cron job, systemd timer, or your existing backup tooling. Example crontab:
+Mintarr can write scheduled backup zips itself. It is disabled by default; enable
+it only after choosing a target directory and retention policy:
+
+```bash
+MINTARR_BACKUP_SCHEDULE_ENABLED=true
+MINTARR_BACKUP_INTERVAL_HOURS=24
+MINTARR_BACKUP_DIR=/config/backups
+MINTARR_BACKUP_RETENTION=30
+```
+
+When enabled, Mintarr writes `mintarr-backup-YYYYMMDD-HHMMSS.zip` files using
+the same state bundle as `GET /backup` (§2.4). Files are written atomically
+(`.tmp` then rename) and retention prunes only `mintarr-backup-*.zip` files in
+`MINTARR_BACKUP_DIR`; other files in that directory are left alone. Set
+`MINTARR_BACKUP_RETENTION=0` to disable pruning.
+
+The first scheduled backup runs after the interval elapses. Use `GET /backup`
+for an immediate on-demand export.
+
+You can also use a cron job, systemd timer, or existing backup tooling. Example
+crontab:
 
 ```cron
 # Daily Mintarr backup at 03:00
@@ -87,7 +107,8 @@ The endpoint is authenticated and **read-only** — it never mutates state. The 
 
 Audio files in `OUTPUT_BASE/<jid>/` are deliberately excluded — they are regenerable from source and would dominate the archive size. Restore is the manual procedure in §3; an automated restore endpoint is intentionally deferred because it overwrites state.
 
-This export covers the on-demand and "scheduled via your own cron + curl" cases. A Mintarr-managed *scheduler* remains future work.
+This export covers the on-demand and "scheduled via your own cron + curl" cases.
+The Mintarr-managed scheduler in §2.3 writes the same zip format.
 
 ## 3. Restore procedure
 

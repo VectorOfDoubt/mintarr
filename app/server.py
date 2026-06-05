@@ -178,6 +178,13 @@ def _v2_verification_enabled() -> bool:
     )
 
 
+def _env_bool(name: str, default: bool = False) -> bool:
+    value = os.environ.get(name)
+    if value is None:
+        return default
+    return value.lower() in ("1", "true", "yes", "on")
+
+
 def _rescue_rescan_enabled() -> bool:
     try:
         import state_db
@@ -5461,10 +5468,22 @@ def backup():
     and decision/audit logs — never audio files. Restore is a separate later
     slice, since it overwrites state.
     """
+    data = _build_state_backup_zip()
+    ts = time.strftime("%Y%m%d-%H%M%S", time.gmtime())
+    return Response(
+        data,
+        mimetype="application/zip",
+        headers={
+            "Content-Disposition": f"attachment; filename=mintarr-backup-{ts}.zip"
+        },
+    )
+
+
+def _build_state_backup_zip() -> bytes:
     import state_db
     from backup import build_backup_zip
 
-    data = build_backup_zip(
+    return build_backup_zip(
         state_db_path=getattr(state_db, "_db_path", None),
         output_base=OUTPUT_BASE,
         archive_dirs={
@@ -5475,14 +5494,6 @@ def backup():
         log_files={
             "decisions.jsonl": DECISIONS_LOG,
             "release_switch_audit.jsonl": RELEASE_SWITCH_AUDIT_LOG,
-        },
-    )
-    ts = time.strftime("%Y%m%d-%H%M%S", time.gmtime())
-    return Response(
-        data,
-        mimetype="application/zip",
-        headers={
-            "Content-Disposition": f"attachment; filename=mintarr-backup-{ts}.zip"
         },
     )
 
@@ -5957,6 +5968,24 @@ if not (
         log.exception(
             "worker.start_worker() failed — continuing without background worker"
         )
+
+# Phase 3: optional scheduled backup export. Disabled by default so upgrades do
+# not start writing files until the operator opts in.
+if _env_bool("MINTARR_BACKUP_SCHEDULE_ENABLED", default=False):
+    try:
+        from backup import start_scheduled_backups
+
+        interval_hours = float(os.environ.get("MINTARR_BACKUP_INTERVAL_HOURS", "24"))
+        retention = int(os.environ.get("MINTARR_BACKUP_RETENTION", "30"))
+        backup_dir = Path(os.environ.get("MINTARR_BACKUP_DIR", "/config/backups"))
+        start_scheduled_backups(
+            build_zip=_build_state_backup_zip,
+            backup_dir=backup_dir,
+            interval_seconds=interval_hours * 3600,
+            retention=retention,
+        )
+    except Exception:
+        log.exception("scheduled backups failed to start")
 
 
 if __name__ == "__main__":

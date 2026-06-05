@@ -3,8 +3,12 @@
 from __future__ import annotations
 
 import io
+import os
 import sqlite3
+import time
 import zipfile
+
+import pytest
 
 import server
 
@@ -81,3 +85,62 @@ def test_backup_endpoint_streams_zip():
     assert "attachment; filename=mintarr-backup-" in resp.headers["Content-Disposition"]
     # Body is a valid zip even when state dirs are empty in tests.
     zipfile.ZipFile(io.BytesIO(resp.get_data()))
+
+
+def test_write_backup_file_writes_atomically_and_prunes_retention(tmp_path):
+    import backup
+
+    backup_dir = tmp_path / "backups"
+    backup_dir.mkdir()
+    keep_foreign = backup_dir / "operator-note.zip"
+    keep_foreign.write_text("not managed by Mintarr")
+    old_a = backup_dir / "mintarr-backup-20260101-000000.zip"
+    old_b = backup_dir / "mintarr-backup-20260102-000000.zip"
+    old_a.write_bytes(b"old-a")
+    old_b.write_bytes(b"old-b")
+    os_time = time.time()
+    # Make deterministic age ordering independent of filesystem timestamp
+    # resolution: the new backup should be newest, old_b second, old_a pruned.
+    old_a_stat = os_time - 20
+    old_b_stat = os_time - 10
+
+    os.utime(old_a, (old_a_stat, old_a_stat))
+    os.utime(old_b, (old_b_stat, old_b_stat))
+
+    def _build_zip():
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr("state_db.sqlite", b"SQLite format 3\x00")
+        return buf.getvalue()
+
+    written = backup.write_backup_file(
+        build_zip=_build_zip,
+        backup_dir=backup_dir,
+        retention=2,
+        now=1770000000,
+    )
+
+    assert written.name == "mintarr-backup-20260202-024000.zip"
+    assert written.exists()
+    assert zipfile.ZipFile(written).namelist() == ["state_db.sqlite"]
+    assert old_b.exists()
+    assert not old_a.exists()
+    assert keep_foreign.exists()
+    assert not list(backup_dir.glob("*.tmp"))
+
+
+def test_write_backup_file_removes_tmp_when_builder_fails(tmp_path):
+    import backup
+
+    def _fail():
+        raise RuntimeError("boom")
+
+    with pytest.raises(RuntimeError, match="boom"):
+        backup.write_backup_file(
+            build_zip=_fail,
+            backup_dir=tmp_path,
+            retention=30,
+            now=1770000000,
+        )
+
+    assert not list(tmp_path.glob("*.tmp"))

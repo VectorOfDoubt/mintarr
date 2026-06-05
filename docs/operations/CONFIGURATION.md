@@ -346,7 +346,21 @@ Pre-cutover builds also accept legacy `TIDALHIRES_DISABLE_WORKER`.
 
 In production, leave the worker enabled. Mintarr's worker is N=1 (single thread) by design (full F2 worker-queue design doc planned for v0.2.0 migration).
 
-## 11. Timezone
+## 11. Scheduled backups
+
+| Variable | Purpose | Default |
+|---|---|---|
+| `MINTARR_BACKUP_SCHEDULE_ENABLED` | Start Mintarr's internal scheduled-backup thread | `false` |
+| `MINTARR_BACKUP_INTERVAL_HOURS` | Hours between scheduled backups | `24` |
+| `MINTARR_BACKUP_DIR` | Directory where scheduled backup zips are written | `/config/backups` |
+| `MINTARR_BACKUP_RETENTION` | Number of scheduled `mintarr-backup-*.zip` files to keep; `0` disables pruning | `30` |
+
+Scheduled backups use the same zip contents as `GET /backup`: state DB snapshot,
+verification sidecars, terminal sidecars, and audit logs. Audio files are never
+included. The scheduler is disabled by default so upgrades do not start writing
+backup files until the operator opts in.
+
+## 12. Timezone
 
 | Variable | Purpose | Default |
 |---|---|---|
@@ -354,7 +368,7 @@ In production, leave the worker enabled. Mintarr's worker is N=1 (single thread)
 
 Set to your local timezone for human-readable logs (e.g., `Europe/Oslo`).
 
-## 12. Reference defaults
+## 13. Reference defaults
 
 Here is the full default-values table for quick reference:
 
@@ -430,10 +444,16 @@ GUNICORN_ACCESS_LOG=-
 # Worker
 MINTARR_DISABLE_WORKER=false
 
+# Scheduled backups
+MINTARR_BACKUP_SCHEDULE_ENABLED=false
+MINTARR_BACKUP_INTERVAL_HOURS=24
+MINTARR_BACKUP_DIR=/config/backups
+MINTARR_BACKUP_RETENTION=30
+
 # Timezone
 TZ=UTC
 ```
 
 ---
 
-> Last updated: 2026-06-03
+> Last updated: 2026-06-05

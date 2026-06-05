@@ -5408,6 +5408,41 @@ def openapi_json():
     return jsonify(build_openapi(app))
 
 
+@app.route("/backup")
+@require_apikey
+def backup():
+    """Download a zip of Mintarr state (Phase 3 slice 6 — export half).
+
+    Authenticated and read-only. Contains the state_db, verification sidecars,
+    and decision/audit logs — never audio files. Restore is a separate later
+    slice, since it overwrites state.
+    """
+    import state_db
+    from backup import build_backup_zip
+
+    data = build_backup_zip(
+        state_db_path=getattr(state_db, "_db_path", None),
+        output_base=OUTPUT_BASE,
+        archive_dirs={
+            "blocked": BLOCKED_DECISIONS_DIR,
+            "discarded": DISCARDED_DIR,
+            "expired": EXPIRED_REVIEW_DIR,
+        },
+        log_files={
+            "decisions.jsonl": DECISIONS_LOG,
+            "release_switch_audit.jsonl": RELEASE_SWITCH_AUDIT_LOG,
+        },
+    )
+    ts = time.strftime("%Y%m%d-%H%M%S", time.gmtime())
+    return Response(
+        data,
+        mimetype="application/zip",
+        headers={
+            "Content-Disposition": f"attachment; filename=mintarr-backup-{ts}.zip"
+        },
+    )
+
+
 @app.route("/docs")
 def swagger_docs():
     """Swagger UI for the OpenAPI spec (Phase 3 slice 3b).

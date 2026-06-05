@@ -1,7 +1,7 @@
 # Backup and Restore
 
 > **Type:** Operations / data protection
-> **Version:** 1.0 — 2026-05-26
+> **Version:** 1.1 — 2026-06-05
 > **Status:** Living document. Updates as backup tooling evolves.
 > **Audience:** Operators establishing a backup routine. Anyone recovering from data loss.
 
@@ -67,7 +67,27 @@ Use a cron job, systemd timer, or your existing backup tooling. Example crontab:
 
 The `find -mtime +30 -delete` keeps the last 30 daily backups. Adjust to fit your retention policy.
 
-Phase 3 (Observability and integration surface) introduces a Mintarr-managed scheduled backup as a first-class feature, replacing the cron pattern.
+### 2.4 One-call export endpoint (`GET /backup`)
+
+Phase 3 adds a Mintarr-managed export endpoint that bundles the minimum-viable backup (§1) into a single zip — no `docker exec` and no SQLite tooling on the host required:
+
+```bash
+curl -fsS -H "X-Api-Key: $MINTARR_API_KEY" \
+    http://127.0.0.1:5025/backup -o mintarr-backup-$(date +%Y%m%d-%H%M%S).zip
+```
+
+The endpoint is authenticated and **read-only** — it never mutates state. The zip contains:
+
+| Path in zip | Source |
+|---|---|
+| `state_db.sqlite` | Consistent snapshot of the active state DB via SQLite's online-backup API (WAL-safe; can run while Mintarr is live) |
+| `sidecars/<jid>/verification.json` | Verification sidecars under `OUTPUT_BASE` (sidecars only — **never** audio) |
+| `archive/{blocked,discarded,expired}/*.json` | Terminal-state sidecars |
+| `logs/decisions.jsonl`, `logs/release_switch_audit.jsonl` | Append-only audit logs |
+
+Audio files in `OUTPUT_BASE/<jid>/` are deliberately excluded — they are regenerable from source and would dominate the archive size. Restore is the manual procedure in §3; an automated restore endpoint is intentionally deferred because it overwrites state.
+
+This export covers the on-demand and "scheduled via your own cron + curl" cases. A Mintarr-managed *scheduler* remains future work.
 
 ## 3. Restore procedure
 
@@ -238,4 +258,4 @@ Mintarr's state is portable across hosts as long as the schema version matches.
 
 ---
 
-> Last updated: 2026-05-26
+> Last updated: 2026-06-05

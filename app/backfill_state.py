@@ -24,10 +24,11 @@ import sys
 from pathlib import Path
 
 import state_db
+from logging_setup import configure_logging
 
 
 log = logging.getLogger("tidalhires.backfill")
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+configure_logging()
 
 
 def _scan_dir_for_sidecars(directory: Path) -> list[Path]:

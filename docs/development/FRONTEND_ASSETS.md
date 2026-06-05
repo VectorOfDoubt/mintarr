@@ -33,6 +33,8 @@ Rules for every vendored asset:
 |---|---|---|---|
 | Alpine.js | 3.14.1 | `app/static/vendor/alpine-3.14.1.min.js` | `l8f0VcPi/M1iHPv8egOnY/15TDwqgbOR1anMIJWvU6nLRgZVLTLSaNqi/TOoT5Fh` |
 | HTMX | 2.0.3 | `app/static/vendor/htmx-2.0.3.min.js` | `0895/pl2MU10Hqc6jd4RvrthNlDiE9U1tWmX7WRESftEDRosgxNsQG/Ze9YMRzHq` |
+| Swagger UI (CSS) | 5.17.14 | `app/static/vendor/swagger-ui-5.17.14.css` | `wxLW6kwyHktdDGr6Pv1zgm/VGJh99lfUbzSn6HNHBENZlCN7W602k9VkGdxuFvPn` |
+| Swagger UI (JS bundle) | 5.17.14 | `app/static/vendor/swagger-ui-bundle-5.17.14.js` | `wmyclcVGX/WhUkdkATwhaK1X1JtiNrr2EoYJ+diV3vj4v6OC5yCeSu+yW13SYJep` |
 
 HTMX was added in Phase 2 slice 3 for the live Queue partial (server-rendered
 fragment polled via `hx-trigger`). HTMX requests authenticate via an

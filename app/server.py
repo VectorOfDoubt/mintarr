@@ -5351,17 +5351,30 @@ def metrics():
 
 
 @app.route("/openapi.json")
-@require_apikey
 def openapi_json():
-    """Machine-readable OpenAPI 3 spec (Phase 3 slice 3a).
+    """Machine-readable OpenAPI 3 spec (Phase 3 slice 3a/3b).
 
-    Generated from the live routes; authenticated like the rest of the API
-    (it describes the authenticated surface). HTTP_API_v1.md stays authoritative
-    for request/response detail until this reaches parity.
+    Unauthenticated: it is a descriptor (no secrets, same class as /health and
+    /metrics), and Swagger UI at /docs must fetch it on load before the operator
+    authorizes. The spec marks the authenticated surface; try-it-out calls in
+    Swagger UI still require the key via Authorize. HTTP_API_v1.md stays
+    authoritative for request/response detail until this reaches parity.
     """
     from openapi import build_openapi
 
     return jsonify(build_openapi(app))
+
+
+@app.route("/docs")
+def swagger_docs():
+    """Swagger UI for the OpenAPI spec (Phase 3 slice 3b).
+
+    Public, like /openapi.json. Swagger UI is vendored (no Node/CDN) per
+    ADR-0011 and loaded with SRI from app/static/vendor/.
+    """
+    from flask import render_template
+
+    return render_template("swagger.html")
 
 
 @app.route("/jobs")

@@ -7,14 +7,17 @@ import server
 VALID_KEY = "tidalhires-test-api-key"
 
 
-def test_openapi_requires_apikey():
+def test_openapi_is_public():
+    """The spec is a descriptor (no secrets); Swagger UI must fetch it unauthed."""
     client = server.app.test_client()
-    assert client.get("/openapi.json").status_code == 401
+    resp = client.get("/openapi.json")
+    assert resp.status_code == 200
+    assert resp.get_json()["openapi"].startswith("3.")
 
 
 def test_openapi_spec_shape():
     client = server.app.test_client()
-    resp = client.get(f"/openapi.json?apikey={VALID_KEY}")
+    resp = client.get("/openapi.json")
     assert resp.status_code == 200
     spec = resp.get_json()
     assert spec["openapi"].startswith("3.")

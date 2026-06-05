@@ -12,8 +12,9 @@ from __future__ import annotations
 import re
 from typing import Any
 
-# Endpoints that are unauthenticated by design (infra, like /health, /metrics).
-_UNAUTHENTICATED = {"health", "metrics"}
+# Endpoints that are unauthenticated by design (infra/descriptors, like /health,
+# /metrics, the OpenAPI spec, and the Swagger UI page).
+_UNAUTHENTICATED = {"health", "metrics", "openapi_json", "swagger_docs"}
 
 _PATH_PARAM = re.compile(r"<(?:[^:<>]+:)?([^<>]+)>")
 

@@ -1419,6 +1419,50 @@ def qbittorrent_torrent_ingest():
     return _completed_folder_ingest("qbittorrent_torrent", "qBittorrent")
 
 
+# Friendly title prefixes keyed by adapter name. Unknown adapters fall back to
+# the raw name — this map is cosmetic and does not gate routing; the adapter
+# registry is the authority on which sources are accepted.
+_WEBHOOK_SOURCE_LABELS = {
+    "sab_usenet": "SAB",
+    "qbittorrent_torrent": "qBittorrent",
+    "soulseek": "Soulseek",
+    "local": "LocalFolder",
+}
+
+
+@app.route("/webhook/ingest", methods=["POST"])
+@require_apikey
+def webhook_ingest():
+    """Generic webhook-in (Phase 3 slice 5) — source-routed completed-folder ingest.
+
+    External automation (n8n, IFTTT, custom post-scripts) POSTs
+    ``{"source": "<source>", "path": "<rel>"}`` to route a completed folder into
+    Mintarr's QC-gated pipeline via one stable URL, instead of the per-source
+    ``/sab/ingest`` / ``/qbit/ingest`` endpoints. Authenticated; reuses
+    ``_completed_folder_ingest`` so dedupe, import-mode enforcement, and the QC
+    gate behave identically.
+
+    ``source`` accepts either an adapter name (e.g. ``local``) or its connector
+    id (e.g. ``local_folder``) — connector ids are resolved to the adapter name
+    so callers can use whichever identifier they know. The adapter registry is
+    the authority; unknown or unsupported sources return 503.
+    """
+    body = request.get_json(silent=True) or {}
+    source = body.get("source")
+    if not isinstance(source, str) or not source.strip():
+        return jsonify({"status": False, "error": "source required"}), 400
+    source = source.strip()
+
+    # Resolve a connector id (local_folder) to its adapter name (local); pass an
+    # already-adapter-name source through unchanged.
+    import connectors
+
+    connector = connectors.get_connector(source)
+    adapter_name = getattr(connector, "adapter_name", None) or source
+    label = _WEBHOOK_SOURCE_LABELS.get(adapter_name, adapter_name)
+    return _completed_folder_ingest(adapter_name, label)
+
+
 # ---- Download worker ----
 def _mark_download_cancelled(jid: str, work_dir: Path | None = None) -> None:
     with _jobs_lock:

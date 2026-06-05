@@ -34,6 +34,7 @@ Endpoints group into five categories:
 | Lidarr-facing | `/api`, `/newznab/api`, `/sabnzbd/api`, `/download/` | External protocols (Newznab, SAB) — not Mintarr-versioned |
 | Health | `/health` | Liveness check |
 | Source ingest | `/local/ingest`, `/soulseek/ingest`, `/sab/ingest`, `/qbit/ingest` | Manual operator triggers per source |
+| Webhook-in | `/webhook/ingest` | Generic source-routed ingest for external automation (n8n, IFTTT, scripts) |
 | Dashboard | `/dashboard`, `/dashboard/v1/...` | Web UI and JSON API for it |
 | Legacy verification | `/verification`, `/decisions`, `/jobs` | Pre-dashboard V2 inspection/action endpoints retained for compatibility |
 | NZB pointer | `/download/<int>.nzb`, `/download/<source>/<id>.nzb` | NZB generation for SAB roundtrip |
@@ -240,6 +241,36 @@ Validation:
 - Absolute paths, traversal, symlinked paths, and non-directory paths return `400`.
 - Partial marker files/folders and folders that change during the settle window return `409`.
 - Disabled adapter or non-`import` connector mode returns `503`.
+- Duplicate active paths return the existing job.
+
+### 5.5 `POST /webhook/ingest`
+
+Generic webhook-in (Phase 3). Routes a completed folder into the QC-gated
+pipeline through one stable URL, instead of the per-source endpoints above —
+intended for external automation (n8n, IFTTT, custom post-scripts).
+
+```http
+POST /webhook/ingest
+Content-Type: application/json
+X-Api-Key: <key>
+
+{ "source": "sab_usenet", "path": "Artist/Album" }
+```
+
+`source` selects the completed-folder source to route to. It accepts either the
+adapter name (`sab_usenet`, `qbittorrent_torrent`, `soulseek`, `local`) or the
+connector id (e.g. `local_folder` for the `local` adapter) — connector ids are
+resolved to the adapter name. The request is then handled identically to that
+source's own ingest endpoint — same dedupe, import-mode enforcement, validation,
+and QC gate. The adapter registry is the authority on accepted sources.
+
+Validation:
+
+- `source` missing or empty returns `400`.
+- `path` validation is delegated to the routed adapter (see §5.1–5.4): traversal,
+  absolute, symlink, and non-directory paths return `400`; partial/unsettled
+  folders return `409`.
+- Unknown source, disabled adapter, or non-`import` connector mode returns `503`.
 - Duplicate active paths return the existing job.
 
 ## 6. Dashboard endpoints

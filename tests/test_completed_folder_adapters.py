@@ -318,6 +318,98 @@ def test_completed_folder_ingest_endpoint_respects_connector_mode(
     assert "not in import mode" in response.get_json()["error"]
 
 
+def _webhook_ingest(client, source, path):
+    body = {}
+    if source is not None:
+        body["source"] = source
+    if path is not None:
+        body["path"] = path
+    return client.post(
+        "/webhook/ingest",
+        data=json.dumps(body),
+        content_type="application/json",
+        headers={"X-Api-Key": os.environ["TIDALHIRES_API_KEY"]},
+    )
+
+
+def test_webhook_ingest_routes_to_source_adapter(completed_folder_client):
+    client, sab_root, _ = completed_folder_client
+    _seed_album(sab_root)
+
+    response = _webhook_ingest(client, "sab_usenet", "Artist/Album")
+
+    assert response.status_code == 200, response.data
+    payload = response.get_json()
+    import state_db
+
+    job = state_db.get_job(payload["job_id"])
+    assert job["jid"] == payload["nzo_ids"][0]
+    assert job["type"] == "sab_usenet_grab"
+    assert job["source_type"] == "sab_usenet"
+    assert job["source_id"] == "Artist/Album"
+
+
+def test_webhook_ingest_resolves_connector_id_alias_to_adapter(
+    completed_folder_client, tmp_path
+):
+    # The LocalFolder adapter is named "local"; its connector id is
+    # "local_folder". A webhook caller using the connector id must still route
+    # to the "local" adapter and enqueue a local_grab job.
+    client, _, _ = completed_folder_client
+    local_root = tmp_path / "local"
+    _seed_album(local_root)
+    import state_db
+
+    state_db.set_connector_config(
+        "local_folder", enabled=True, mode="import", actor="test"
+    )
+
+    response = _webhook_ingest(client, "local_folder", "Artist/Album")
+
+    assert response.status_code == 200, response.data
+    payload = response.get_json()
+    job = state_db.get_job(payload["job_id"])
+    assert job["type"] == "local_grab"
+    assert job["source_type"] == "local"
+    assert job["source_id"] == "Artist/Album"
+
+
+def test_webhook_ingest_requires_apikey():
+    import server
+
+    resp = server.app.test_client().post("/webhook/ingest", json={})
+    assert resp.status_code == 401
+
+
+def test_webhook_ingest_requires_source(completed_folder_client):
+    client, _, _ = completed_folder_client
+    response = _webhook_ingest(client, None, "Artist/Album")
+    assert response.status_code == 400
+    assert "source required" in response.get_json()["error"]
+
+
+def test_webhook_ingest_rejects_unknown_source(completed_folder_client):
+    client, _, _ = completed_folder_client
+    response = _webhook_ingest(client, "does_not_exist", "Artist/Album")
+    assert response.status_code == 503
+    assert "not enabled" in response.get_json()["error"]
+
+
+def test_webhook_ingest_respects_connector_mode(completed_folder_client):
+    client, sab_root, _ = completed_folder_client
+    _seed_album(sab_root)
+    import state_db
+
+    state_db.set_connector_config(
+        "sab_usenet", enabled=True, mode="dry_run", actor="test"
+    )
+
+    response = _webhook_ingest(client, "sab_usenet", "Artist/Album")
+
+    assert response.status_code == 503
+    assert "not in import mode" in response.get_json()["error"]
+
+
 def test_lidarr_complete_path_mapping_can_be_parameterized(tmp_path, monkeypatch):
     import server
 

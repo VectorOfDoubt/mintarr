@@ -1,8 +1,8 @@
 # Observability
 
 > **Type:** Operations / observability
-> **Version:** 0.1 - 2026-06-03
-> **Status:** Draft skeleton. Runtime logs and sidecars exist; metrics and Grafana templates are planned.
+> **Version:** 0.2 - 2026-06-05
+> **Status:** Runtime-backed. Logs, metrics, OpenAPI, notifications, webhook-in, backup export, and Grafana templates exist.
 > **Audience:** Operators wiring Mintarr into logs, dashboards, alerts, or backup checks.
 
 ---
@@ -18,12 +18,16 @@ Mintarr currently exposes operational state through:
 | Sidecars | Implemented | Per-record verification and import evidence |
 | `decisions.jsonl` | Implemented | Append-only decision audit trail |
 | SQLite state DB | Implemented | Query index over sidecars and worker state |
-| Prometheus `/metrics` | Planned | Phase 3 |
-| Grafana templates | Planned | Phase 3 |
-| Structured JSON logs | Planned | Phase 3 |
+| Prometheus `/metrics` | Implemented | State-derived operational gauges |
+| Grafana templates | Implemented | Importable dashboards under `docs/grafana/` |
+| Structured JSON logs | Implemented | Optional JSON log format for log stacks |
+| OpenAPI / Swagger UI | Implemented | `/openapi.json` and `/docs` |
+| Notifications | Implemented | Optional Apprise notifications for attention events |
+| Webhook-in | Implemented | `POST /webhook/ingest` for external automation |
+| Backup export | Implemented | `GET /backup` read-only state export |
 
-The current runtime is inspectable, but not yet a full Prometheus/Grafana
-observability stack.
+Restore automation, scheduled backups, and richer event/timing metrics remain
+future work.
 
 ## 2. Logs
 
@@ -132,7 +136,7 @@ Healthy idle state usually means:
 
 During a grab, active jobs and queue rows are expected.
 
-## 6. Metrics (`/metrics`)
+## 6. Metric catalogue
 
 Mintarr exposes a Prometheus endpoint at **`GET /metrics`**. It is
 **unauthenticated** by convention — like `/health` — so a Prometheus scraper on
@@ -144,7 +148,7 @@ calls Lidarr and stays fast and independent of external-service availability.
 curl -s http://127.0.0.1:5025/metrics
 ```
 
-Currently exposed:
+Currently exposed at `GET /metrics`:
 
 | Metric | Type | Labels | Purpose |
 |---|---|---|---|
@@ -153,12 +157,38 @@ Currently exposed:
 | `mintarr_jobs` | Gauge | `state` | worker jobs by state (queued, running, completed, failed, …) |
 | `mintarr_active_jobs` | Gauge | — | active worker jobs (queued/running/cancelling) |
 
+All current metrics are gauges computed at scrape time from `state_db`. They are
+current-state signals, not cumulative event counters. A missing label value
+usually means the local state database currently has zero rows for that status
+or state.
+
+Stable label values are intentionally conservative:
+
+| Label | Known values | Notes |
+|---|---|---|
+| `mintarr_records.status` | `imported`, `needs_review`, `blocked`, `failed`, `discarded`, `expired`, plus future derived statuses | Derived from record state and sidecar/import outcome |
+| `mintarr_jobs.state` | `queued`, `running`, `completed`, `failed`, `cancelled`, `cancelling`, plus future worker states | Mirrors worker/state DB job lifecycle |
+
 Planned for later slices (cumulative event counters + histograms, which require
 instrumentation rather than current-state gauges): import outcomes, V2 decision
 counts, release-identity decisions, release-switch events, Lidarr queue/command
 health, connector health, and per-stage pipeline timing histograms.
 
-## 7. Performance Baseline
+## 7. Grafana dashboards
+
+Grafana dashboard templates live under
+[`docs/grafana/`](../grafana/README.md):
+
+| Dashboard | Purpose |
+|---|---|
+| [`mintarr-overview.json`](../grafana/mintarr-overview.json) | Mintarr health, active jobs, records by status, and worker state |
+| [`mintarr-worker-queue.json`](../grafana/mintarr-worker-queue.json) | Worker queue detail panels for queued/running/failed and active jobs |
+
+Import them through Grafana's dashboard import flow and select the Prometheus
+datasource that scrapes Mintarr. The templates use only the four metrics in the
+catalogue above, so they work with the current `/metrics` implementation.
+
+## 8. Performance Baseline
 
 The F2 worker queue is intentionally single-threaded (`N=1`) and backed by
 SQLite. See [F2 worker queue design](../design/F2_WORKER_QUEUE_DESIGN.md) for
@@ -168,7 +198,7 @@ Mintarr tracks one dedicated benchmark for the mocked full source-grab pipeline:
 
 | Benchmark | Baseline | Alert threshold | Workflow |
 |---|---:|---:|---|
-| `test_full_pipeline_orchestration_benchmark` | 2.50 ms mean | >3.75 ms mean (+50%) | Performance baseline |
+| `test_full_pipeline_orchestration_benchmark` | 1.45 ms mean | >2.18 ms mean (+50%) | Performance baseline |
 
 This is not a real download-throughput number. External subprocesses and
 services are mocked, so the benchmark measures Python orchestration, local
@@ -182,7 +212,7 @@ workflow compares the current pytest-benchmark JSON result against that stored
 baseline. The normal pytest suite does not run this benchmark, preserving the
 fast deterministic test contract.
 
-## 8. Planned alerts
+## 9. Planned alerts
 
 Candidate alerts:
 
@@ -198,4 +228,4 @@ unless they exceed configured timeouts.
 
 ---
 
-> Last updated: 2026-06-03
+> Last updated: 2026-06-05

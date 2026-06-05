@@ -146,6 +146,7 @@ nav:
       - Backup and restore: operations/BACKUP_RESTORE.md
       - Troubleshooting: operations/TROUBLESHOOTING.md
       - Observability: operations/OBSERVABILITY.md
+      - Grafana dashboards: grafana/README.md
 
   - Development:
       - Setup: development/DEVELOPMENT.md

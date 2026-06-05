@@ -10,6 +10,7 @@ RUN apt-get update && \
 # og smoke-test mot TIDAL (auth + HiRes-download) før du committer.
 RUN pip install --no-cache-dir \
     "git+https://github.com/Radexito/tidal-dl-ng-For-DJ.git@87ec210dfeeef23441b7c99a16123a25ec63f207" \
+    apprise==1.9.0 \
     flask==3.1.3 \
     gunicorn==26.0.0 \
     mutagen==1.47.0 \

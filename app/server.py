@@ -352,6 +352,48 @@ def _decision_record(
     return _with_log_timestamps(rec)
 
 
+def _notify_event_for(rec: dict) -> tuple[str, str] | None:
+    """Map a decision record to an attention-worthy notification, or None.
+
+    Pure + testable. Only fires for operator-attention events (review required,
+    import failed, policy violation) — never for normal successful imports.
+    """
+    jid = str(rec.get("jid") or "")
+    title = str(rec.get("title") or jid or "record")
+    # `decision` is the legacy label, present in BOTH the V2 (to_decisions_log)
+    # and legacy record shapes. The verification/outcome fields are v2_-prefixed
+    # in V2 records and stripped from legacy records, so read the label too.
+    decision = str(rec.get("decision") or "").upper()
+    vdec = str(
+        rec.get("v2_verification_decision") or rec.get("verification_decision") or ""
+    ).upper()
+    outcome = str(
+        rec.get("v2_import_outcome") or rec.get("import_outcome") or ""
+    ).upper()
+    if (vdec == "BLOCK" or decision == "BLOCKED") and outcome in {
+        "MANUAL_IMPORTED",
+        "RESCUED",
+    }:
+        return ("Mintarr: policy violation", f"{title} imported despite BLOCK ({jid})")
+    if vdec == "REVIEW_REQUIRED" or decision == "REVIEW_REQUIRED":
+        return ("Mintarr: review required", f"{title} needs review ({jid})")
+    if "FAILED" in decision or outcome == "FAILED":
+        return ("Mintarr: import failed", f"{title} import failed ({jid})")
+    return None
+
+
+def _maybe_notify_decision(rec: dict) -> None:
+    event = _notify_event_for(rec)
+    if event is None:
+        return
+    try:
+        from notifications import notify
+
+        notify(*event)
+    except Exception:
+        log.exception("decision notification failed")
+
+
 def _log_decision(jid: str, v2_result: VerificationResult | None = None, **fields):
     """Append-only log for every import decision, used for audit and tuning."""
     rec = _decision_record(jid, v2_result, fields)
@@ -361,6 +403,7 @@ def _log_decision(jid: str, v2_result: VerificationResult | None = None, **field
             f.write(json.dumps(rec) + "\n")
     except Exception:
         log.exception("Decision-log write failed")
+    _maybe_notify_decision(rec)
 
 
 DOWNLOAD_BASE.mkdir(parents=True, exist_ok=True)

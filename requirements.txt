@@ -7,6 +7,7 @@
 # (subprocess call from app/adapters/tidal.py). The Dockerfile installs
 # it directly. mypy + ruff do not need it; missing-import warnings are
 # tolerated via mypy config.
+apprise==1.9.0
 flask==3.1.3
 gunicorn==26.0.0
 mutagen==1.47.0

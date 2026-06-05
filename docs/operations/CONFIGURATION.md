@@ -114,6 +114,25 @@ The `picard_beets_acoustid` verifier connector is registered as an optional
 metadata prepass. It defaults to disabled, may be tested in `dry_run`, and does
 not write tags or affect import decisions in the current runtime.
 
+### 3.6 Notifications
+
+| Variable | Purpose | Default |
+|---|---|---|
+| `MINTARR_NOTIFY_URLS` | Comma-separated [Apprise](https://github.com/caronc/apprise) URLs for outbound alerts | unset (off) |
+
+Notifications are **off by default**. When `MINTARR_NOTIFY_URLS` is set, Mintarr
+sends an alert on operator-attention events only — **review required**, **import
+failed**, and **policy violation** — never on normal successful imports. Example:
+
+```
+MINTARR_NOTIFY_URLS=tgram://bottoken/chatid,ntfy://ntfy.sh/mytopic
+```
+
+The URLs may contain tokens, so they live in the environment and are never
+logged. A send failure is swallowed and never affects the import pipeline.
+Surfacing notifications as a first-class connector in the dashboard is a planned
+follow-up (it needs a notification connector kind).
+
 ## 4. Source adapter configuration
 
 Each source adapter has its own environment variables. Adapters are dormant (return `is_enabled()=False`) until their required env vars are set and validation passes.

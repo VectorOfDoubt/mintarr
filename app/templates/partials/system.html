@@ -27,7 +27,11 @@
 
   <div class="panel"><h2>Tasks</h2><p class="muted">Scheduled tasks land in a later slice.</p></div>
   <div class="panel"><h2>Logs</h2><p class="muted">Log viewer lands in a later slice.</p></div>
-  <div class="panel"><h2>Backup</h2><p class="muted">Backup / restore lands in a later slice.</p></div>
+  <div class="panel" hx-get="/dashboard/v1/restore/partial"
+       hx-trigger="load" hx-swap="innerHTML">
+    <h2>Backup &amp; Restore</h2>
+    <p class="muted">Loading…</p>
+  </div>
   <div class="panel"><h2>Updates</h2><p class="muted">Update status lands in a later slice.</p></div>
   <div class="panel">
     <h2>Events <a class="audit-download" data-href="/dashboard/v1/actions/download" href="#" title="Download audit trail as CSV">⤓ CSV</a></h2>

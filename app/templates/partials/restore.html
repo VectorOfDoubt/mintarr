@@ -1,0 +1,66 @@
+{# Backup & Restore panel (Phase 3 restore slice 4), rendered by
+   GET /dashboard/v1/restore/partial and re-rendered after a cancel. #}
+<h2>Backup &amp; Restore</h2>
+
+{% if notice %}
+<p class="restore-notice muted">{{ notice }}</p>
+{% endif %}
+
+<div class="sys-kv">
+  <span>Download backup</span>
+  <span><a class="audit-download" data-href="/backup" href="#"
+           title="Download a read-only state export as a zip">⤓ Backup zip</a></span>
+</div>
+
+<div class="sys-kv">
+  <span>Staged restore</span>
+  <span class="health-badge health-{{ 'ok' if restore.enabled else 'unknown' }}">
+    {{ 'enabled' if restore.enabled else 'disabled' }}
+  </span>
+</div>
+
+{% if restore.pending %}
+<div class="sys-kv"><span>Pending</span><span>{{ restore.state or 'staged' }}</span></div>
+{% if restore.restore_id %}
+<div class="sys-kv"><span>Restore id</span><span>{{ restore.restore_id }}</span></div>
+{% endif %}
+{% if restore.created_when %}
+<div class="sys-kv"><span>Staged at</span><span>{{ restore.created_when }}</span></div>
+{% endif %}
+<p class="muted">Restart Mintarr to apply this restore.</p>
+{% if restore.state == 'staged' %}
+<button type="button" class="restore-action"
+        hx-post="/dashboard/v1/restore/cancel"
+        hx-target="closest .panel"
+        hx-swap="innerHTML"
+        hx-confirm="Cancel the staged restore? The staged backup will be removed.">
+  Cancel staged restore
+</button>
+{% else %}
+<p class="muted">Apply has started — cancel is no longer available.</p>
+{% endif %}
+{% elif restore.enabled %}
+<p class="muted">No restore staged. Stage one via <code>POST /restore</code>, then restart.</p>
+{% else %}
+<p class="muted">Set <code>MINTARR_RESTORE_ENABLED=true</code> to stage restores.</p>
+{% endif %}
+
+{% if restore.last_apply_state %}
+<div class="sys-kv">
+  <span>Last apply</span>
+  <span class="health-badge health-{{ 'ok' if restore.last_apply_state == 'applied'
+        else ('bad' if restore.last_apply_state == 'failed_partial' else 'unknown') }}">
+    {{ restore.last_apply_state }}
+  </span>
+</div>
+{% if restore.last_apply_when %}
+<div class="sys-kv"><span>Applied at</span><span>{{ restore.last_apply_when }}</span></div>
+{% endif %}
+{% if restore.last_apply_detail %}
+<p class="muted">{{ restore.last_apply_detail }}</p>
+{% endif %}
+{% if restore.last_apply_state == 'failed_partial' %}
+<p class="restore-warn">Workers are stopped until you recover from the safety backup
+   and clear the restore marker. See the Backup &amp; Restore docs.</p>
+{% endif %}
+{% endif %}

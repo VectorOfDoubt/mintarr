@@ -1329,6 +1329,81 @@ def system_partial():
     )
 
 
+def _restore_when(ts: object) -> str:
+    """Format a restore timestamp (unix seconds) as a short UTC string."""
+    try:
+        return time.strftime("%Y-%m-%d %H:%M UTC", time.gmtime(float(ts)))  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return ""
+
+
+def _build_restore_panel(server_mod) -> dict:
+    """Restore status for the System → Backup & Restore panel.
+
+    Read-only: reflects the staged-restore marker and the last boot-apply
+    outcome. The danger actions (stage/apply) stay on the API + restart; the
+    dashboard only surfaces status, a backup download, and cancel.
+    """
+    try:
+        import restore
+
+        status = restore.restore_status(server_mod._restore_staging_dir())
+        last = status.get("last_apply") or {}
+        return {
+            "enabled": bool(server_mod._restore_enabled()),
+            "pending": bool(status.get("pending")),
+            "restore_id": status.get("restore_id"),
+            "state": status.get("state"),
+            "created_when": _restore_when(status.get("created_at")),
+            "last_apply_state": last.get("state"),
+            "last_apply_detail": last.get("detail"),
+            "last_apply_when": _restore_when(last.get("applied_at")),
+        }
+    except Exception:
+        return {"enabled": False, "pending": False}
+
+
+@dashboard_bp.route("/v1/restore/partial", methods=["GET"])
+def restore_partial():
+    """Server-rendered Backup & Restore panel for the System section."""
+    from server import require_apikey_check
+
+    auth_resp = require_apikey_check()
+    if auth_resp:
+        return auth_resp
+    import server
+
+    return render_template(
+        "partials/restore.html", restore=_build_restore_panel(server)
+    )
+
+
+@dashboard_bp.route("/v1/restore/cancel", methods=["POST"])
+def restore_cancel():
+    """Cancel a staged restore from the dashboard, then re-render the panel."""
+    from server import require_apikey_check
+
+    auth_resp = require_apikey_check()
+    if auth_resp:
+        return auth_resp
+    import server
+
+    notice = None
+    if not server._restore_enabled():
+        notice = "Restore is disabled."
+    else:
+        try:
+            import restore
+
+            restore.cancel_staged_restore(server._restore_staging_dir())
+            notice = "Staged restore cancelled."
+        except Exception as exc:  # RestoreNotFoundError / RestoreStateError
+            notice = str(exc)
+    return render_template(
+        "partials/restore.html", restore=_build_restore_panel(server), notice=notice
+    )
+
+
 def _audit_row(action: dict) -> dict:
     """Flatten an audit action into the fields the Events card renders."""
     out = dict(action)

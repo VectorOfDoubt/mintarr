@@ -89,7 +89,7 @@ For the underlying positioning and what is *not* in any phase, see [VISION.md](V
 
 **Goal:** Mintarr fits cleanly into existing self-hosting observability and notification stacks.
 
-**Status:** partial — observability core shipped: structured JSON logging (`MINTARR_LOG_FORMAT=json`), Prometheus `/metrics` with a documented metric catalogue, Grafana dashboard templates under `docs/grafana/`, OpenAPI `/openapi.json` + Swagger UI at `/docs`, opt-in Apprise notifications (`MINTARR_NOTIFY_URLS`) on attention events, a read-only state backup export (`GET /backup`), optional scheduled backup zips, generic webhook-in (`POST /webhook/ingest`), and staged restore (`POST /restore` + boot-time apply). Restore dashboard controls remain.
+**Status:** partial — observability core shipped: structured JSON logging (`MINTARR_LOG_FORMAT=json`), Prometheus `/metrics` with a documented metric catalogue, Grafana dashboard templates under `docs/grafana/`, OpenAPI `/openapi.json` + Swagger UI at `/docs`, opt-in Apprise notifications (`MINTARR_NOTIFY_URLS`) on attention events, a read-only state backup export (`GET /backup`), optional scheduled backup zips, generic webhook-in (`POST /webhook/ingest`), and staged restore (`POST /restore` + boot-time apply) with System-section status/cancel controls. Grafana counters/histograms and a richer event-metric surface remain future work.
 
 **Scope:**
 

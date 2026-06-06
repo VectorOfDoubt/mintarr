@@ -1,7 +1,7 @@
 # Mintarr — Documentation Index
 
 > **Type:** Meta-document. Lists every planned Mintarr document, its status, owner and dependencies.
-> **Version:** 0.20 — 2026-06-05
+> **Version:** 0.21 — 2026-06-05
 > **Status:** Public-repo tracker. Documentation set drafted. License AGPL-3.0-only. Language Python 3.12+ (ADR-0010). Cutover strategy: clean new repo, no inherited history ([MINTARR_CUTOVER_PLAYBOOK.md](architecture/MINTARR_CUTOVER_PLAYBOOK.md)). HTTP_API_v1 and SIDECAR_FORMAT_v2 runtime-validated and locked. F4.1-F4.5 foundation landed post-cutover; Phase 4 SAB/qBittorrent completed-folder ingest is implemented. v0.2.0 docs skeletons for troubleshooting, observability, and use cases are drafted. ADR-0011 locks the Phase 2 frontend approach. F2-F3.4 design docs and the quality stack roadmap are migrated and rebranded.
 > **Audience:** Project maintainers (Eivind, Claude, Codex) coordinating doc work.
 
@@ -341,5 +341,6 @@ When Codex and Claude work in parallel, they coordinate via this index — the *
 | 0.18 | 2026-06-03 | **ADR-0012 QC import-gate scope locked.** Mintarr is the QC import gate for Mintarr-routed sources only (its own lanes + operator-routed completed folders); reading Lidarr's download-client config is onboarding/discovery, not a coverage guarantee, and the universal "QC everything Lidarr imports" gate is a deferred future phase. |
 | 0.19 | 2026-06-04 | **ADR-0013 release-family identity policy drafted.** F5.1 is framed as a separate identity-policy axis beside audio QC: Lidarr-first expected metadata, MusicBrainz/advisory identity evidence, confidence/abstain behavior, and default-off audited release switching. |
 | 0.20 | 2026-06-05 | **F5.1 + Phase 2 + Phase 3 core shipped.** ADR-0013 locked; F5.1 release-family identity implemented end to end (scoring, tag evidence, two-axis policy, dashboard visibility, opt-in default-off release switch + operator override). Phase 2 operator UI complete (sidebar shell, Alpine + HTMX, theme/density, live Queue/History/System, audit feed + CSV, search). Phase 3 observability core: structured JSON logging, Prometheus `/metrics`, OpenAPI `/openapi.json` + Swagger UI `/docs`, opt-in Apprise notifications. Docs updated: OBSERVABILITY, CONFIGURATION, FRONTEND_ASSETS, HTTP_API_v1, ROADMAP. |
+| 0.21 | 2026-06-05 | **Phase 3 shipped (all scope delivered).** Completed the observability + integration surface: Grafana dashboard templates under `docs/grafana/` with a documented metric catalogue, generic webhook-in (`POST /webhook/ingest`), and the full backup/restore feature — read-only export (`GET /backup`), optional scheduled backup zips, and staged restore (validator → `POST /restore` staging → crash-safe boot-time apply with safety snapshot + fail-closed recovery → System-section status/cancel controls), per [Phase 3 restore endpoint design](design/PHASE3_RESTORE_ENDPOINT_DESIGN.md). Docs updated: BACKUP_RESTORE, CONFIGURATION, HTTP_API_v1, OBSERVABILITY, ROADMAP. Remaining (Prometheus event counters/histograms, richer event metrics) is future enhancement, not Phase 3 scope. |
 
 > Last updated: 2026-06-04

@@ -67,6 +67,7 @@ from release_metadata import collect_observed_release
 from sensor_registry import default_registry
 from verification import (
     ImportOutcome,
+    VerificationDecision,
     VerificationResult,
     apply_overrides,
     combine_audio_identity_decision,
@@ -2887,13 +2888,11 @@ def _build_release_identity_sensor(
     )
 
 
-def _build_cd_rip_sensor(output_dir: Path) -> dict | None:
-    """Advisory CD-rip evidence sensor (F5.3 slice 2).
+def _cd_rip_evidence_or_none(output_dir: Path):
+    """Parse CD-rip evidence, returning it only when a rip is detected.
 
-    Read-only: parses on-disk rip artifacts and surfaces them as evidence. It
-    does NOT feed the score or the import decision in this slice. Returns None
-    when the folder is not a CD-rip candidate (lane skipped), so non-rip releases
-    keep clean sidecars.
+    Read-only and never raises; returns None for non-rip folders (lane skipped)
+    so non-rip releases keep clean sidecars and no scoring adjustment applies.
     """
     try:
         import cd_rip_evidence
@@ -2902,9 +2901,53 @@ def _build_cd_rip_sensor(output_dir: Path) -> dict | None:
     except Exception:
         log.exception("[cd_rip_evidence] evaluation failed (continuing)")
         return None
-    if not ev.detected:
-        return None
+    return ev if ev.detected else None
 
+
+def _cd_rip_scoring_enabled() -> bool:
+    return _env_bool("MINTARR_CD_RIP_SCORING", default=False)
+
+
+def _apply_cd_rip_scoring(
+    audio_decision: VerificationDecision, ev
+) -> VerificationDecision:
+    """Adjust the audio-axis decision from CD-rip evidence (F5.3 slice 4).
+
+    Opt-in (``MINTARR_CD_RIP_SCORING``) and conservative, per the quality stack
+    roadmap §5.4:
+
+    - an AccurateRip-verified rip rescues a borderline ``REVIEW_REQUIRED`` to
+      ``ACCEPT_PROVISIONAL`` (cd-rip lane only);
+    - a log-backed AccurateRip mismatch routes ``ACCEPT``/``ACCEPT_PROVISIONAL``
+      to ``REVIEW_REQUIRED``.
+
+    It never touches a hard-gate ``BLOCK`` (good audio evidence cannot rescue a
+    failed gate) and never blocks on its own. Identity precedence (incl.
+    ``WRONG_ALBUM``) still applies afterwards via combine_audio_identity_decision.
+    """
+    if (
+        audio_decision == "REVIEW_REQUIRED"
+        and ev.status == "pass"
+        and ev.accuraterip.accurate
+    ):
+        return "ACCEPT_PROVISIONAL"
+    if (
+        audio_decision in ("ACCEPT", "ACCEPT_PROVISIONAL")
+        and ev.status == "warn"
+        and ev.log_filename is not None
+    ):
+        return "REVIEW_REQUIRED"
+    return audio_decision
+
+
+def _build_cd_rip_sensor(output_dir: Path) -> dict | None:
+    """Advisory CD-rip evidence sensor (F5.3 slice 2). None when no rip detected."""
+    ev = _cd_rip_evidence_or_none(output_dir)
+    return _cd_rip_sensor_from_evidence(ev) if ev is not None else None
+
+
+def _cd_rip_sensor_from_evidence(ev) -> dict:
+    """Map a detected CdRipEvidence to a standard SensorResult."""
     if ev.status == "pass":
         severity = "info"
         confidence = 0.9 if ev.accuraterip.accurate else 0.6
@@ -3007,11 +3050,11 @@ def _compute_verification(
     sensors.append(
         _build_release_identity_sensor(observed_release_evidence, identity_result)
     )
-    # F5.3 slice 2: advisory CD-rip evidence — appended only when detected and
-    # never fed into the score/decision below.
-    cd_rip_sensor = _build_cd_rip_sensor(output_dir)
-    if cd_rip_sensor is not None:
-        sensors.append(cd_rip_sensor)
+    # F5.3: CD-rip evidence. The sensor is always advisory; the decision
+    # adjustment below is opt-in (MINTARR_CD_RIP_SCORING) and default-off.
+    cd_rip_ev = _cd_rip_evidence_or_none(output_dir)
+    if cd_rip_ev is not None:
+        sensors.append(_cd_rip_sensor_from_evidence(cd_rip_ev))
     files = _detective_file_evidence(detective_result, output_dir)
     audio_decision = decide(
         score,
@@ -3023,6 +3066,8 @@ def _compute_verification(
         new_track_count=new_track_count,
         expected_track_count=expected_track_count,
     )
+    if cd_rip_ev is not None and _cd_rip_scoring_enabled():
+        audio_decision = _apply_cd_rip_scoring(audio_decision, cd_rip_ev)
     decision = combine_audio_identity_decision(
         audio_decision,
         identity_result.decision.value,

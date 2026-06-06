@@ -99,6 +99,7 @@ Set `BASE_URL` if Mintarr is behind a reverse proxy or if Lidarr reaches Mintarr
 | `V2_VERIFICATION_ENABLED` | Master toggle for V2 policy. Disabling falls back to a simpler decision logic. | `true` |
 | `MINTARR_RELEASE_SWITCH_STRATEGY` | F5.1 Lidarr release-switch strategy: `disabled`, `review`, or `auto_high_confidence` | `disabled` |
 | `REVIEW_RETENTION_DAYS` | Days a REVIEW_REQUIRED record is held before auto-expiry | `30` |
+| `MINTARR_CD_RIP_SCORING` | Opt-in (F5.3): let CD-rip evidence adjust the audio-axis decision. Default-off — evidence stays advisory until enabled. | `false` |
 | `MINTARR_RESCUE_RESCAN_ENABLED` | Allow Mintarr to trigger Lidarr `RescanFolder` as a fallback import path | `true` in current runtime; target public default `false` |
 
 `MINTARR_RELEASE_SWITCH_STRATEGY` controls the only path where Mintarr may change
@@ -113,6 +114,14 @@ Pre-cutover builds also accept legacy `TIDALHIRES_RESCUE_RESCAN_ENABLED`. The ta
 The `picard_beets_acoustid` verifier connector is registered as an optional
 metadata prepass. It defaults to disabled, may be tested in `dry_run`, and does
 not write tags or affect import decisions in the current runtime.
+
+CD-rip evidence (`cd_rip_evidence` sensor) is always collected read-only and
+shown in the dashboard. With `MINTARR_CD_RIP_SCORING=true` it also adjusts the
+audio-axis decision conservatively per the [quality stack roadmap §5.4](../design/QUALITY_STACK_ROADMAP.md):
+an AccurateRip-verified rip can move a borderline `REVIEW_REQUIRED` to
+`ACCEPT_PROVISIONAL`, and a log-backed AccurateRip mismatch routes
+`ACCEPT`/`ACCEPT_PROVISIONAL` to `REVIEW_REQUIRED`. It never overrides a
+hard-gate `BLOCK` or identity `WRONG_ALBUM`, and never blocks on its own.
 
 ### 3.6 Notifications
 

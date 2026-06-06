@@ -253,7 +253,7 @@ Each entry is one verifier's run on this record.
 | `binary_version` | string \| null | no | External binary version when known. |
 | `policy_version` | string | no | Policy/spec version used when interpreting the sensor output. |
 | `evidence_schema_version` | string | no | Sensor-specific evidence payload version. |
-| `class` | string | yes | Sensor category: `hard_gate`, `spectral_heuristic`, `metadata_identity`, `cd_rip_proof`. |
+| `class` | string | yes | Sensor category: `hard_gate`, `spectral_heuristic`, `source_specific_proof`, `metadata_identity`, `provenance`, `library_state`. (`source_specific_proof` covers the CD-rip evidence lane.) |
 | `status` | string | yes | One of: `pass`, `fail`, `warn`, `error`, `skipped`. |
 | `severity` | string | yes | One of: `none`, `info`, `warning`, `error`, `blocker`. |
 | `confidence` | float | yes | 0.0-1.0 — how confident the sensor is in its verdict. |

@@ -90,6 +90,20 @@ DEFAULT_SENSORS: tuple[SensorDefinition, ...] = (
         applies_to=("tidal", "web", "usenet", "torrent", "soulseek", "cd_rip"),
         evidence_schema_version="release-identity-evidence-v1",
     ),
+    SensorDefinition(
+        # F5.3 slice 2: read-only, advisory CD-rip evidence (rip log + cue).
+        # Local-only and never blocks; network CTDB verification is a later,
+        # default-off connector. fail_policy=skip — absence is not a problem.
+        name="cd_rip_evidence",
+        sensor_class="source_specific_proof",
+        stage="source_specific",
+        enabled=True,
+        required=False,
+        timeout_sec=30,
+        fail_policy="skip",
+        applies_to=("usenet", "torrent", "soulseek", "cd_rip"),
+        evidence_schema_version="cd-rip-evidence-v1",
+    ),
 )
 
 

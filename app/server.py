@@ -2887,6 +2887,56 @@ def _build_release_identity_sensor(
     )
 
 
+def _build_cd_rip_sensor(output_dir: Path) -> dict | None:
+    """Advisory CD-rip evidence sensor (F5.3 slice 2).
+
+    Read-only: parses on-disk rip artifacts and surfaces them as evidence. It
+    does NOT feed the score or the import decision in this slice. Returns None
+    when the folder is not a CD-rip candidate (lane skipped), so non-rip releases
+    keep clean sidecars.
+    """
+    try:
+        import cd_rip_evidence
+
+        ev = cd_rip_evidence.evaluate_folder(output_dir)
+    except Exception:
+        log.exception("[cd_rip_evidence] evaluation failed (continuing)")
+        return None
+    if not ev.detected:
+        return None
+
+    if ev.status == "pass":
+        severity = "info"
+        confidence = 0.9 if ev.accuraterip.accurate else 0.6
+    else:  # "warn"
+        severity = "warning"
+        confidence = 0.3
+
+    return _sensor_result(
+        "cd_rip_evidence",
+        "source_specific_proof",
+        ev.status,
+        severity,
+        confidence,
+        ev.summary,
+        {
+            "ripper": ev.ripper,
+            "ripper_version": ev.ripper_version,
+            "log_filename": ev.log_filename,
+            "has_cue": ev.has_cue,
+            "tracks_copy_ok": ev.tracks_copy_ok,
+            "accuraterip": {
+                "present": ev.accuraterip.present,
+                "accurate": ev.accuraterip.accurate,
+                "min_confidence": ev.accuraterip.min_confidence,
+                "matched": ev.accuraterip.matched,
+                "total": ev.accuraterip.total,
+            },
+        },
+        sensor_version="mintarr-cd-rip-evidence 2026-06-05",
+    )
+
+
 def _compute_verification(
     jid: str,
     output_dir: Path,
@@ -2957,6 +3007,11 @@ def _compute_verification(
     sensors.append(
         _build_release_identity_sensor(observed_release_evidence, identity_result)
     )
+    # F5.3 slice 2: advisory CD-rip evidence — appended only when detected and
+    # never fed into the score/decision below.
+    cd_rip_sensor = _build_cd_rip_sensor(output_dir)
+    if cd_rip_sensor is not None:
+        sensors.append(cd_rip_sensor)
     files = _detective_file_evidence(detective_result, output_dir)
     audio_decision = decide(
         score,

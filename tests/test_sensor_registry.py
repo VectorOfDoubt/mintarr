@@ -27,6 +27,7 @@ def test_registry_filters_by_source_lane():
     assert [sensor.name for sensor in sensors] == [
         "ffprobe",
         "flac_t",
+        "cd_rip_evidence",
         "release_identity",
     ]
 

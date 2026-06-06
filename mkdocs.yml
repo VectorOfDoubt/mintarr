@@ -179,6 +179,7 @@ nav:
       - "Phase 4 SAB/qBit completed ingest": design/PHASE4_SAB_QBIT_COMPLETED_INGEST.md
       - "Phase 3 restore endpoint": design/PHASE3_RESTORE_ENDPOINT_DESIGN.md
       - "F5.3 CD-rip evidence lane": design/F5.3_CD_RIP_EVIDENCE_LANE.md
+      - "F5.3B CTDB network verifier": design/F5.3B_CTDB_NETWORK_VERIFIER.md
       - "Quality stack roadmap": design/QUALITY_STACK_ROADMAP.md
 
   - Documentation Index: MINTARR_DOCUMENTATION_INDEX.md

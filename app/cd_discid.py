@@ -52,6 +52,32 @@ def accuraterip_url(toc: CdToc) -> str:
     )
 
 
+def ctdb_toc_string(toc: CdToc) -> str:
+    """Return the CTDB (CUETools DB) TOC string for a TOC.
+
+    CTDB keys on **absolute** frame offsets (0-based + the 150-frame lead-in),
+    each track plus the lead-out, joined by ``:`` — the same shape AccurateRip's
+    CDDB id uses. Validated against the live CTDB: this string returns the
+    correct disc metadata (see the tests / ``ctdb_lookup_url``).
+    """
+    absolute = [offset + _LEAD_IN_FRAMES for offset in toc.track_offsets_frames]
+    absolute.append(toc.leadout_frames + _LEAD_IN_FRAMES)
+    return ":".join(str(frame) for frame in absolute)
+
+
+def ctdb_lookup_url(toc: CdToc) -> str:
+    """Build the CTDB lookup URL for a TOC.
+
+    Confirmed against the live CUETools DB: for the OK Computer TOC this URL
+    returns ``200`` with the correct disc metadata. Response parsing (the
+    ``<entry>`` confidence record) belongs to the lookup-client slice.
+    """
+    return (
+        "http://db.cuetools.net/lookup2.php"
+        f"?version=3&ctdb=1&metadata=fast&fuzzy=1&toc={ctdb_toc_string(toc)}"
+    )
+
+
 def _digit_sum(value: int) -> int:
     total = 0
     while value > 0:

@@ -44,6 +44,24 @@ def test_cddb_id_matches_validated_vector():
     assert cd_discid.cddb_id(OK_COMPUTER) == EXPECTED_CDDB
 
 
+def test_ctdb_toc_string_uses_absolute_offsets():
+    # Absolute = 0-based + 150 lead-in, per track, plus lead-out.
+    assert cd_discid.ctdb_toc_string(OK_COMPUTER) == (
+        "150:21632:50476:70697:90709:113245:133019:141971:159413:180955:"
+        "198196:217701:242041"
+    )
+
+
+def test_ctdb_lookup_url_matches_validated_query():
+    # This exact URL was confirmed against the live CUETools DB to return the
+    # correct disc metadata (Radiohead — OK Computer).
+    assert cd_discid.ctdb_lookup_url(OK_COMPUTER) == (
+        "http://db.cuetools.net/lookup2.php?version=3&ctdb=1&metadata=fast&fuzzy=1&toc="
+        "150:21632:50476:70697:90709:113245:133019:141971:159413:180955:"
+        "198196:217701:242041"
+    )
+
+
 def test_accuraterip_url_matches_validated_vector():
     assert cd_discid.accuraterip_url(OK_COMPUTER) == (
         "http://www.accuraterip.com/accuraterip/f/4/1/"

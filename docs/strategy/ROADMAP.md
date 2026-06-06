@@ -130,13 +130,13 @@ Restore implementation follows [Phase 3 restore endpoint design](../design/PHASE
 
 **Goal:** Mintarr's verification and import decisions reflect the real-world ambiguity of music release data.
 
-**Status:** partial — F5.1 shipped; F5.2 and F5.3 planned
+**Status:** partial — F5.1 shipped; F5.3 local CD-rip evidence shipped (advisory sensor + opt-in default-off scoring), network CTDB/AccurateRip cross-check pending its own design beat; F5.2 planned
 
 **Scope:**
 
 - **F5.1 Release-family matching** — **shipped**, architecture locked in [ADR-0013](../architecture/adr/0013-release-family-identity-policy.md). Mintarr-side mitigation of Lidarr's multi-album / edition / deluxe / remaster / anniversary matching weakness, built as a separate release-identity policy axis (two-axis audio/identity, where good audio never excuses the wrong album): Lidarr-first expected metadata with MusicBrainz/MBID as advisory evidence, read-only `mutagen` tag evidence, confidence + abstain (weak metadata → review, never block), dashboard visibility, and an opt-in **default-off** release-switch strategy with operator review-mode override (snapshot + audit + restore, same-album-only, never on `WRONG_ALBUM`/audio-`BLOCK`). The locked alternative-to-fork mechanism from [ADR-0007 §"Multi-album / release matching is not a fork problem"](../architecture/adr/0007-no-lidarr-fork.md).
 - **F5.2 Source-aware verification thresholds** — per-source confidence weighting (e.g., Soulseek requires stricter spectral pass than TIDAL); not source-aware policy until evidence justifies it
-- **F5.3 CD-rip evidence integration** — CUETools/CTDB verifier connector wired into V2 scoring as positive proof for CD-rip lane; operational design in [F5.3 CD-rip evidence lane](../design/F5.3_CD_RIP_EVIDENCE_LANE.md) (read-only rip-log/cue evidence first, network CTDB + scoring as later default-off slices)
+- **F5.3 CD-rip evidence integration** — operational design in [F5.3 CD-rip evidence lane](../design/F5.3_CD_RIP_EVIDENCE_LANE.md). **Shipped:** read-only rip-log/cue parsing, an advisory `cd_rip_evidence` sensor surfaced in the dashboard, and opt-in **default-off** decision scoring (`MINTARR_CD_RIP_SCORING`) per §5.4 (AccurateRip-verified rip can lift a borderline review; log-backed mismatch routes to review; never overrides a hard gate or identity `WRONG_ALBUM`). **Pending (own design beat):** the network CTDB/AccurateRip online cross-check verifier connector.
 
 **Depends on:** Phase 1 connector model; Phase 4 source coverage.
 

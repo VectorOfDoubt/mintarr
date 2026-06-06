@@ -341,8 +341,8 @@ Validation:
 
 ### 6.3 `GET /restore/status`
 
-Authenticated. Returns whether restore is enabled and whether a restore marker
-is staged.
+Authenticated. Returns whether restore is enabled, whether a restore marker is
+staged, and the result of the last boot-time apply (`last_apply`).
 
 ```json
 {
@@ -355,10 +355,17 @@ is staged.
 }
 ```
 
+`state` progresses `staged` → `applying` (at boot, before the first destructive
+write) → consumed on success. `last_apply` (from `restore_status.json`) reports
+the most recent boot apply outcome: `applied`, `failed_preflight` (aborted
+before any change), or `failed_partial` (failed mid-apply; the process boots
+with workers off until recovered).
+
 ### 6.4 `DELETE /restore`
 
 Authenticated. Cancels a staged restore before boot-time apply starts. It removes
-the restore marker and staged zip. Returns `404` if no restore is staged.
+the restore marker and staged zip. Returns `404` if no restore is staged, or
+`409` if apply has already started (`state=applying`).
 
 ### 6.5 `GET /dashboard`
 

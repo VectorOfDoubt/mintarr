@@ -366,12 +366,18 @@ backup files until the operator opts in.
 |---|---|---|
 | `MINTARR_RESTORE_ENABLED` | Enable restore staging endpoints | `false` |
 | `MINTARR_RESTORE_STAGING_DIR` | Directory for staged restore zip and marker | `/config/restore_staging` |
+| `MINTARR_RESTORE_SAFETY_BACKUP_DIR` | Directory for the pre-restore safety snapshot taken at apply time | `/config/restore_safety` |
 | `MINTARR_RESTORE_MAX_ENTRIES` | Maximum zip entries accepted by restore staging | `250000` |
 | `MINTARR_RESTORE_MAX_TOTAL_BYTES` | Maximum total uncompressed zip size | `26843545600` |
 | `MINTARR_RESTORE_MAX_ENTRY_BYTES` | Maximum single-entry uncompressed size | `2147483648` |
 
-Restore staging validates and records a restore request. It does not overwrite
-state in the running process. Boot-time apply is a later restore slice.
+Restore staging validates and records a restore request without touching running
+state. The staged restore is **applied at the next restart**, before the state
+DB, workers, and scheduler start (see [Backup and restore §3.5](BACKUP_RESTORE.md)).
+Before any files are replaced, Mintarr writes a pre-restore safety snapshot to
+`MINTARR_RESTORE_SAFETY_BACKUP_DIR`; if that snapshot cannot be written, the
+restore aborts and current state is left untouched. If a restore fails *after*
+replacement begins, Mintarr boots with workers off so you can recover.
 
 ## 13. Timezone
 
@@ -466,6 +472,7 @@ MINTARR_BACKUP_RETENTION=30
 # Restore staging
 MINTARR_RESTORE_ENABLED=false
 MINTARR_RESTORE_STAGING_DIR=/config/restore_staging
+MINTARR_RESTORE_SAFETY_BACKUP_DIR=/config/restore_safety
 MINTARR_RESTORE_MAX_ENTRIES=250000
 MINTARR_RESTORE_MAX_TOTAL_BYTES=26843545600
 MINTARR_RESTORE_MAX_ENTRY_BYTES=2147483648

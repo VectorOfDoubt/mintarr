@@ -194,6 +194,40 @@ def test_restore_delete_cancels_staged_restore(monkeypatch, tmp_path):
     assert not (staging_dir / f"{staged['restore_id']}.zip").exists()
 
 
+def test_restore_delete_after_apply_started_returns_409(monkeypatch, tmp_path):
+    backup_dir = tmp_path / "backups"
+    staging_dir = tmp_path / "staging"
+    backup_dir.mkdir()
+    backup_zip = backup_dir / "mintarr-backup.zip"
+    _valid_restore_zip(backup_zip)
+    monkeypatch.setenv("MINTARR_RESTORE_ENABLED", "true")
+    monkeypatch.setenv("MINTARR_BACKUP_DIR", str(backup_dir))
+    monkeypatch.setenv("MINTARR_RESTORE_STAGING_DIR", str(staging_dir))
+    _client().post(
+        f"/restore?apikey={VALID_KEY}", json={"backup_path": str(backup_zip)}
+    )
+    # Simulate boot-time apply having begun.
+    marker = staging_dir / "restore_request.json"
+    data = json.loads(marker.read_text())
+    data["state"] = "applying"
+    marker.write_text(json.dumps(data))
+
+    resp = _client().delete(f"/restore?apikey={VALID_KEY}")
+
+    assert resp.status_code == 409
+    assert "after apply starts" in resp.get_json()["error"]
+    # marker is not removed by a rejected cancel
+    assert (staging_dir / "restore_request.json").exists()
+
+
+def test_restore_delete_without_staged_returns_404(monkeypatch, tmp_path):
+    monkeypatch.setenv("MINTARR_RESTORE_ENABLED", "true")
+    monkeypatch.setenv("MINTARR_RESTORE_STAGING_DIR", str(tmp_path / "staging"))
+    resp = _client().delete(f"/restore?apikey={VALID_KEY}")
+    assert resp.status_code == 404
+    assert "no staged restore" in resp.get_json()["error"]
+
+
 def test_restore_post_accepts_multipart_upload(monkeypatch, tmp_path):
     staging_dir = tmp_path / "staging"
     upload_zip = tmp_path / "upload.zip"

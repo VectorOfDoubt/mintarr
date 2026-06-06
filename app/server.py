@@ -5625,8 +5625,11 @@ def restore_delete():
 
     try:
         payload = restore_mod.cancel_staged_restore(_restore_staging_dir())
-    except restore_mod.RestoreStateError as exc:
+    except restore_mod.RestoreNotFoundError as exc:
         return jsonify({"status": False, "error": str(exc)}), 404
+    except restore_mod.RestoreStateError as exc:
+        # e.g. cancel attempted after boot-time apply has started.
+        return jsonify({"status": False, "error": str(exc)}), 409
     return jsonify({"status": True, **payload})
 
 
@@ -6034,6 +6037,63 @@ def index():
 
 app.register_blueprint(dashboard_bp)
 
+
+def _restore_safety_backup_dir() -> Path:
+    return Path(
+        os.environ.get("MINTARR_RESTORE_SAFETY_BACKUP_DIR", "/config/restore_safety")
+    )
+
+
+def _apply_pending_restore_at_boot() -> bool:
+    """Apply a staged restore before state_db/workers start. Returns start_workers.
+
+    Phase 3 restore slice 3. Runs before everything else touches state. Only a
+    mid-replacement failure (``failed_partial``) returns False so the process
+    comes up with workers off for operator recovery.
+    """
+    try:
+        import state_db
+        from restore import RestoreTargets, apply_pending_restore
+
+        targets = RestoreTargets(
+            state_db_path=Path(getattr(state_db, "_db_path")),
+            output_base=OUTPUT_BASE,
+            archive_dirs={
+                "blocked": BLOCKED_DECISIONS_DIR,
+                "discarded": DISCARDED_DIR,
+                "expired": EXPIRED_REVIEW_DIR,
+            },
+            log_paths={
+                "decisions.jsonl": DECISIONS_LOG,
+                "release_switch_audit.jsonl": RELEASE_SWITCH_AUDIT_LOG,
+            },
+        )
+        result = apply_pending_restore(
+            staging_dir=_restore_staging_dir(),
+            targets=targets,
+            safety_backup_dir=_restore_safety_backup_dir(),
+            build_safety_zip=_build_state_backup_zip,
+            enabled=_restore_enabled(),
+            limits=_restore_limits(),
+        )
+        if result.outcome not in ("no_pending", "disabled_skip"):
+            log.warning(
+                "restore apply outcome=%s restore_id=%s start_workers=%s",
+                result.outcome,
+                result.restore_id,
+                result.start_workers,
+            )
+        return result.start_workers
+    except Exception:
+        # Apply must never crash boot. Fail open to a normal boot — current
+        # state is only mutated inside apply_pending_restore, which fails closed
+        # internally if it gets as far as replacement.
+        log.exception("restore apply failed unexpectedly — continuing normal boot")
+        return True
+
+
+_restore_start_workers = _apply_pending_restore_at_boot()
+
 # F1: Initialize SQLite state index (idempotent — schema applied if missing)
 try:
     import state_db
@@ -6077,8 +6137,9 @@ except Exception:
     )
 
 # F2.1: Start background worker thread (single worker per design).
-# Skip in tests where pytest manages lifecycle, or via env-toggle for ops.
-if not (
+# Skip in tests where pytest manages lifecycle, or via env-toggle for ops, or
+# when a restore failed mid-apply (fail closed: web stays up, workers off).
+if _restore_start_workers and not (
     os.environ.get("MINTARR_DISABLE_WORKER")
     or os.environ.get("TIDALHIRES_DISABLE_WORKER")
 ):
@@ -6102,8 +6163,11 @@ if not (
         )
 
 # Phase 3: optional scheduled backup export. Disabled by default so upgrades do
-# not start writing files until the operator opts in.
-if _env_bool("MINTARR_BACKUP_SCHEDULE_ENABLED", default=False):
+# not start writing files until the operator opts in. Also held back when a
+# restore failed mid-apply, so a degraded process does not write backups.
+if _restore_start_workers and _env_bool(
+    "MINTARR_BACKUP_SCHEDULE_ENABLED", default=False
+):
     try:
         from backup import start_scheduled_backups
 

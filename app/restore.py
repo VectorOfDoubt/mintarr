@@ -8,6 +8,7 @@ never replaces state_db, sidecars, or audit logs.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 import shutil
@@ -17,10 +18,13 @@ import tempfile
 import time
 import uuid
 import zipfile
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from pathlib import PurePosixPath
 from typing import BinaryIO
+
+log = logging.getLogger("tidalhires.restore")
 
 _JID_RE = re.compile(r"^[a-f0-9]{12}$")
 _ARCHIVE_LABELS = {"blocked", "discarded", "expired"}
@@ -38,7 +42,11 @@ class RestoreValidationError(ValueError):
 
 
 class RestoreStateError(RuntimeError):
-    """Raised when restore staging/cancel state is not valid."""
+    """Raised when restore staging/cancel state conflicts with current state."""
+
+
+class RestoreNotFoundError(RestoreStateError):
+    """Raised when no staged restore exists to act on."""
 
 
 @dataclass(frozen=True)
@@ -66,6 +74,33 @@ class RestoreLimits:
     max_entries: int = DEFAULT_MAX_ENTRIES
     max_total_uncompressed_bytes: int = DEFAULT_MAX_TOTAL_UNCOMPRESSED_BYTES
     max_entry_uncompressed_bytes: int = DEFAULT_MAX_ENTRY_UNCOMPRESSED_BYTES
+
+
+@dataclass(frozen=True)
+class RestoreTargets:
+    """Filesystem destinations for restoring each zip member kind."""
+
+    state_db_path: Path
+    output_base: Path
+    archive_dirs: dict[str, Path]
+    log_paths: dict[str, Path]
+
+
+@dataclass(frozen=True)
+class RestoreApplyResult:
+    """Outcome of a boot-time restore apply attempt.
+
+    ``start_workers`` is the only signal the boot sequence needs: it is False
+    only when restore failed mid-replacement (``failed_partial``) and the process
+    must come up with workers off so an operator can recover.
+    """
+
+    outcome: (
+        str  # no_pending | disabled_skip | applied | failed_preflight | failed_partial
+    )
+    start_workers: bool
+    restore_id: str | None = None
+    detail: str = ""
 
 
 def validate_restore_zip(
@@ -242,7 +277,7 @@ def cancel_staged_restore(staging_dir: Path | str) -> dict:
     root = Path(staging_dir)
     request_path = root / RESTORE_REQUEST_FILE
     if not request_path.is_file():
-        raise RestoreStateError("no staged restore")
+        raise RestoreNotFoundError("no staged restore")
     request = _read_json_file(request_path)
     state = str(request.get("state") or "")
     if state != "staged":
@@ -386,6 +421,283 @@ def _is_relative_to(path: Path, root: Path) -> bool:
         return True
     except ValueError:
         return False
+
+
+def apply_pending_restore(
+    *,
+    staging_dir: Path | str,
+    targets: RestoreTargets,
+    safety_backup_dir: Path | str,
+    build_safety_zip: Callable[[], bytes],
+    enabled: bool,
+    limits: RestoreLimits | None = None,
+    now: float | None = None,
+) -> RestoreApplyResult:
+    """Apply a staged restore at boot, before state_db/workers/scheduler start.
+
+    Crash-safe, not just exception-safe: the marker is moved to ``applying``
+    before the first destructive write, so a marker still in ``applying`` at boot
+    means a prior apply was interrupted — we fail closed (workers off) and never
+    blindly retry. Any failure *before* replacement leaves current state intact.
+    """
+    limits = limits or RestoreLimits()
+    root = Path(staging_dir)
+    marker_path = root / RESTORE_REQUEST_FILE
+    if not marker_path.is_file():
+        return RestoreApplyResult("no_pending", start_workers=True)
+
+    request = _read_json_file(marker_path)
+    restore_id = request.get("restore_id")
+    state = str(request.get("state") or "")
+
+    # An interrupted prior apply (crash or caught mid-replacement) must fail
+    # closed on every subsequent boot until an operator intervenes — regardless
+    # of whether restore is currently enabled.
+    if state == "applying":
+        _safe_write_status(
+            root,
+            restore_id,
+            "failed_partial",
+            "interrupted apply detected; recover from safety backup and clear marker",
+            now,
+        )
+        return RestoreApplyResult(
+            "failed_partial", start_workers=False, restore_id=restore_id
+        )
+
+    if not enabled:
+        # Leave the staged marker untouched for when the operator re-enables.
+        return RestoreApplyResult(
+            "disabled_skip", start_workers=True, restore_id=restore_id
+        )
+
+    if state != "staged":
+        _unlink_if_exists(marker_path)
+        _safe_write_status(
+            root,
+            restore_id,
+            "failed_preflight",
+            f"unexpected marker state: {state}",
+            now,
+        )
+        return RestoreApplyResult(
+            "failed_preflight", start_workers=True, restore_id=restore_id
+        )
+
+    staged_zip = Path(str(request.get("staged_zip") or ""))
+
+    # Preflight: re-validate the staged zip (staging-time validation is not
+    # trusted) and confirm it still lives inside the staging dir.
+    try:
+        if not staged_zip.is_file() or not _is_relative_to(
+            staged_zip.resolve(), root.resolve()
+        ):
+            raise RestoreValidationError("staged restore zip missing or out of staging")
+        plan = validate_restore_zip(
+            str(staged_zip),
+            max_entries=limits.max_entries,
+            max_total_uncompressed_bytes=limits.max_total_uncompressed_bytes,
+            max_entry_uncompressed_bytes=limits.max_entry_uncompressed_bytes,
+        )
+    except RestoreValidationError as exc:
+        _unlink_if_exists(marker_path)
+        _unlink_if_exists(staged_zip)
+        _safe_write_status(
+            root, restore_id, "failed_preflight", f"revalidation failed: {exc}", now
+        )
+        return RestoreApplyResult(
+            "failed_preflight", start_workers=True, restore_id=restore_id
+        )
+
+    # Preflight: snapshot current state. If we cannot capture a recovery point,
+    # abort before touching anything.
+    try:
+        safety_path = _write_safety_backup(
+            Path(safety_backup_dir), restore_id, build_safety_zip
+        )
+    except Exception as exc:
+        _unlink_if_exists(marker_path)
+        _unlink_if_exists(staged_zip)
+        _safe_write_status(
+            root, restore_id, "failed_preflight", f"safety backup failed: {exc}", now
+        )
+        return RestoreApplyResult(
+            "failed_preflight", start_workers=True, restore_id=restore_id
+        )
+
+    # Commit-marker write is still pre-destructive: if we cannot persist the
+    # "applying" state, no files have been replaced, so abort with state intact.
+    try:
+        _set_marker_state(marker_path, request, "applying", now)
+    except Exception as exc:
+        _unlink_if_exists(marker_path)
+        _unlink_if_exists(staged_zip)
+        _safe_write_status(
+            root, restore_id, "failed_preflight", f"could not start apply: {exc}", now
+        )
+        return RestoreApplyResult(
+            "failed_preflight", start_workers=True, restore_id=restore_id
+        )
+
+    # Past this point state may be partially replaced. Nothing here may escape:
+    # any failure — including a status-write failure — must fail closed (workers
+    # off), and the marker is left in "applying" so the next boot also does.
+    try:
+        _apply_entries(staged_zip, plan, targets)
+    except Exception as exc:
+        _safe_write_status(
+            root,
+            restore_id,
+            "failed_partial",
+            f"apply failed mid-replacement: {exc}; recover from {safety_path.name}",
+            now,
+            safety_backup=str(safety_path),
+        )
+        return RestoreApplyResult(
+            "failed_partial", start_workers=False, restore_id=restore_id
+        )
+
+    _unlink_if_exists(marker_path)
+    _unlink_if_exists(staged_zip)
+    _safe_write_status(
+        root,
+        restore_id,
+        "applied",
+        "restore applied",
+        now,
+        safety_backup=str(safety_path),
+    )
+    return RestoreApplyResult("applied", start_workers=True, restore_id=restore_id)
+
+
+def _apply_entries(
+    staged_zip: Path, plan: RestorePlan, targets: RestoreTargets
+) -> None:
+    """Write restored members to their targets. state_db first, then evidence.
+
+    Sidecars, archive sidecars, and logs are written/overwritten from the backup;
+    nothing else is deleted, so audio under ``output_base/<jid>/`` is never
+    touched. The state DB is fully replaced (with stale WAL/SHM removed).
+    """
+    with zipfile.ZipFile(staged_zip) as zf:
+        for entry in plan.entries:
+            if entry.kind != "state_db":
+                continue
+            _atomic_write(targets.state_db_path, zf.read(entry.name))
+            _remove_wal_shm(targets.state_db_path)
+
+        for entry in plan.entries:
+            if entry.kind == "state_db":
+                continue
+            dest = _entry_target(entry, targets)
+            _atomic_write(dest, zf.read(entry.name))
+
+
+def _entry_target(entry: RestoreEntry, targets: RestoreTargets) -> Path:
+    parts = entry.target_key.split("/")
+    if entry.kind == "sidecar":
+        return targets.output_base / parts[1] / "verification.json"
+    if entry.kind == "archive":
+        return targets.archive_dirs[parts[1]] / parts[2]
+    if entry.kind == "log":
+        return targets.log_paths[parts[1]]
+    raise RestoreValidationError(f"unrestorable entry kind: {entry.kind}")
+
+
+def _atomic_write(dest: Path, data: bytes) -> None:
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    tmp = dest.parent / f".{dest.name}.restore.tmp"
+    try:
+        tmp.write_bytes(data)
+        tmp.replace(dest)
+    finally:
+        _unlink_if_exists(tmp)
+
+
+def _remove_wal_shm(db_path: Path) -> None:
+    for suffix in ("-wal", "-shm"):
+        _unlink_if_exists(Path(f"{db_path}{suffix}"))
+
+
+def _write_safety_backup(
+    safety_backup_dir: Path,
+    restore_id: str | None,
+    build_safety_zip: Callable[[], bytes],
+) -> Path:
+    target_dir = safety_backup_dir / (restore_id or "unknown")
+    target_dir.mkdir(parents=True, exist_ok=True)
+    dest = target_dir / "pre-restore-state.zip"
+    tmp = target_dir / ".pre-restore-state.zip.tmp"
+    try:
+        tmp.write_bytes(build_safety_zip())
+        tmp.replace(dest)
+    finally:
+        _unlink_if_exists(tmp)
+    return dest
+
+
+def _set_marker_state(
+    marker_path: Path, request: dict, state: str, now: float | None
+) -> None:
+    payload = dict(request)
+    payload["state"] = state
+    payload["state_changed_at"] = now or time.time()
+    tmp = marker_path.parent / f".{RESTORE_REQUEST_FILE}.tmp"
+    try:
+        tmp.write_text(json.dumps(payload, sort_keys=True), encoding="utf-8")
+        tmp.replace(marker_path)
+    finally:
+        _unlink_if_exists(tmp)
+
+
+def _write_status_file(
+    staging_dir: Path,
+    restore_id: str | None,
+    state: str,
+    detail: str,
+    now: float | None,
+    *,
+    safety_backup: str | None = None,
+) -> None:
+    payload = {
+        "restore_id": restore_id,
+        "state": state,
+        "detail": detail,
+        "applied_at": now or time.time(),
+    }
+    if safety_backup is not None:
+        payload["safety_backup"] = safety_backup
+    status_path = staging_dir / RESTORE_STATUS_FILE
+    tmp = staging_dir / f".{RESTORE_STATUS_FILE}.tmp"
+    try:
+        tmp.write_text(json.dumps(payload, sort_keys=True), encoding="utf-8")
+        tmp.replace(status_path)
+    finally:
+        _unlink_if_exists(tmp)
+
+
+def _safe_write_status(
+    staging_dir: Path,
+    restore_id: str | None,
+    state: str,
+    detail: str,
+    now: float | None,
+    *,
+    safety_backup: str | None = None,
+) -> None:
+    """Best-effort status write that never raises.
+
+    The boot-apply outcome (especially fail-closed `failed_partial`) must not
+    depend on our ability to persist a status file — a write failure here must
+    never turn into an escaping exception that the server wrapper would treat as
+    "start workers".
+    """
+    try:
+        _write_status_file(
+            staging_dir, restore_id, state, detail, now, safety_backup=safety_backup
+        )
+    except Exception:
+        log.warning("failed to write restore status file in %s", staging_dir)
 
 
 def _validate_info(info: zipfile.ZipInfo) -> RestoreEntry:

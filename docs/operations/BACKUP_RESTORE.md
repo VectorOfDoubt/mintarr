@@ -1,7 +1,7 @@
 # Backup and Restore
 
 > **Type:** Operations / data protection
-> **Version:** 1.2 — 2026-06-05
+> **Version:** 1.3 — 2026-06-05
 > **Status:** Living document. Updates as backup tooling evolves.
 > **Audience:** Operators establishing a backup routine. Anyone recovering from data loss.
 
@@ -112,10 +112,11 @@ The Mintarr-managed scheduler in §2.3 writes the same zip format.
 
 ## 3. Restore procedure
 
-Automated restore is intentionally designed as a staged, restart-applied flow
-rather than a live in-process mutation. The staging endpoints exist, but
-boot-time apply is still a later slice; until that implementation lands, use the
-manual procedures below for actual restore.
+Automated restore is a **staged, restart-applied** flow rather than a live
+in-process mutation: you stage a backup zip via the API, then restart Mintarr,
+and the restore is applied at boot before the state DB, workers, and scheduler
+start. The manual procedures (§3.2 onward) remain available and are the
+fallback if a staged apply fails.
 
 ### 3.1 Stage a restore for future boot-time apply
 
@@ -156,9 +157,42 @@ curl -fsS -X DELETE -H "X-Api-Key: $MINTARR_API_KEY" \
     http://127.0.0.1:5025/restore
 ```
 
-Current limitation: staging validates and records the restore request, but does
-not yet apply it on boot. Follow [Phase 3 restore endpoint design](../design/PHASE3_RESTORE_ENDPOINT_DESIGN.md)
-for the locked apply model.
+A `202` response means the restore is staged, not yet applied — the body
+includes `"restart_required": true`.
+
+#### Applying a staged restore
+
+Restart Mintarr to apply:
+
+```bash
+docker compose restart mintarr
+```
+
+At boot, before anything reads or mutates state, Mintarr:
+
+1. re-validates the staged zip (staging-time validation is not trusted);
+2. writes a **pre-restore safety snapshot** to `MINTARR_RESTORE_SAFETY_BACKUP_DIR`;
+3. marks the request `applying`, then replaces the state DB (clearing stale
+   WAL/SHM), verification sidecars, terminal sidecars, and audit logs;
+4. records the outcome in `restore_status.json` and removes the marker on success.
+
+Audio under `OUTPUT_BASE/<jid>/` is never touched. Check the result:
+
+```bash
+curl -fsS -H "X-Api-Key: $MINTARR_API_KEY" http://127.0.0.1:5025/restore/status
+```
+
+Failure handling is fail-closed and crash-safe:
+
+- **Before replacement** (re-validation or safety-snapshot failure): current
+  state is left untouched, the marker is cleared, and Mintarr boots normally
+  (`state=failed_preflight`).
+- **During replacement** (or a crash mid-apply): Mintarr boots with **workers
+  off** (`state=failed_partial`) and will keep failing closed on every restart
+  until you recover. The web UI and `/restore/status` stay available. Recover by
+  restoring the pre-restore snapshot from `MINTARR_RESTORE_SAFETY_BACKUP_DIR`
+  (or a known-good backup) and removing `restore_request.json` from the staging
+  directory, then restart.
 
 ### 3.2 Full restore
 

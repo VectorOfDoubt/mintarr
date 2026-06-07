@@ -1468,6 +1468,68 @@ def job_cancel(job_id: int):
 
 
 # ---------- /dashboard/v1/record/<jid> ----------
+def _basename_any(path: str | None) -> str | None:
+    """Basename handling both POSIX and Windows separators.
+
+    Unmeasured rows can carry the raw Lidarr path (e.g. a Windows
+    ``H:\\Music\\...``); ``Path(...).name`` only strips ``/`` on Linux, so the
+    full path would leak. Splitting on both ``/`` and ``\\`` keeps the
+    basenames-only promise regardless of where Lidarr runs.
+    """
+    if not path:
+        return None
+    return path.replace("\\", "/").rsplit("/", 1)[-1] or None
+
+
+def _library_evidence_detail(sidecar: dict) -> dict:
+    """Measured existing-library quality for the record's album(s) (F5.4 slice 2).
+
+    Read-only view over the library_evidence index. Exposes file basenames only
+    (never full mount paths) for operator visibility in the drawer.
+    """
+    try:
+        import state_db
+
+        album_ids = [
+            int(a) for a in (sidecar.get("album_ids") or []) if str(a).isdigit()
+        ]
+        rows: list[dict] = []
+        for aid in album_ids:
+            rows.extend(state_db.get_album_library_evidence(aid))
+        if not rows:
+            return {"available": False}
+
+        tracks = []
+        measured = 0
+        for r in rows:
+            if r.get("status") == "measured":
+                measured += 1
+            tracks.append(
+                {
+                    "filename": _basename_any(r.get("path")),
+                    "status": r.get("status"),
+                    "reason": r.get("reason"),
+                    "codec": r.get("codec"),
+                    "sample_rate": r.get("sample_rate"),
+                    "bit_depth": r.get("bit_depth"),
+                    "lossless": None
+                    if r.get("lossless") is None
+                    else bool(r.get("lossless")),
+                    "integrity_ok": None
+                    if r.get("integrity_ok") is None
+                    else bool(r.get("integrity_ok")),
+                }
+            )
+        return {
+            "available": True,
+            "track_count": len(rows),
+            "measured_count": measured,
+            "tracks": tracks[:60],
+        }
+    except Exception:
+        return {"available": False}
+
+
 def _build_record_detail(server_mod, jid: str) -> dict | None:
     _, sidecar = server_mod._read_verification_sidecar(jid)
     if sidecar is None:
@@ -1503,6 +1565,7 @@ def _build_record_detail(server_mod, jid: str) -> dict | None:
             "review_reason": review_reason,
         },
         "release_identity": _release_identity_detail(sidecar),
+        "library_evidence": _library_evidence_detail(sidecar),
         "release_switch_events": _release_switch_events(jid),
         "release_switch_strategy": server_mod._release_switch_strategy(),
         "lifecycle": sidecar.get("lifecycle") or {},

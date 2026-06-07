@@ -487,6 +487,25 @@ function renderReleaseSwitchEvents(events) {
   `;
 }
 
+function renderLibraryEvidence(lib) {
+  // F5.4: measured existing-library quality (vs the Lidarr label above).
+  if (!lib || !lib.available) return '';
+  const rows = (lib.tracks || []).map(t => {
+    const fmt = t.status === 'measured'
+      ? `${esc(t.codec || '—')}${t.sample_rate ? ' · ' + t.sample_rate + ' Hz' : ''}${t.bit_depth ? ' · ' + t.bit_depth + ' bit' : ''}`
+      : `unmeasured${t.reason ? ' (' + esc(t.reason) + ')' : ''}`;
+    const flags = [];
+    if (t.lossless === true) flags.push('lossless');
+    if (t.lossless === false) flags.push('lossy');
+    if (t.integrity_ok === false) flags.push('integrity FAIL');
+    return `<div class="kvrow"><span class="k">${esc(t.filename || '—')}</span><span class="v">${fmt}${flags.length ? ' · ' + flags.join(', ') : ''}</span></div>`;
+  }).join('');
+  return `
+    <div class="kvrow"><span class="k">Measured (Mintarr)</span><span class="v">${lib.measured_count}/${lib.track_count} tracks</span></div>
+    ${rows}
+  `;
+}
+
 function renderReleaseIdentity(identity) {
   if (!identity) return '';
   const observed = identity.observed || {};
@@ -598,8 +617,9 @@ function renderDrawer(d) {
     ${mediaSection}
     <section>
       <h2>Existing in library</h2>
-      <div class="kvrow"><span class="k">Current quality</span><span class="v">${esc(d.context.existing.label)}</span></div>
+      <div class="kvrow"><span class="k">Current quality (Lidarr label)</span><span class="v">${esc(d.context.existing.label)}</span></div>
       <div class="kvrow"><span class="k">Current kbps</span><span class="v">${d.context.existing.kbps ?? '—'}</span></div>
+      ${renderLibraryEvidence(d.library_evidence)}
     </section>
     <section>
       <h2>Lidarr context</h2>

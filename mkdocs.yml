@@ -180,6 +180,7 @@ nav:
       - "Phase 3 restore endpoint": design/PHASE3_RESTORE_ENDPOINT_DESIGN.md
       - "F5.3 CD-rip evidence lane": design/F5.3_CD_RIP_EVIDENCE_LANE.md
       - "F5.3B CTDB network verifier": design/F5.3B_CTDB_NETWORK_VERIFIER.md
+      - "F5.4 Library evidence index": design/F5.4_LIBRARY_EVIDENCE_INDEX.md
       - "Quality stack roadmap": design/QUALITY_STACK_ROADMAP.md
 
   - Documentation Index: MINTARR_DOCUMENTATION_INDEX.md

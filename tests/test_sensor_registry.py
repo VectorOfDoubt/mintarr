@@ -75,3 +75,14 @@ def test_registry_rejects_disabled_required_sensor_in_import_mode():
         registry.validate_mode(mode="import")
 
     registry.validate_mode(mode="dry_run")
+
+
+def test_ctdb_sensor_registered_but_disabled_by_default():
+    sensor = default_registry.get("ctdb")
+    assert sensor.sensor_class == "source_specific_proof"
+    assert sensor.stage == "source_specific"
+    assert sensor.enabled is False  # network lookup is opt-in
+    assert sensor.fail_policy == "skip"
+    # disabled sensors do not appear in the ordered run list
+    names = [s.name for s in default_registry.ordered(source_lane="cd_rip")]
+    assert "ctdb" not in names

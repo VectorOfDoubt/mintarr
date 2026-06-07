@@ -164,6 +164,78 @@ class FlacDetectiveConnector:
         return None
 
 
+class CtdbConnector:
+    """CTDB / AccurateRip network verifier connector (F5.3B).
+
+    Default-disabled: it performs a third-party disc-fingerprint lookup, so it
+    only runs when an operator opts in. Health probes the CUETools DB only when
+    enabled; disabled installs make no outbound call.
+    """
+
+    manifest = ConnectorManifest(
+        id="ctdb",
+        display_name="CTDB / AccurateRip",
+        kind=ConnectorKind.VERIFIER,
+        api_version=MANIFEST_API_VERSION,
+        adapter_class=None,
+        default_enabled=False,
+        required=False,
+        install_profile=None,
+        docker_service=None,
+        required_env=(),
+        optional_env=(),
+        capabilities=(
+            "source_specific_proof",
+            "accuraterip_lookup",
+            "ctdb_lookup",
+            "network",
+        ),
+        docs_url="design/F5.3B_CTDB_NETWORK_VERIFIER.md",
+        min_supported_version=None,
+    )
+    health_cache_seconds = 60.0
+    _PROBE_URL = "http://db.cuetools.net/lookup2.php?version=3&ctdb=1&toc=0:1"
+
+    def __init__(self) -> None:
+        self._health_cache: ConnectorHealth | None = None
+
+    def is_installed(self) -> bool:
+        return self.health().status in {"ok", "degraded"}
+
+    def is_enabled(self) -> bool:
+        return configured_enabled(self.manifest)
+
+    def health(self) -> ConnectorHealth:
+        if (
+            self._health_cache is not None
+            and time.time() - self._health_cache.last_checked_at
+            < self.health_cache_seconds
+        ):
+            return self._health_cache
+        if not self.is_enabled():
+            self._health_cache = health_checked_now("disabled")
+            return self._health_cache
+        try:
+            import requests
+
+            response = requests.get(self._PROBE_URL, timeout=2)
+        except Exception as exc:
+            self._health_cache = health_checked_now("missing", str(exc)[:200])
+            return self._health_cache
+        # Any HTTP reply means the DB is reachable; CTDB returns 200 even for a
+        # trivial/invalid query.
+        if response.status_code < 500:
+            self._health_cache = health_checked_now("ok")
+        else:
+            self._health_cache = health_checked_now(
+                "degraded", f"HTTP {response.status_code}"
+            )
+        return self._health_cache
+
+    def detected_version(self) -> str | None:
+        return None
+
+
 def _lidarr_api_url() -> str:
     return os.environ.get(
         "LIDARR_API_URL", "http://host.docker.internal:8686/api/v1"
@@ -482,6 +554,7 @@ def built_in_connectors() -> list:
             version_parser=_first_semver,
         ),
         FlacDetectiveConnector(),
+        CtdbConnector(),
         LidarrConnector(
             manifest=ConnectorManifest(
                 id="lidarr_manual_import",

@@ -153,6 +153,33 @@ def test_built_in_optional_metadata_verifier_manifest():
     assert "read_only_prepass" in manifest.capabilities
 
 
+def test_built_in_ctdb_verifier_manifest_default_off():
+    import connectors
+    from connectors import ConnectorKind
+
+    manifests = {
+        connector.manifest.id: connector.manifest
+        for connector in connectors.built_in_connectors()
+    }
+    manifest = manifests["ctdb"]
+
+    assert manifest.kind == ConnectorKind.VERIFIER
+    assert manifest.default_enabled is False  # network lookup is opt-in
+    assert manifest.required is False
+    assert manifest.required_env == ()
+    assert "source_specific_proof" in manifest.capabilities
+    assert "network" in manifest.capabilities
+
+
+def test_ctdb_connector_health_is_disabled_when_off_no_network():
+    from connectors.builtins import CtdbConnector
+
+    connector = CtdbConnector()
+    # Default-off ⇒ health reports "disabled" without any outbound probe.
+    assert connector.is_enabled() is False
+    assert connector.health().status == "disabled"
+
+
 def test_built_in_completed_folder_source_manifests():
     import connectors
     from connectors import ConnectorKind

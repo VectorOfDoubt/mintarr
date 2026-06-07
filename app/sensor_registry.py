@@ -104,6 +104,21 @@ DEFAULT_SENSORS: tuple[SensorDefinition, ...] = (
         applies_to=("usenet", "torrent", "soulseek", "cd_rip"),
         evidence_schema_version="cd-rip-evidence-v1",
     ),
+    SensorDefinition(
+        # F5.3B: network CTDB/AccurateRip cross-check. Default-DISABLED (network,
+        # third-party disc-fingerprint lookup); enabled via the ctdb connector.
+        # Advisory and never blocks; only sub-slice B checksum verification may
+        # ever feed the decision, behind the opt-in cd-rip scoring flag.
+        name="ctdb",
+        sensor_class="source_specific_proof",
+        stage="source_specific",
+        enabled=False,
+        required=False,
+        timeout_sec=30,
+        fail_policy="skip",
+        applies_to=("usenet", "torrent", "soulseek", "cd_rip"),
+        evidence_schema_version="ctdb-evidence-v1",
+    ),
 )
 
 

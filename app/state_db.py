@@ -81,6 +81,26 @@ CREATE TABLE IF NOT EXISTS file_evidence (
 );
 CREATE INDEX IF NOT EXISTS idx_file_evidence_jid ON file_evidence(jid);
 
+CREATE TABLE IF NOT EXISTS library_evidence (
+    trackfile_id INTEGER PRIMARY KEY,
+    album_id INTEGER,
+    path TEXT,
+    size INTEGER,
+    mtime REAL,
+    status TEXT,
+    reason TEXT,
+    codec TEXT,
+    sample_rate INTEGER,
+    bit_depth INTEGER,
+    channels INTEGER,
+    lossless INTEGER,
+    integrity_ok INTEGER,
+    sensor_version TEXT,
+    evidence_json TEXT,
+    measured_at REAL
+);
+CREATE INDEX IF NOT EXISTS idx_library_evidence_album ON library_evidence(album_id);
+
 CREATE TABLE IF NOT EXISTS actions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     jid TEXT,
@@ -340,6 +360,92 @@ def upsert_file_evidence(jid: str, files: list[dict] | None) -> None:
             )
     except Exception:
         log.exception("state_db.upsert_file_evidence failed for jid=%s", jid)
+
+
+def upsert_library_evidence(row: dict) -> None:
+    """Insert/replace measured quality evidence for one Lidarr trackfile (F5.4)."""
+    if not _ensure_initialized() or row.get("trackfile_id") is None:
+        return
+    try:
+        payload = {
+            "trackfile_id": int(row["trackfile_id"]),
+            "album_id": row.get("album_id"),
+            "path": row.get("path"),
+            "size": row.get("size"),
+            "mtime": row.get("mtime"),
+            "status": row.get("status"),
+            "reason": row.get("reason"),
+            "codec": row.get("codec"),
+            "sample_rate": row.get("sample_rate"),
+            "bit_depth": row.get("bit_depth"),
+            "channels": row.get("channels"),
+            "lossless": None
+            if row.get("lossless") is None
+            else int(bool(row.get("lossless"))),
+            "integrity_ok": None
+            if row.get("integrity_ok") is None
+            else int(bool(row.get("integrity_ok"))),
+            "sensor_version": row.get("sensor_version"),
+            "evidence_json": json.dumps(row.get("evidence") or {}),
+            "measured_at": row.get("measured_at") or time.time(),
+        }
+        with _lock, _connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO library_evidence (trackfile_id, album_id, path, size, mtime,
+                  status, reason, codec, sample_rate, bit_depth, channels, lossless,
+                  integrity_ok, sensor_version, evidence_json, measured_at)
+                VALUES (:trackfile_id, :album_id, :path, :size, :mtime, :status, :reason,
+                  :codec, :sample_rate, :bit_depth, :channels, :lossless, :integrity_ok,
+                  :sensor_version, :evidence_json, :measured_at)
+                ON CONFLICT(trackfile_id) DO UPDATE SET
+                  album_id=excluded.album_id, path=excluded.path, size=excluded.size,
+                  mtime=excluded.mtime, status=excluded.status, reason=excluded.reason,
+                  codec=excluded.codec, sample_rate=excluded.sample_rate,
+                  bit_depth=excluded.bit_depth, channels=excluded.channels,
+                  lossless=excluded.lossless, integrity_ok=excluded.integrity_ok,
+                  sensor_version=excluded.sensor_version, evidence_json=excluded.evidence_json,
+                  measured_at=excluded.measured_at
+            """,
+                payload,
+            )
+    except Exception:
+        log.exception(
+            "state_db.upsert_library_evidence failed for trackfile_id=%s",
+            row.get("trackfile_id"),
+        )
+
+
+def get_library_evidence(trackfile_id: int) -> dict | None:
+    """Return stored evidence for a trackfile, or None."""
+    if not _ensure_initialized():
+        return None
+    try:
+        with _lock, _connect() as conn:
+            cur = conn.execute(
+                "SELECT * FROM library_evidence WHERE trackfile_id = ?", (trackfile_id,)
+            )
+            row = cur.fetchone()
+            return dict(row) if row else None
+    except Exception:
+        log.exception("state_db.get_library_evidence failed for %s", trackfile_id)
+        return None
+
+
+def get_album_library_evidence(album_id: int) -> list[dict]:
+    """Return all stored trackfile evidence for an album."""
+    if not _ensure_initialized():
+        return []
+    try:
+        with _lock, _connect() as conn:
+            cur = conn.execute(
+                "SELECT * FROM library_evidence WHERE album_id = ? ORDER BY path",
+                (album_id,),
+            )
+            return [dict(r) for r in cur.fetchall()]
+    except Exception:
+        log.exception("state_db.get_album_library_evidence failed for %s", album_id)
+        return []
 
 
 def log_action(

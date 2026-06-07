@@ -21,10 +21,11 @@ confirmed to be 121 bytes = 13 + 9×12 during disc-id validation.)
 
 from __future__ import annotations
 
+import xml.etree.ElementTree as ET
 from collections.abc import Callable, MutableMapping
 from dataclasses import dataclass, field
 
-from cd_discid import accuraterip_ids, accuraterip_url, cddb_id
+from cd_discid import accuraterip_ids, accuraterip_url, cddb_id, ctdb_lookup_url
 from cd_toc import CdToc
 
 DEFAULT_TIMEOUT_SECONDS = 10.0
@@ -131,6 +132,78 @@ def lookup_accuraterip(
         expected_cddb=cddb_id(toc),
         expected_track_count=toc.track_count,
     )
+
+    if cache is not None:
+        cache[url] = result
+    return result
+
+
+@dataclass(frozen=True)
+class CtdbResult:
+    """Advisory CTDB (CUETools DB) lookup result for a disc."""
+
+    found: bool
+    submissions: int = 0  # matching CTDB entries
+    confidence: int = 0  # highest community confidence among matching entries
+
+
+def _expected_entry_toc(toc: CdToc) -> str:
+    """CTDB entry ``toc`` attribute form: 0-based offsets + lead-out, ':'-joined."""
+    return ":".join(
+        str(frame) for frame in (*toc.track_offsets_frames, toc.leadout_frames)
+    )
+
+
+def parse_ctdb(data: bytes | str | None, *, expected_toc: str) -> CtdbResult:
+    """Parse a CTDB lookup response, counting only entries for *this* disc.
+
+    Each ``<entry>`` carries a ``toc`` attribute (0-based offsets + lead-out).
+    Entries whose ``toc`` does not match the looked-up disc are ignored, so a
+    fuzzy/metadata match for a different pressing cannot be mistaken for a hit.
+    No matching entry → ``found=False``.
+    """
+    if not data:
+        return CtdbResult(found=False)
+    text = data.decode("utf-8", "replace") if isinstance(data, bytes) else data
+    try:
+        root = ET.fromstring(text)
+    except ET.ParseError:
+        return CtdbResult(found=False)
+
+    submissions = 0
+    best_confidence = 0
+    for element in root.iter():
+        tag = element.tag.rsplit("}", 1)[-1]  # strip XML namespace
+        if tag != "entry" or element.get("toc") != expected_toc:
+            continue
+        submissions += 1
+        try:
+            best_confidence = max(best_confidence, int(element.get("confidence") or 0))
+        except ValueError:
+            pass
+
+    if submissions == 0:
+        return CtdbResult(found=False)
+    return CtdbResult(found=True, submissions=submissions, confidence=best_confidence)
+
+
+def lookup_ctdb(
+    toc: CdToc,
+    *,
+    fetch: Fetch | None = None,
+    cache: MutableMapping[str, CtdbResult] | None = None,
+) -> CtdbResult:
+    """Look up a TOC in CTDB and return an advisory result. Never raises."""
+    url = ctdb_lookup_url(toc)
+    if cache is not None and url in cache:
+        return cache[url]
+
+    fetcher = fetch or _default_fetch
+    try:
+        body = fetcher(url)
+    except Exception:
+        body = None
+    result = parse_ctdb(body, expected_toc=_expected_entry_toc(toc))
 
     if cache is not None:
         cache[url] = result

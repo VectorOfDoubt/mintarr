@@ -492,7 +492,7 @@ function renderLibraryEvidence(lib) {
   if (!lib || !lib.available) return '';
   const rows = (lib.tracks || []).map(t => {
     const fmt = t.status === 'measured'
-      ? `${esc(t.codec || '—')}${t.sample_rate ? ' · ' + t.sample_rate + ' Hz' : ''}${t.bit_depth ? ' · ' + t.bit_depth + ' bit' : ''}`
+      ? `${esc(t.codec || '—')}${t.sample_rate ? ' · ' + esc(String(t.sample_rate)) + ' Hz' : ''}${t.bit_depth ? ' · ' + esc(String(t.bit_depth)) + ' bit' : ''}`
       : `unmeasured${t.reason ? ' (' + esc(t.reason) + ')' : ''}`;
     const flags = [];
     if (t.lossless === true) flags.push('lossless');

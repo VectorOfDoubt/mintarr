@@ -1468,6 +1468,19 @@ def job_cancel(job_id: int):
 
 
 # ---------- /dashboard/v1/record/<jid> ----------
+def _basename_any(path: str | None) -> str | None:
+    """Basename handling both POSIX and Windows separators.
+
+    Unmeasured rows can carry the raw Lidarr path (e.g. a Windows
+    ``H:\\Music\\...``); ``Path(...).name`` only strips ``/`` on Linux, so the
+    full path would leak. Splitting on both ``/`` and ``\\`` keeps the
+    basenames-only promise regardless of where Lidarr runs.
+    """
+    if not path:
+        return None
+    return path.replace("\\", "/").rsplit("/", 1)[-1] or None
+
+
 def _library_evidence_detail(sidecar: dict) -> dict:
     """Measured existing-library quality for the record's album(s) (F5.4 slice 2).
 
@@ -1493,7 +1506,7 @@ def _library_evidence_detail(sidecar: dict) -> dict:
                 measured += 1
             tracks.append(
                 {
-                    "filename": Path(r.get("path") or "").name or None,
+                    "filename": _basename_any(r.get("path")),
                     "status": r.get("status"),
                     "reason": r.get("reason"),
                     "codec": r.get("codec"),

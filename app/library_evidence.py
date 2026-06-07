@@ -42,6 +42,35 @@ def _lidarr_root() -> str:
     return os.environ.get("MINTARR_LIBRARY_LIDARR_ROOT", "")
 
 
+def stat_for_freshness(
+    lidarr_path: str,
+    *,
+    library_root: str | None = None,
+    lidarr_root: str | None = None,
+) -> tuple[str | None, int | None, float | None]:
+    """Cheap (resolved_path, size, mtime) for the staleness check — no probing.
+
+    Returns ``(None, None, None)`` when the file can't be resolved. Combined with
+    the stored ``sensor_version``, this is the locked freshness basis: re-measure
+    unless path, size, mtime *and* sensor version all still match.
+    """
+    root = library_root if library_root is not None else configured_library_root()
+    if not root:
+        return None, None, None
+    mapped, _reason = resolve_library_path(
+        lidarr_path,
+        library_root=root,
+        lidarr_root=lidarr_root if lidarr_root is not None else _lidarr_root(),
+    )
+    if mapped is None:
+        return None, None, None
+    try:
+        st = mapped.stat()
+    except OSError:
+        return None, None, None
+    return str(mapped), st.st_size, st.st_mtime
+
+
 def resolve_library_path(
     lidarr_path: str, *, library_root: str, lidarr_root: str
 ) -> tuple[Path | None, str | None]:

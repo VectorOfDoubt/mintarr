@@ -2986,6 +2986,61 @@ _CTDB_AR_LOOKUP_CACHE: dict = {}
 _CTDB_LOOKUP_CACHE: dict = {}
 
 
+def _record_existing_library_evidence(album_id, trackfiles) -> None:
+    """Measure the existing library files for an album and store evidence (F5.4).
+
+    Record-only and gated on ``MINTARR_LIBRARY_ROOT`` (default unset ⇒ no-op):
+    this never touches the import decision. Re-measures unless the freshness
+    basis still matches — resolved path, size, mtime *and* sensor_version (per
+    the F5.4 design), so a same-size replacement, a moved file, or evidence from
+    older sensor logic is always re-measured. Never raises.
+    """
+    try:
+        import library_evidence
+        import state_db
+
+        if not library_evidence.configured_library_root():
+            return
+        for tf in trackfiles or []:
+            trackfile_id = tf.get("id")
+            path = tf.get("path")
+            if trackfile_id is None or not path:
+                continue
+            resolved_path, size, mtime = library_evidence.stat_for_freshness(path)
+            prior = state_db.get_library_evidence(int(trackfile_id))
+            if (
+                prior
+                and prior.get("status") == "measured"
+                and resolved_path is not None
+                and prior.get("path") == resolved_path
+                and prior.get("size") == size
+                and prior.get("mtime") == mtime
+                and prior.get("sensor_version") == library_evidence.SENSOR_VERSION
+            ):
+                continue  # path, size, mtime + sensor version all fresh — skip
+            measurement = library_evidence.measure_trackfile(path)
+            state_db.upsert_library_evidence(
+                {
+                    "trackfile_id": trackfile_id,
+                    "album_id": album_id,
+                    "path": resolved_path or path,
+                    "size": size,
+                    "mtime": mtime,
+                    "status": measurement.status,
+                    "reason": measurement.reason,
+                    "codec": measurement.codec,
+                    "sample_rate": measurement.sample_rate,
+                    "bit_depth": measurement.bit_depth,
+                    "channels": measurement.channels,
+                    "lossless": measurement.lossless,
+                    "integrity_ok": measurement.integrity_ok,
+                    "sensor_version": library_evidence.SENSOR_VERSION,
+                }
+            )
+    except Exception:
+        log.exception("[library_evidence] recording existing evidence failed")
+
+
 def _ctdb_enabled() -> bool:
     """True only when the operator has enabled the default-off ctdb connector."""
     try:
@@ -3904,6 +3959,9 @@ def _trigger_lidarr_import(
                 if kbps > existing_kbps:
                     existing_kbps = kbps
                     existing_label = qname
+            # F5.4 slice 1b: record-only measured evidence for the existing
+            # files. Gated on MINTARR_LIBRARY_ROOT; never affects the decision.
+            _record_existing_library_evidence(aid, tfs)
         except Exception:
             pass
     log.info(

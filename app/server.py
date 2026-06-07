@@ -2980,6 +2980,111 @@ def _cd_rip_sensor_from_evidence(ev) -> dict:
     )
 
 
+# Process-level lookup caches (keyed by URL) so re-verifying the same disc does
+# not re-hit AccurateRip/CTDB — bounded fetches per the F5.3B design.
+_CTDB_AR_LOOKUP_CACHE: dict = {}
+_CTDB_LOOKUP_CACHE: dict = {}
+
+
+def _ctdb_enabled() -> bool:
+    """True only when the operator has enabled the default-off ctdb connector."""
+    try:
+        import connectors
+
+        connector = connectors.get_connector("ctdb")
+        return bool(connector and connector.is_enabled())
+    except Exception:
+        return False
+
+
+def _build_ctdb_sensor(output_dir: Path, cd_rip_ev) -> dict | None:
+    """Advisory CTDB/AccurateRip network cross-check (F5.3B emission slice).
+
+    Runs only for a detected CD rip when the (default-off) ctdb connector is
+    enabled. Reconstructs the TOC, looks the disc up in AccurateRip + CTDB, and
+    emits an advisory ``ctdb`` SensorResult. Never blocks and never feeds the
+    decision — online-verified scoring (sub-slice B) is a later opt-in.
+    """
+    if cd_rip_ev is None or not _ctdb_enabled():
+        return None
+    try:
+        import cd_lookup
+        import cd_toc
+
+        toc = cd_toc.reconstruct_toc(output_dir)
+    except Exception:
+        log.exception("[ctdb] TOC reconstruction failed (continuing)")
+        return None
+
+    if toc is None:
+        return _sensor_result(
+            "ctdb",
+            "source_specific_proof",
+            "skipped",
+            "info",
+            0.0,
+            "CD-rip TOC could not be reconstructed; skipped AccurateRip/CTDB lookup.",
+            {"reason": "no_toc"},
+            sensor_version="mintarr-ctdb 2026-06-07",
+        )
+
+    try:
+        accuraterip = cd_lookup.lookup_accuraterip(toc, cache=_CTDB_AR_LOOKUP_CACHE)
+        ctdb = cd_lookup.lookup_ctdb(toc, cache=_CTDB_LOOKUP_CACHE)
+    except Exception:
+        log.exception("[ctdb] lookup failed (continuing)")
+        return _sensor_result(
+            "ctdb",
+            "source_specific_proof",
+            "skipped",
+            "warning",
+            0.0,
+            "AccurateRip/CTDB lookup was unavailable.",
+            {"reason": "lookup_unavailable"},
+            sensor_version="mintarr-ctdb 2026-06-07",
+        )
+
+    evidence = {
+        "accuraterip": {
+            "found": accuraterip.found,
+            "max_confidence": accuraterip.max_confidence,
+            "pressings": accuraterip.pressings,
+        },
+        "ctdb": {
+            "found": ctdb.found,
+            "confidence": ctdb.confidence,
+            "submissions": ctdb.submissions,
+        },
+    }
+    if accuraterip.found or ctdb.found:
+        confidence = 0.9 if (accuraterip.found and ctdb.found) else 0.7
+        summary = (
+            f"Disc found in AccurateRip (conf {accuraterip.max_confidence}) / "
+            f"CTDB (conf {ctdb.confidence}): AccurateRip found={accuraterip.found}, "
+            f"CTDB found={ctdb.found}. Lookup only — not a checksum verification."
+        )
+        return _sensor_result(
+            "ctdb",
+            "source_specific_proof",
+            "pass",
+            "info",
+            confidence,
+            summary,
+            evidence,
+            sensor_version="mintarr-ctdb 2026-06-07",
+        )
+    return _sensor_result(
+        "ctdb",
+        "source_specific_proof",
+        "skipped",
+        "info",
+        0.0,
+        "Disc not found in AccurateRip or CTDB.",
+        evidence,
+        sensor_version="mintarr-ctdb 2026-06-07",
+    )
+
+
 def _compute_verification(
     jid: str,
     output_dir: Path,
@@ -3055,6 +3160,11 @@ def _compute_verification(
     cd_rip_ev = _cd_rip_evidence_or_none(output_dir)
     if cd_rip_ev is not None:
         sensors.append(_cd_rip_sensor_from_evidence(cd_rip_ev))
+    # F5.3B: optional network CTDB/AccurateRip cross-check — default-off, advisory,
+    # and never fed into the decision below.
+    ctdb_sensor = _build_ctdb_sensor(output_dir, cd_rip_ev)
+    if ctdb_sensor is not None:
+        sensors.append(ctdb_sensor)
     files = _detective_file_evidence(detective_result, output_dir)
     audio_decision = decide(
         score,

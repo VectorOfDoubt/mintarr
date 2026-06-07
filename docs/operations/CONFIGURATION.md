@@ -123,6 +123,14 @@ an AccurateRip-verified rip can move a borderline `REVIEW_REQUIRED` to
 `ACCEPT`/`ACCEPT_PROVISIONAL` to `REVIEW_REQUIRED`. It never overrides a
 hard-gate `BLOCK` or identity `WRONG_ALBUM`, and never blocks on its own.
 
+The `ctdb` connector adds an **optional, default-off** online cross-check
+(AccurateRip + CTDB). Enable it from the Integrations dashboard. It is opt-in
+because it sends a non-identifying **disc fingerprint** (a TOC-derived disc id)
+to a third party (`db.cuetools.net` / AccurateRip) — no audio is uploaded. While
+enabled it emits an advisory `ctdb` sensor result; it does not change import
+decisions in the current runtime. A disabled install makes no outbound call. See
+[F5.3B CTDB network verifier](../design/F5.3B_CTDB_NETWORK_VERIFIER.md).
+
 ### 3.6 Notifications
 
 | Variable | Purpose | Default |

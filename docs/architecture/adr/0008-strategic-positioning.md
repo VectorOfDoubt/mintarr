@@ -100,4 +100,30 @@ Until then, ADR-0008 stands. The positioning statement at the top of this docume
 
 ---
 
-> Locked: 2026-05-26
+## Amendment 2026-06-07: read-only library quality evidence (F5.4)
+
+**Status:** Accepted. Extends — does not reopen — the positioning above.
+
+F5.4 lets Mintarr **measure** the existing Lidarr library (read-only) and compare a
+candidate against that *measured* quality instead of trusting Lidarr's quality
+label. This clarifies one line of the boundary:
+
+- **In scope:** Mintarr may hold a **read-only quality evidence register** over
+  Lidarr-owned files — measuring codec/bit-depth/sample-rate/integrity/spectral
+  evidence and storing it — to make import decisions on measured truth. Mintarr
+  owns *audio quality*; Lidarr remains the truth for *identity/ownership* (which
+  artist/album/track exists).
+- **Still out of scope (unchanged):** Mintarr does **not** own library
+  management — no tag writing, no re-encoding, no moving/renaming/deleting
+  library files, no maintaining wanted/missing or library structure. The
+  register is observational only.
+
+This is consistent with the boundary test ("does it duplicate Lidarr's job, or
+fill the QC gap?") — measuring quality fills the QC gap; managing the library
+would duplicate Lidarr. Decision use of measured evidence is opt-in
+(`MINTARR_MEASURED_EXISTING`, default-off). See
+[F5.4 library evidence index](../../design/F5.4_LIBRARY_EVIDENCE_INDEX.md).
+
+---
+
+> Locked: 2026-05-26 · Amended: 2026-06-07 (F5.4)

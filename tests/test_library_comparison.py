@@ -87,6 +87,13 @@ def test_compare_fake_candidate_is_review():
     assert lc.compare(_cand(authentic=False), existing) == lc.REVIEW
 
 
+def test_compare_fake_candidate_does_not_win_over_invalid_existing():
+    # Authenticity outranks fixing an existing integrity defect: a fake candidate
+    # must route to REVIEW, never auto-UPGRADE, even if existing has an invalid track.
+    existing = lc.album_quality([_row(integrity_ok=False)])
+    assert lc.compare(_cand(authentic=False, valid=True), existing) == lc.REVIEW
+
+
 def test_compare_higher_tier_is_upgrade():
     existing = lc.album_quality([_row(bit_depth=16, sample_rate=44100)])  # tier 1
     assert lc.compare(_cand(tier=3), existing) == lc.UPGRADE
@@ -102,8 +109,9 @@ def test_compare_same_tier_is_equivalent():
     assert lc.compare(_cand(tier=1), existing) == lc.EQUIVALENT
 
 
-def test_compare_same_tier_completes_partial_is_upgrade():
-    # existing measured 1 of 2 tracks; same tier candidate that is complete wins.
+def test_compare_completeness_comes_from_caller_not_coverage():
+    # measured_count < track_count is measurement *coverage*, not album
+    # completeness — it must NOT by itself make a same-tier candidate an upgrade.
     existing = lc.AlbumQuality(
         measured_count=1,
         track_count=2,
@@ -112,4 +120,9 @@ def test_compare_same_tier_completes_partial_is_upgrade():
         min_tier=1,
         all_lossless=True,
     )
-    assert lc.compare(_cand(tier=1, complete=True), existing) == lc.UPGRADE
+    assert lc.compare(_cand(tier=1, complete=True), existing) == lc.EQUIVALENT
+    # Only an explicit caller-supplied completeness signal upgrades.
+    assert (
+        lc.compare(_cand(tier=1, complete=True), existing, existing_incomplete=True)
+        == lc.UPGRADE
+    )

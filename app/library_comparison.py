@@ -94,7 +94,12 @@ DOWNGRADE = "downgrade"  # candidate worse on a higher-precedence axis
 REVIEW = "review"  # mixed/ambiguous → operator decides
 
 
-def compare(candidate: CandidateQuality, existing: AlbumQuality | None) -> str:
+def compare(
+    candidate: CandidateQuality,
+    existing: AlbumQuality | None,
+    *,
+    existing_incomplete: bool = False,
+) -> str:
     """Compare a candidate against measured existing quality (§4 precedence).
 
     Lexicographic by precedence — hard validity, then authenticity, then lossless
@@ -102,29 +107,36 @@ def compare(candidate: CandidateQuality, existing: AlbumQuality | None) -> str:
     identity axis / ADR-0013 in the caller). Returns one of UPGRADE / EQUIVALENT
     / DOWNGRADE / REVIEW. With no measured existing evidence, returns REVIEW so
     the caller falls back to its label-based path.
+
+    ``existing_incomplete`` is the release-completeness signal and must come from
+    Lidarr track stats (existing vs expected track count), supplied by the caller
+    in slice 3b — it is NOT inferred from measurement coverage here, since some
+    rows being unmeasured says nothing about whether the album is complete.
     """
     if existing is None:
         return REVIEW
 
-    # Validity dominates: a candidate that fixes an invalid existing release wins;
-    # an existing valid release is not displaced by a candidate that is no better.
-    if existing.any_invalid and candidate.valid:
-        return UPGRADE
+    # Highest precedence is the candidate's own usability: an invalid candidate
+    # can never win; a fake/suspicious candidate never auto-wins (even over an
+    # existing release that has an integrity defect) — route to review.
     if not candidate.valid:
         return DOWNGRADE
-
-    # Authenticity: a measured-fake candidate is never an upgrade over a clean
-    # existing release; route to review rather than silently replacing.
     if not candidate.authentic:
         return REVIEW
 
-    # Lossless tier (only meaningful once existing is valid + measured).
+    # Validity of the existing release: a valid+authentic candidate that fixes an
+    # existing integrity defect is an upgrade.
+    if existing.any_invalid:
+        return UPGRADE
+
+    # Lossless tier (existing is valid + measured here).
     if candidate.tier > existing.min_tier:
         return UPGRADE
     if candidate.tier < existing.min_tier:
         return DOWNGRADE
 
-    # Same tier: completeness can still justify a replacement.
-    if candidate.complete and existing.measured_count < existing.track_count:
+    # Same tier: a complete candidate can replace an incomplete existing release.
+    # Completeness comes from the caller (Lidarr stats), not measurement coverage.
+    if candidate.complete and existing_incomplete:
         return UPGRADE
     return EQUIVALENT

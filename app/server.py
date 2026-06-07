@@ -2990,9 +2990,10 @@ def _record_existing_library_evidence(album_id, trackfiles) -> None:
     """Measure the existing library files for an album and store evidence (F5.4).
 
     Record-only and gated on ``MINTARR_LIBRARY_ROOT`` (default unset ⇒ no-op):
-    this never touches the import decision. Re-measures only when a trackfile's
-    size changed since the last measurement, so repeated imports of the same
-    album stay cheap. Never raises.
+    this never touches the import decision. Re-measures unless the freshness
+    basis still matches — resolved path, size, mtime *and* sensor_version (per
+    the F5.4 design), so a same-size replacement, a moved file, or evidence from
+    older sensor logic is always re-measured. Never raises.
     """
     try:
         import library_evidence
@@ -3005,21 +3006,26 @@ def _record_existing_library_evidence(album_id, trackfiles) -> None:
             path = tf.get("path")
             if trackfile_id is None or not path:
                 continue
-            size = tf.get("size")
+            resolved_path, size, mtime = library_evidence.stat_for_freshness(path)
             prior = state_db.get_library_evidence(int(trackfile_id))
             if (
                 prior
                 and prior.get("status") == "measured"
+                and resolved_path is not None
+                and prior.get("path") == resolved_path
                 and prior.get("size") == size
+                and prior.get("mtime") == mtime
+                and prior.get("sensor_version") == library_evidence.SENSOR_VERSION
             ):
-                continue  # unchanged since last measurement — skip re-probe
+                continue  # path, size, mtime + sensor version all fresh — skip
             measurement = library_evidence.measure_trackfile(path)
             state_db.upsert_library_evidence(
                 {
                     "trackfile_id": trackfile_id,
                     "album_id": album_id,
-                    "path": path,
+                    "path": resolved_path or path,
                     "size": size,
+                    "mtime": mtime,
                     "status": measurement.status,
                     "reason": measurement.reason,
                     "codec": measurement.codec,

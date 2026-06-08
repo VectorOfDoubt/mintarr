@@ -65,8 +65,28 @@ Mintarr refuses to boot if the API key is missing or too short. Pre-cutover buil
 | `LIDARR_API_URL` | Base URL of Lidarr's v1 API | `http://host.docker.internal:8686/api/v1` |
 | `LIDARR_API_KEY` | Lidarr API key (alternative to extracting from config.xml) | Empty (use `LIDARR_CONFIG_XML` instead) |
 | `LIDARR_CONFIG_XML` | Path inside container to mounted Lidarr `config.xml` | Empty |
+| `MINTARR_LIDARR_INVENTORY_MODE` | F5.4 library-scan inventory source: `sqlite`, `album`, `artist`, or `auto` | `sqlite` |
+| `MINTARR_LIDARR_DB_PATH` | Optional explicit path to Lidarr's SQLite DB for `sqlite` inventory | Derived from `LIDARR_CONFIG_XML` sibling `lidarr.db` |
+| `MINTARR_LIDARR_INVENTORY_TIMEOUT` | Timeout in seconds for large Lidarr inventory API calls (`/album`, `/artist`) | `120` |
+| `MINTARR_LIDARR_REQUEST_TIMEOUT` | Timeout in seconds for smaller Lidarr API calls during inventory fallback | `30` |
 
 One of `LIDARR_API_KEY` or `LIDARR_CONFIG_XML` must be set. The XML extraction is preferred (avoids putting the key in Mintarr's env vars).
+
+Library scans default to `MINTARR_LIDARR_INVENTORY_MODE=sqlite` because large
+Lidarr libraries can make the global `/album` API payload slow or unreliable.
+SQLite mode opens Lidarr's DB read-only and snapshots only `TrackFiles.Id`,
+`TrackFiles.AlbumId`, and `TrackFiles.Path`; it does not write to Lidarr and
+falls back to the API path if the DB is unavailable or the expected schema
+changes. This intentionally depends on Lidarr's private SQLite schema for a
+read-only inventory optimization, so keep `LIDARR_CONFIG_XML` mounted read-only
+and set `MINTARR_LIDARR_INVENTORY_MODE=album` or `artist` if your deployment
+does not expose the DB.
+
+On some hosts, a strictly read-only Lidarr config mount may prevent SQLite from
+opening a live WAL-mode database if SQLite needs sidecar access. In that case,
+Mintarr logs the SQLite inventory failure and uses the configured API fallback;
+mounting the config directory read-only is still preferred unless you have a
+specific reason to override it.
 
 ### 3.3 Storage paths
 
@@ -459,11 +479,17 @@ MINTARR_API_KEY=               # REQUIRED — no default
 LIDARR_API_URL=http://host.docker.internal:8686/api/v1
 LIDARR_API_KEY=                # use one of LIDARR_API_KEY or LIDARR_CONFIG_XML
 LIDARR_CONFIG_XML=             # use one of LIDARR_API_KEY or LIDARR_CONFIG_XML
+MINTARR_LIDARR_INVENTORY_MODE=sqlite
+MINTARR_LIDARR_DB_PATH=        # derived from LIDARR_CONFIG_XML sibling lidarr.db
+MINTARR_LIDARR_INVENTORY_TIMEOUT=120
+MINTARR_LIDARR_REQUEST_TIMEOUT=30
 
 # Storage
 DOWNLOAD_BASE=/downloads
 OUTPUT_BASE=/output
 MINTARR_LIDARR_COMPLETE_ROOT=/downloads/TidalHiRes/complete
+MINTARR_LIBRARY_ROOT=
+MINTARR_LIBRARY_LIDARR_ROOT=
 
 # External services
 FLAC_API_URL=http://host.docker.internal:8889/analyze

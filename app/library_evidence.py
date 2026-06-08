@@ -286,30 +286,27 @@ def measure_trackfile_spectral(
 
 
 def _match_detective_file(result: dict | None, mapped: Path) -> dict | None:
-    """Return the per-file Detective entry for ``mapped`` exactly, else None.
+    """Return the per-file Detective entry for the *exact* ``mapped`` path, else None.
 
-    Match by basename so a differing container mount view still resolves, but
-    refuse to guess: if no entry's basename equals the requested file, return None
-    so the caller records *unknown* rather than another file's authenticity.
+    Requires a full-path match, never a basename one: two albums can both hold an
+    ``01.flac``, so basename matching could cache one file's authenticity against
+    another's ``trackfile_id`` (§8b.1). Detective must mount the library at the
+    same path Mintarr resolved (§8b deployment requirement), so the reported path
+    equals the path we sent; anything else ⇒ None ⇒ caller records *unknown*.
     """
     if not isinstance(result, dict):
         return None
     files = result.get("files")
     if not isinstance(files, list):
         return None
-    target = mapped.name
+    target = os.path.normpath(str(mapped))
     for item in files:
         if not isinstance(item, dict):
             continue
-        item_path = item.get("path") or ""
-        if _basename(str(item_path)) == target:
+        item_path = item.get("path")
+        if isinstance(item_path, str) and os.path.normpath(item_path) == target:
             return item
     return None
-
-
-def _basename(path: str) -> str:
-    """Last path segment, splitting on both separators (paths may be foreign)."""
-    return path.replace("\\", "/").rstrip("/").rsplit("/", 1)[-1]
 
 
 def _default_spectral_client(path: Path) -> dict:

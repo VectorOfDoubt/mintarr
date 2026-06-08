@@ -261,8 +261,23 @@ def test_unmeasured_row_is_not_fresh(tmp_path, monkeypatch):
 # ---- F5.4 slice 4a: spectral (FLAC Detective) authenticity ----
 
 
-def _spectral_client(files):
-    """Build a fake Detective client returning a fixed per-file payload."""
+def _echo_client(**entry):
+    """A Detective client that reports the *exact* path it was asked to analyse.
+
+    Mirrors the §8b deployment contract (Detective mounts the library at the same
+    path Mintarr resolved), so the per-file result carries that exact path.
+    """
+
+    def _c(path):
+        item = {"path": str(path)}
+        item.update(entry)
+        return {"overall_verdict": "AUTHENTIC", "files": [item]}
+
+    return _c
+
+
+def _client(files):
+    """A Detective client returning a fixed (possibly wrong-path) payload."""
 
     def _c(path):
         return {"overall_verdict": "AUTHENTIC", "files": files}
@@ -277,7 +292,7 @@ def test_spectral_disabled_is_unmeasured(tmp_path, monkeypatch):
         "/music/Artist/Album/01.flac",
         library_root=root,
         lidarr_root="/music",
-        client=_spectral_client([{"path": "/x/01.flac", "is_fake_high_res": False}]),
+        client=_echo_client(is_fake_high_res=False),
     )
     assert m.status == "unmeasured"
     assert m.authentic is None
@@ -291,15 +306,7 @@ def test_spectral_genuine(tmp_path, monkeypatch):
         "/music/Artist/Album/01.flac",
         library_root=root,
         lidarr_root="/music",
-        client=_spectral_client(
-            [
-                {
-                    "path": "/anymount/01.flac",
-                    "is_fake_high_res": False,
-                    "verdict": "AUTHENTIC",
-                }
-            ]
-        ),
+        client=_echo_client(is_fake_high_res=False, verdict="AUTHENTIC"),
     )
     assert m.status == "measured"
     assert m.authentic is True
@@ -312,7 +319,7 @@ def test_spectral_fake_by_flag(tmp_path, monkeypatch):
         "/music/Artist/Album/01.flac",
         library_root=root,
         lidarr_root="/music",
-        client=_spectral_client([{"path": "/x/01.flac", "is_fake_high_res": True}]),
+        client=_echo_client(is_fake_high_res=True),
     )
     assert m.status == "measured"
     assert m.authentic is False
@@ -325,7 +332,7 @@ def test_spectral_fake_by_verdict(tmp_path, monkeypatch):
         "/music/Artist/Album/01.flac",
         library_root=root,
         lidarr_root="/music",
-        client=_spectral_client([{"path": "/x/01.flac", "verdict": "SUSPICIOUS"}]),
+        client=_echo_client(verdict="SUSPICIOUS"),
     )
     assert m.authentic is False
     assert m.verdict == "SUSPICIOUS"
@@ -340,8 +347,25 @@ def test_spectral_unmatched_file_is_unknown(tmp_path, monkeypatch):
         "/music/Artist/Album/01.flac",
         library_root=root,
         lidarr_root="/music",
-        client=_spectral_client(
-            [{"path": "/x/99-other.flac", "is_fake_high_res": True}]
+        client=_client([{"path": "/x/99-other.flac", "is_fake_high_res": True}]),
+    )
+    assert m.status == "unmeasured"
+    assert m.authentic is None
+    assert m.reason == "no detective result for file"
+
+
+def test_spectral_same_basename_other_album_is_unknown(tmp_path, monkeypatch):
+    # Regression (#117 blocker): a same-basename file in a *different* album must
+    # never match — exact path only, never basename. Otherwise one album's "01.flac"
+    # could cache its authenticity against another's trackfile_id.
+    monkeypatch.setenv("MINTARR_LIBRARY_SPECTRAL", "on")
+    root = _lib(tmp_path)
+    m = le.measure_trackfile_spectral(
+        "/music/Artist/Album/01.flac",
+        library_root=root,
+        lidarr_root="/music",
+        client=_client(
+            [{"path": f"{root}/Artist/Other Album/01.flac", "verdict": "FAKE"}]
         ),
     )
     assert m.status == "unmeasured"

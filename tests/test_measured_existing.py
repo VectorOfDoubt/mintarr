@@ -237,3 +237,67 @@ def test_candidate_tier_known_when_all_files_complete():
         expected_track_count=10,
     )
     assert c.tier_known is True
+
+
+# ---- F5.4 slice 4b: existing authenticity plumbed through _apply_measured_existing ----
+
+
+def test_existing_fake_rescues_review_only_when_spectral_on(monkeypatch, tmp_path):
+    # Existing is a measured-fake hi-res (nominal tier 3); candidate is genuine
+    # tier 1. With spectral OFF the fake tier is trusted (DOWNGRADE → review stays
+    # review). With spectral ON, any_fake → UPGRADE lifts review to provisional.
+    monkeypatch.setenv("MINTARR_LIBRARY_ROOT", str(tmp_path))
+    _seed_real(tmp_path, 820, 24, 96000, trackfile_id=8201)  # nominal tier 3
+    state_db.update_library_spectral(
+        {
+            "trackfile_id": 8201,
+            "album_id": 820,
+            "authentic": False,
+            "spectral_status": "measured",
+            "spectral_verdict": "FAKE",
+            "spectral_sensor_version": library_evidence.SPECTRAL_SENSOR_VERSION,
+        }
+    )
+    monkeypatch.delenv("MINTARR_LIBRARY_SPECTRAL", raising=False)
+    assert (
+        _apply("REVIEW_REQUIRED", [820], cand_bits=16, cand_rate=44100)
+        == "REVIEW_REQUIRED"
+    )
+    monkeypatch.setenv("MINTARR_LIBRARY_SPECTRAL", "true")
+    assert (
+        _apply("REVIEW_REQUIRED", [820], cand_bits=16, cand_rate=44100)
+        == "ACCEPT_PROVISIONAL"
+    )
+
+
+def test_unknown_existing_authenticity_routes_to_review_only_when_spectral_on(
+    monkeypatch, tmp_path
+):
+    # Existing measured but NOT spectrally verified, same tier as candidate. Off:
+    # ACCEPT stays ACCEPT. On: unverified existing tier → abstain to review.
+    monkeypatch.setenv("MINTARR_LIBRARY_ROOT", str(tmp_path))
+    _seed_real(
+        tmp_path, 821, 16, 44100, trackfile_id=8211
+    )  # tier 1, no spectral verdict
+    monkeypatch.delenv("MINTARR_LIBRARY_SPECTRAL", raising=False)
+    assert _apply("ACCEPT", [821], cand_bits=16, cand_rate=44100) == "ACCEPT"
+    monkeypatch.setenv("MINTARR_LIBRARY_SPECTRAL", "true")
+    assert _apply("ACCEPT", [821], cand_bits=16, cand_rate=44100) == "REVIEW_REQUIRED"
+
+
+def test_verified_genuine_existing_keeps_normal_behaviour(monkeypatch, tmp_path):
+    # Spectral ON but existing is verified genuine same tier → no abstain (ACCEPT).
+    monkeypatch.setenv("MINTARR_LIBRARY_ROOT", str(tmp_path))
+    monkeypatch.setenv("MINTARR_LIBRARY_SPECTRAL", "true")
+    _seed_real(tmp_path, 822, 16, 44100, trackfile_id=8221)
+    state_db.update_library_spectral(
+        {
+            "trackfile_id": 8221,
+            "album_id": 822,
+            "authentic": True,
+            "spectral_status": "measured",
+            "spectral_verdict": "AUTHENTIC",
+            "spectral_sensor_version": library_evidence.SPECTRAL_SENSOR_VERSION,
+        }
+    )
+    assert _apply("ACCEPT", [822], cand_bits=16, cand_rate=44100) == "ACCEPT"

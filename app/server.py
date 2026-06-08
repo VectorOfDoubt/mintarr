@@ -3056,8 +3056,15 @@ def _apply_measured_existing(
         existing_incomplete = (
             expected_track_count > 0 and existing_track_count < expected_track_count
         )
+        # Let the existing release's spectral authenticity move the decision only
+        # when the operator opted into the spectral tier (F5.4 slice 4b). Off ⇒
+        # authenticity is never read, so the cheaper measured-existing path is
+        # unchanged and never over-routes to review.
         verdict = lc.compare(
-            candidate, existing, existing_incomplete=existing_incomplete
+            candidate,
+            existing,
+            existing_incomplete=existing_incomplete,
+            consider_existing_authenticity=library_evidence.spectral_enabled(),
         )
         return _map_measured_verdict(audio_decision, verdict)
     except Exception:

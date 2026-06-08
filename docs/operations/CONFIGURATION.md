@@ -384,7 +384,19 @@ Pre-cutover builds also accept legacy `TIDALHIRES_DISABLE_WORKER`.
 
 In production, leave the worker enabled. Mintarr's worker is N=1 (single thread) by design (full F2 worker-queue design doc planned for v0.2.0 migration).
 
-## 11. Scheduled backups
+## 11. Scheduled library scans
+
+| Variable | Purpose | Default |
+|---|---|---|
+| `MINTARR_LIBRARY_SCAN_SCHEDULE_ENABLED` | Start Mintarr's internal scheduled cheap library-quality scan thread | `false` |
+| `MINTARR_LIBRARY_SCAN_INTERVAL_HOURS` | Hours between scheduled cheap scans | `168` |
+
+Scheduled library scans enqueue the same low-priority `library_scan` job as the
+operator-triggered `/library/scan` endpoint. The scheduler is disabled by
+default and only queues a scan when no import work and no other library scan are
+active. The first scheduled scan runs after the interval elapses.
+
+## 12. Scheduled backups
 
 | Variable | Purpose | Default |
 |---|---|---|
@@ -398,7 +410,7 @@ verification sidecars, terminal sidecars, and audit logs. Audio files are never
 included. The scheduler is disabled by default so upgrades do not start writing
 backup files until the operator opts in.
 
-## 12. Restore staging
+## 13. Restore staging
 
 | Variable | Purpose | Default |
 |---|---|---|
@@ -500,6 +512,10 @@ GUNICORN_ACCESS_LOG=-
 
 # Worker
 MINTARR_DISABLE_WORKER=false
+
+# Scheduled library scans
+MINTARR_LIBRARY_SCAN_SCHEDULE_ENABLED=false
+MINTARR_LIBRARY_SCAN_INTERVAL_HOURS=168
 
 # Scheduled backups
 MINTARR_BACKUP_SCHEDULE_ENABLED=false

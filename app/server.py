@@ -6756,6 +6756,22 @@ if _restore_start_workers and _env_bool(
     except Exception:
         log.exception("scheduled backups failed to start")
 
+# F5.4: optional scheduled cheap library-quality scans. Disabled by default;
+# the scheduler only enqueues low-priority library_scan jobs when no import work
+# and no scan are active.
+if _restore_start_workers and _env_bool(
+    "MINTARR_LIBRARY_SCAN_SCHEDULE_ENABLED", default=False
+):
+    try:
+        from library_scan_scheduler import start_scheduled_scans
+
+        interval_hours = float(
+            os.environ.get("MINTARR_LIBRARY_SCAN_INTERVAL_HOURS", "168")
+        )
+        start_scheduled_scans(interval_seconds=interval_hours * 3600)
+    except Exception:
+        log.exception("scheduled library scans failed to start")
+
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8000, debug=False)

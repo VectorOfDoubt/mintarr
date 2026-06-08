@@ -17,6 +17,13 @@ from pathlib import Path
 log = logging.getLogger("tidalhires.library_evidence")
 
 SENSOR_VERSION = "mintarr-library-evidence 2026-06-08b"
+# F5.4 scan-tier split: metadata (ffprobe) and integrity (flac -t) are separate
+# evidence tiers, each with its own sensor version and freshness, layered onto the
+# same library_evidence row (see F5.4_SCAN_TIERS.md). Metadata tells us the
+# lossless-tier axis quickly; integrity is the heavy full-file decode. Unknown
+# integrity stays unknown — never read as OK.
+METADATA_SENSOR_VERSION = "mintarr-library-metadata 2026-06-08"
+INTEGRITY_SENSOR_VERSION = "mintarr-library-integrity 2026-06-08"
 # The spectral (FLAC Detective) tier is a *separate* sensor with its own version
 # and freshness, layered onto the same library_evidence row (F5.4 §8b). Bumping
 # this re-measures only the spectral verdict, not the cheap ffprobe tier.
@@ -55,6 +62,21 @@ class SpectralMeasurement:
     reason: str | None = None
     authentic: bool | None = None
     verdict: str | None = None
+
+
+@dataclass(frozen=True)
+class IntegrityMeasurement:
+    """``flac -t`` integrity verdict for one trackfile (F5.4 integrity tier).
+
+    ``integrity_ok`` = audio frames decode (genuine corruption ⇒ False);
+    ``checksum_ok`` = FLAC MD5 verified (False ⇒ stale MD5, plays fine). Both None
+    when not applicable/unchecked (non-FLAC, or unmeasured) — i.e. *unknown*.
+    """
+
+    status: str  # "measured" | "unmeasured"
+    reason: str | None = None
+    integrity_ok: bool | None = None
+    checksum_ok: bool | None = None
 
 
 def configured_library_root() -> str | None:
@@ -211,6 +233,86 @@ def measure_trackfile(
     )
 
 
+def measure_trackfile_metadata(
+    lidarr_path: str,
+    *,
+    library_root: str | None = None,
+    lidarr_root: str | None = None,
+    prober=None,
+) -> TrackMeasurement:
+    """Metadata tier (ffprobe only): the fast lossless-tier axis. Never raises.
+
+    Leaves ``integrity_ok`` / ``checksum_ok`` as None (unknown) — only the
+    integrity tier may set them. Same resolution/containment as ``measure_trackfile``.
+    """
+    return measure_trackfile(
+        lidarr_path,
+        library_root=library_root,
+        lidarr_root=lidarr_root,
+        prober=prober or _metadata_prober,
+    )
+
+
+def measure_trackfile_integrity(
+    lidarr_path: str,
+    *,
+    library_root: str | None = None,
+    lidarr_root: str | None = None,
+    prober=None,
+) -> IntegrityMeasurement:
+    """Integrity tier (``flac -t``): heavy full-file decode. Never raises.
+
+    Returns only the integrity dimensions so the caller layers them onto an
+    existing metadata row. ``measured`` with both None means the codec has no
+    flac-level integrity check (e.g. non-FLAC) — that is *unknown*, not OK.
+    """
+    root = library_root if library_root is not None else configured_library_root()
+    if not root:
+        return IntegrityMeasurement("unmeasured", "library not mounted")
+    mapped, reason = resolve_library_path(
+        lidarr_path,
+        library_root=root,
+        lidarr_root=lidarr_root if lidarr_root is not None else _lidarr_root(),
+    )
+    if mapped is None:
+        return IntegrityMeasurement("unmeasured", reason)
+    try:
+        probe = (prober or _integrity_prober)(mapped)
+    except Exception:
+        log.exception("[library_evidence] integrity probe failed for a library file")
+        return IntegrityMeasurement("unmeasured", "integrity probe failed")
+    return IntegrityMeasurement(
+        status="measured",
+        integrity_ok=probe.get("integrity_ok"),
+        checksum_ok=probe.get("checksum_ok"),
+    )
+
+
+def is_integrity_row_fresh(row: dict) -> bool:
+    """True iff a stored integrity verdict is current for the file on disk.
+
+    Independent of the metadata tier: a row can have fresh metadata but stale or
+    absent integrity evidence. Same path/size/mtime basis as the other tiers,
+    keyed on ``INTEGRITY_SENSOR_VERSION``. Stale ⇒ integrity reads *unknown*.
+    """
+    root = configured_library_root()
+    if not root or row.get("integrity_sensor_version") != INTEGRITY_SENSOR_VERSION:
+        return False
+    path = row.get("path")
+    if not path:
+        return False
+    candidate = Path(path)
+    try:
+        if not _is_relative_to(candidate.resolve(), Path(root).resolve()):
+            return False
+        if candidate.is_symlink() or not candidate.is_file():
+            return False
+        st = candidate.stat()
+    except OSError:
+        return False
+    return st.st_size == row.get("size") and st.st_mtime == row.get("mtime")
+
+
 def is_spectral_row_fresh(row: dict) -> bool:
     """True iff a stored spectral verdict is current for the file on disk.
 
@@ -329,8 +431,11 @@ def _default_spectral_client(path: Path) -> dict:
     return data
 
 
-def _default_prober(path: Path) -> dict:
-    """Probe a file with ffprobe; verify FLAC integrity with ``flac -t``."""
+def _run_ffprobe_fields(path: Path) -> dict:
+    """ffprobe the first audio stream → codec/sample_rate/bit_depth/channels.
+
+    Header reads only — the cheap metadata tier. Raises on ffprobe failure.
+    """
     probe = subprocess.run(
         [
             "ffprobe",
@@ -355,28 +460,52 @@ def _default_prober(path: Path) -> dict:
         if "=" in line:
             key, value = line.split("=", 1)
             fields[key.strip()] = value.strip()
-
-    codec = fields.get("codec_name", "")
-    integrity_ok: bool | None = None
-    checksum_ok: bool | None = None
-    if codec == "flac":
-        result = subprocess.run(
-            ["flac", "-t", "-s", str(path)],
-            capture_output=True,
-            text=True,
-            timeout=120,
-        )
-        integrity_ok, checksum_ok = _classify_flac_test(
-            result.returncode, result.stderr or ""
-        )
     return {
-        "codec": codec,
+        "codec": fields.get("codec_name", ""),
         "sample_rate": _int(fields.get("sample_rate")),
         "bit_depth": _int(fields.get("bits_per_raw_sample")),
         "channels": _int(fields.get("channels")),
-        "integrity_ok": integrity_ok,
-        "checksum_ok": checksum_ok,
     }
+
+
+def _run_flac_test(path: Path) -> tuple[bool | None, bool | None]:
+    """``flac -t`` (full read + decode) → (integrity_ok, checksum_ok). See §2.1."""
+    result = subprocess.run(
+        ["flac", "-t", "-s", str(path)],
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    return _classify_flac_test(result.returncode, result.stderr or "")
+
+
+def _metadata_prober(path: Path) -> dict:
+    """Metadata tier: ffprobe only. Integrity/checksum stay unknown (None)."""
+    fields = _run_ffprobe_fields(path)
+    return {**fields, "integrity_ok": None, "checksum_ok": None}
+
+
+def _integrity_prober(path: Path) -> dict:
+    """Integrity tier: ``flac -t`` decode for FLAC → integrity_ok + checksum_ok.
+
+    Confirms the codec with a cheap ffprobe so we only ``flac -t`` real FLAC; for
+    non-FLAC there is no flac-level integrity check, so both stay None (unknown).
+    """
+    codec = (_run_ffprobe_fields(path).get("codec") or "").lower()
+    if codec != "flac":
+        return {"codec": codec or None, "integrity_ok": None, "checksum_ok": None}
+    integrity_ok, checksum_ok = _run_flac_test(path)
+    return {"codec": codec, "integrity_ok": integrity_ok, "checksum_ok": checksum_ok}
+
+
+def _default_prober(path: Path) -> dict:
+    """Legacy fused probe (ffprobe + ``flac -t``) used by the back-compat cheap mode."""
+    fields = _run_ffprobe_fields(path)
+    integrity_ok: bool | None = None
+    checksum_ok: bool | None = None
+    if (fields.get("codec") or "") == "flac":
+        integrity_ok, checksum_ok = _run_flac_test(path)
+    return {**fields, "integrity_ok": integrity_ok, "checksum_ok": checksum_ok}
 
 
 def _classify_flac_test(returncode: int, stderr: str) -> tuple[bool, bool | None]:

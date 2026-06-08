@@ -494,3 +494,114 @@ def test_library_evidence_checksum_round_trip():
     row = state_db.get_library_evidence(555)
     assert row["integrity_ok"] == 1
     assert row["checksum_ok"] == 0
+
+
+# ---- F5.4 scan tiers (slice 1a): metadata vs integrity measurement ----
+
+
+def test_metadata_measure_leaves_integrity_unknown(tmp_path):
+    root = _lib(tmp_path)
+
+    def _meta(path):
+        # mirrors _metadata_prober: ffprobe fields only, no integrity
+        return {
+            "codec": "flac",
+            "sample_rate": 96000,
+            "bit_depth": 24,
+            "channels": 2,
+            "integrity_ok": None,
+            "checksum_ok": None,
+        }
+
+    m = le.measure_trackfile_metadata(
+        "/music/Artist/Album/01.flac",
+        library_root=root,
+        lidarr_root="/music",
+        prober=_meta,
+    )
+    assert m.status == "measured"
+    assert m.codec == "flac"
+    assert m.bit_depth == 24
+    assert m.lossless is True
+    assert m.integrity_ok is None  # unknown — never OK from metadata alone
+    assert m.checksum_ok is None
+
+
+def test_integrity_measure_returns_integrity_dims(tmp_path):
+    root = _lib(tmp_path)
+
+    def _integ(path):
+        return {"codec": "flac", "integrity_ok": True, "checksum_ok": False}
+
+    m = le.measure_trackfile_integrity(
+        "/music/Artist/Album/01.flac",
+        library_root=root,
+        lidarr_root="/music",
+        prober=_integ,
+    )
+    assert m.status == "measured"
+    assert m.integrity_ok is True
+    assert m.checksum_ok is False
+
+
+def test_integrity_measure_unmounted_is_unmeasured(monkeypatch):
+    monkeypatch.delenv("MINTARR_LIBRARY_ROOT", raising=False)
+    m = le.measure_trackfile_integrity("/music/x.flac")
+    assert m.status == "unmeasured"
+    assert "not mounted" in m.reason
+
+
+def test_integrity_measure_probe_failure_is_unmeasured(tmp_path):
+    root = _lib(tmp_path)
+
+    def _boom(path):
+        raise RuntimeError("flac blew up")
+
+    m = le.measure_trackfile_integrity(
+        "/music/Artist/Album/01.flac",
+        library_root=root,
+        lidarr_root="/music",
+        prober=_boom,
+    )
+    assert m.status == "unmeasured"
+    assert "integrity probe failed" in m.reason
+
+
+def test_metadata_prober_runs_no_flac_test(monkeypatch, tmp_path):
+    # The whole point: metadata tier must not invoke flac -t (no full-file read).
+    root = _lib(tmp_path)
+    monkeypatch.setattr(
+        le, "_run_ffprobe_fields", lambda p: {"codec": "flac", "sample_rate": 44100}
+    )
+    monkeypatch.setattr(
+        le, "_run_flac_test", lambda p: (_ for _ in ()).throw(AssertionError("flac -t"))
+    )
+    probe = le._metadata_prober(root)  # any Path; ffprobe is patched
+    assert probe["integrity_ok"] is None
+    assert probe["checksum_ok"] is None
+
+
+def test_integrity_prober_skips_flac_test_for_non_flac(monkeypatch):
+    monkeypatch.setattr(le, "_run_ffprobe_fields", lambda p: {"codec": "mp3"})
+    monkeypatch.setattr(
+        le, "_run_flac_test", lambda p: (_ for _ in ()).throw(AssertionError("flac -t"))
+    )
+    probe = le._integrity_prober(le.Path("/x.mp3"))
+    assert probe["integrity_ok"] is None  # non-FLAC ⇒ unknown, not OK
+
+
+def test_is_integrity_row_fresh(tmp_path, monkeypatch):
+    monkeypatch.setenv("MINTARR_LIBRARY_ROOT", _lib(tmp_path))
+    f = os.path.join(os.environ["MINTARR_LIBRARY_ROOT"], "Artist", "Album", "01.flac")
+    st = os.stat(f)
+    fresh = {
+        "integrity_sensor_version": le.INTEGRITY_SENSOR_VERSION,
+        "path": f,
+        "size": st.st_size,
+        "mtime": st.st_mtime,
+    }
+    assert le.is_integrity_row_fresh(fresh) is True
+    assert (
+        le.is_integrity_row_fresh({**fresh, "integrity_sensor_version": "old"}) is False
+    )
+    assert le.is_integrity_row_fresh({**fresh, "size": st.st_size + 1}) is False

@@ -50,10 +50,12 @@ def enqueue_scheduled_scan_if_quiet(
             return {"queued": False, "reason": "import_active"}
         if scan_already_active():
             return {"queued": False, "reason": "scan_active"}
-        run = enqueue_scan(mode="cheap", requested_by=requested_by)
+        # Scheduled sweeps use the fast metadata tier, not the heavy fused cheap
+        # scan (F5.4 scan tiers) — integrity stays operator/on-demand.
+        run = enqueue_scan(mode="metadata", requested_by=requested_by)
         if not run:
             return {"queued": False, "reason": "enqueue_failed"}
-        log.info("scheduled cheap library scan queued run_id=%s", run.get("id"))
+        log.info("scheduled metadata library scan queued run_id=%s", run.get("id"))
         return {"queued": True, "run": run}
     except Exception:
         log.exception("scheduled cheap library scan enqueue failed")

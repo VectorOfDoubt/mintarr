@@ -6119,8 +6119,10 @@ def library_scan_start():
         import state_db
 
         body = request.get_json(silent=True) or {}
-        mode = str(body.get("mode") or request.args.get("mode") or "cheap").strip()
-        mode = mode or "cheap"
+        # Default to the fast metadata tier (F5.4 scan tiers): a full-library sweep
+        # should not pay the heavy flac -t cost unless asked.
+        mode = str(body.get("mode") or request.args.get("mode") or "metadata").strip()
+        mode = mode or "metadata"
         if mode not in {"cheap", "metadata", "integrity", "spectral_missing"}:
             return jsonify({"error": "unsupported scan mode", "mode": mode}), 400
         if mode == "spectral_missing":

@@ -1595,6 +1595,13 @@ _LIBRARY_QUALITY_BUCKETS = [
         "description": "Tracks in the album roll up to different lossless tiers.",
     },
     {
+        "key": "integrity_unknown",
+        "label": "Integrity unknown",
+        "description": "Metadata measured (tier known) but the integrity tier "
+        "(flac -t) has not verified the audio yet. Not a defect — run an integrity "
+        "scan to confirm.",
+    },
+    {
         "key": "unknown_authenticity",
         "label": "Unknown authenticity",
         "description": "Spectral mode is enabled, but authenticity is not known for every measured track.",
@@ -1602,7 +1609,7 @@ _LIBRARY_QUALITY_BUCKETS = [
     {
         "key": "ok",
         "label": "Measured OK",
-        "description": "Fresh measured evidence has no known quality warnings.",
+        "description": "Fresh measured + integrity-verified evidence with no known quality warnings.",
     },
 ]
 _LIBRARY_QUALITY_BUCKET_ORDER = {
@@ -1660,6 +1667,14 @@ def _dashboard_spectral_row_current(row: dict, library_evidence_mod) -> bool:
     )
 
 
+def _dashboard_integrity_row_current(row: dict, library_evidence_mod) -> bool:
+    """True iff the integrity tier ran fresh for this row (DB-only, no disk stat)."""
+    return (
+        row.get("integrity_sensor_version")
+        == library_evidence_mod.INTEGRITY_SENSOR_VERSION
+    )
+
+
 def _library_quality_album_summary(
     album_id: int | None,
     rows: list[dict],
@@ -1693,10 +1708,18 @@ def _library_quality_album_summary(
         view = dict(row)
         if view.get("lossless") is not None:
             view["lossless"] = bool(view.get("lossless"))
-        if view.get("integrity_ok") is not None:
-            view["integrity_ok"] = bool(view.get("integrity_ok"))
-        if view.get("checksum_ok") is not None:
-            view["checksum_ok"] = bool(view.get("checksum_ok"))
+        # Integrity is gated on its own tier freshness: a metadata-only or
+        # stale-integrity row reads as *unknown* (None), never trusted as OK.
+        integrity_fresh = _dashboard_integrity_row_current(row, library_evidence_mod)
+        view["integrity_known"] = integrity_fresh
+        if not integrity_fresh:
+            view["integrity_ok"] = None
+            view["checksum_ok"] = None
+        else:
+            if view.get("integrity_ok") is not None:
+                view["integrity_ok"] = bool(view.get("integrity_ok"))
+            if view.get("checksum_ok") is not None:
+                view["checksum_ok"] = bool(view.get("checksum_ok"))
         if view.get("authentic") is not None:
             view["authentic"] = bool(view.get("authentic"))
         if row.get("spectral_status") == "measured":
@@ -1741,6 +1764,10 @@ def _library_quality_album_summary(
         bucket = "redbook"
     elif len(tiers) > 1:
         bucket = "mixed_tier"
+    elif not rollup.integrity_known:
+        # Metadata measured (tier known) but integrity (flac -t) not verified for
+        # every track — never present unknown as fully-verified OK (§7 guardrail).
+        bucket = "integrity_unknown"
     elif library_evidence_mod.spectral_enabled() and not rollup.authenticity_known:
         bucket = "unknown_authenticity"
     else:
@@ -1758,6 +1785,7 @@ def _library_quality_album_summary(
         ),
         "any_fake": bool(rollup.any_fake) if rollup else False,
         "authenticity_known": bool(rollup.authenticity_known) if rollup else False,
+        "integrity_known": bool(rollup.integrity_known) if rollup else False,
         "min_tier": rollup.min_tier if rollup else None,
         "all_lossless": bool(rollup.all_lossless) if rollup else False,
         "sample_files": tracks,

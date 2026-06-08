@@ -433,7 +433,11 @@ The scan is tiered (see [F5.4 scan tiers](../design/F5.4_SCAN_TIERS.md)). The fa
 (`MINTARR_LIBRARY_METADATA_SCAN_WORKERS`, default 8); the heavy `integrity` mode
 runs `flac -t` (full-file decode) only on metadata-fresh rows and stays modest
 (`MINTARR_LIBRARY_INTEGRITY_SCAN_WORKERS`, default 4) because it is I/O-bound.
-`cheap` is the legacy fused tier (metadata + integrity in one pass).
+`cheap` is the legacy fused tier (metadata + integrity in one pass). The
+**default mode is `metadata`** (scheduler and the `POST /library/scan` endpoint),
+so a full-library sweep is fast; run `integrity` explicitly for audio
+verification. Until an integrity scan has run, an album reads as
+`integrity_unknown` in the ranking — never as fully-verified `ok`.
 
 Background FLAC Detective over the existing library is separate from scheduled
 cheap scans. To run it, enable both `MINTARR_LIBRARY_SPECTRAL=true` and

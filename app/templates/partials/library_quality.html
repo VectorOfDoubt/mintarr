@@ -21,7 +21,7 @@
 
 <div class="library-buckets">
   {% for bucket in quality.buckets %}
-  <span class="library-bucket library-bucket-{{ 'bad' if bucket.key in ['invalid', 'measured_fake'] else 'warn' if bucket.key in ['checksum_mismatch', 'stale', 'unmeasured', 'lossy', 'mixed_tier', 'unknown_authenticity'] else 'ok' }}"
+  <span class="library-bucket library-bucket-{{ 'bad' if bucket.key in ['invalid', 'measured_fake'] else 'warn' if bucket.key in ['checksum_mismatch', 'stale', 'unmeasured', 'lossy', 'mixed_tier', 'integrity_unknown', 'unknown_authenticity'] else 'ok' }}"
         title="{{ bucket.description }}">
     <span>{{ bucket.label }}</span>
     <strong>{{ bucket.count }}</strong>

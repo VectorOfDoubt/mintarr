@@ -49,7 +49,7 @@ def test_scheduled_scan_skips_when_scan_already_active():
     assert calls["enqueue"] == 0
 
 
-def test_scheduled_scan_enqueues_cheap_when_quiet(tmp_path):
+def test_scheduled_scan_enqueues_metadata_when_quiet(tmp_path):
     _fresh_db(tmp_path)
 
     result = library_scan_scheduler.enqueue_scheduled_scan_if_quiet(
@@ -59,7 +59,8 @@ def test_scheduled_scan_enqueues_cheap_when_quiet(tmp_path):
 
     assert result["queued"] is True
     run = result["run"]
-    assert run["mode"] == "cheap"
+    # Scheduled sweeps use the fast metadata tier, not the heavy fused cheap scan.
+    assert run["mode"] == "metadata"
     assert run["requested_by"] == "scheduler"
     job = state_db.get_job(run["worker_job_id"])
     assert job["type"] == state_db.LIBRARY_SCAN_JOB_TYPE

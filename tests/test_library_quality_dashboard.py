@@ -22,6 +22,9 @@ def _seed(trackfile_id: int, album_id: int, **overrides):
         "lossless": True,
         "integrity_ok": True,
         "sensor_version": library_evidence.METADATA_SENSOR_VERSION,
+        # default: integrity tier ran (so integrity-based buckets/ok work); the
+        # metadata-only case overrides integrity_sensor_version to None.
+        "integrity_sensor_version": library_evidence.INTEGRITY_SENSOR_VERSION,
     }
     row.update(overrides)
     state_db.upsert_library_evidence(row)
@@ -222,3 +225,36 @@ def test_lossy_and_redbook_are_distinct_buckets(monkeypatch):
     assert counts["lossy"] == 1
     assert counts["redbook"] == 1
     assert "lossy_or_low_tier" not in counts
+
+
+def test_metadata_only_album_is_integrity_unknown_not_ok(monkeypatch):
+    # Guardrail §7: metadata measured (tier known) but integrity not verified must
+    # NOT render as the fully-verified `ok` bucket.
+    monkeypatch.setattr(library_evidence, "is_measured_row_fresh", lambda _r: True)
+    monkeypatch.setattr(library_evidence, "is_spectral_row_fresh", lambda _r: True)
+    monkeypatch.setattr(library_evidence, "spectral_enabled", lambda: False)
+    # clean hi-res, integrity tier NOT run (no integrity_sensor_version)
+    _seed(90, 990, bit_depth=24, sample_rate=96000, integrity_sensor_version=None)
+    # same album but integrity verified → ok
+    _seed(91, 991, bit_depth=24, sample_rate=96000)
+
+    view = dashboard._build_library_quality_view()
+    by_album = {a["album_id"]: a for a in view["albums"]}
+
+    assert by_album[990]["primary_bucket"] == "integrity_unknown"
+    assert by_album[990]["integrity_known"] is False
+    assert by_album[991]["primary_bucket"] == "ok"
+    assert by_album[991]["integrity_known"] is True
+
+
+def test_metadata_only_does_not_read_as_invalid(monkeypatch):
+    # A metadata-only row that happens to carry a stale integrity_ok must not be
+    # read as invalid — integrity is gated on its own freshness.
+    monkeypatch.setattr(library_evidence, "is_measured_row_fresh", lambda _r: True)
+    monkeypatch.setattr(library_evidence, "is_spectral_row_fresh", lambda _r: True)
+    monkeypatch.setattr(library_evidence, "spectral_enabled", lambda: False)
+    _seed(92, 992, integrity_ok=False, integrity_sensor_version=None)  # stale integrity
+    view = dashboard._build_library_quality_view()
+    a = view["albums"][0]
+    assert a["primary_bucket"] == "integrity_unknown"  # not "invalid"
+    assert a["invalid_count"] == 0

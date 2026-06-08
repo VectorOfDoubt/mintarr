@@ -556,7 +556,7 @@ quality evidence (F5.4 slice 5d). It groups `library_evidence` rows by album and
 assigns each album one primary worst-first bucket:
 
 `invalid` → `measured_fake` → `checksum_mismatch` → `stale` → `unmeasured` →
-`lossy` → `redbook` → `mixed_tier` → `unknown_authenticity` → `ok`.
+`lossy` → `redbook` → `mixed_tier` → `integrity_unknown` → `unknown_authenticity` → `ok`.
 
 The endpoint also includes the active background library-scan run, if any. It
 does not start scans, cancel scans, mutate Lidarr, or expose full library paths;

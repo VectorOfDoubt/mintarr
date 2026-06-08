@@ -101,6 +101,42 @@ CREATE TABLE IF NOT EXISTS library_evidence (
 );
 CREATE INDEX IF NOT EXISTS idx_library_evidence_album ON library_evidence(album_id);
 
+-- F5.4 slice 5: background library quality indexing
+CREATE TABLE IF NOT EXISTS library_scan_runs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    mode TEXT NOT NULL,
+    state TEXT NOT NULL,
+    created_at REAL NOT NULL,
+    updated_at REAL NOT NULL,
+    started_at REAL,
+    finished_at REAL,
+    worker_job_id INTEGER,
+    requested_by TEXT,
+    total_items INTEGER DEFAULT 0,
+    processed_items INTEGER DEFAULT 0,
+    measured_items INTEGER DEFAULT 0,
+    fresh_items INTEGER DEFAULT 0,
+    unmeasured_items INTEGER DEFAULT 0,
+    error_items INTEGER DEFAULT 0,
+    cancel_requested INTEGER DEFAULT 0,
+    last_error TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_library_scan_runs_state ON library_scan_runs(state, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_library_scan_runs_job ON library_scan_runs(worker_job_id);
+
+CREATE TABLE IF NOT EXISTS library_scan_items (
+    run_id INTEGER NOT NULL,
+    trackfile_id INTEGER NOT NULL,
+    album_id INTEGER,
+    state TEXT NOT NULL,
+    attempts INTEGER DEFAULT 0,
+    updated_at REAL NOT NULL,
+    last_error TEXT,
+    PRIMARY KEY (run_id, trackfile_id)
+);
+CREATE INDEX IF NOT EXISTS idx_library_scan_items_state ON library_scan_items(run_id, state);
+CREATE INDEX IF NOT EXISTS idx_library_scan_items_album ON library_scan_items(album_id);
+
 CREATE TABLE IF NOT EXISTS actions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     jid TEXT,
@@ -161,6 +197,12 @@ HEARTBEAT_INTERVAL_SEC = 30.0  # worker pings DB every 30s during long ops
 
 ACTIVE_JOB_STATES = ("queued", "running", "cancelling")
 TERMINAL_JOB_STATES = ("completed", "failed", "cancelled")
+ACTIVE_LIBRARY_SCAN_STATES = ("queued", "running", "cancelling")
+TERMINAL_LIBRARY_SCAN_STATES = ("completed", "failed", "cancelled")
+LIBRARY_SCAN_JOB_TYPE = "library_scan"
+LIBRARY_SCAN_DEDUPE_KEY = "library_scan"
+LIBRARY_SCAN_PRIORITY = 50
+LIBRARY_SCAN_MAX_ATTEMPTS = 1
 
 
 def _connect() -> sqlite3.Connection:
@@ -1220,3 +1262,341 @@ def find_active_job_by_dedupe(dedupe_key: str) -> dict | None:
     except Exception:
         log.exception("state_db.find_active_job_by_dedupe failed key=%s", dedupe_key)
         return None
+
+
+# ============================================================================
+# F5.4 slice 5: background library scan state
+# ============================================================================
+
+
+def enqueue_library_scan(
+    *, mode: str = "cheap", requested_by: str | None = None
+) -> dict | None:
+    """Create a library-scan run and matching low-priority F2 job.
+
+    Slice 5b deliberately reuses the F2 ``jobs`` table for lease, heartbeat,
+    cancellation, priority, and dedupe. There is no separate scan lease table:
+    an active ``library_scan`` job is the future scanner's lease. This helper only
+    creates durable state; no scanner/executor is registered in this slice.
+
+    Returns the active run. If another scan run is already queued/running/
+    cancelling, that existing run is returned and no new job is inserted.
+    """
+    mode = (mode or "cheap").strip() or "cheap"
+    if not _ensure_initialized():
+        return None
+    try:
+        now = time.time()
+        with _lock, _connect() as conn:
+            placeholders = ",".join("?" * len(ACTIVE_LIBRARY_SCAN_STATES))
+            existing = conn.execute(
+                f"""
+                SELECT * FROM library_scan_runs
+                WHERE state IN ({placeholders})
+                ORDER BY id DESC
+                LIMIT 1
+                """,
+                ACTIVE_LIBRARY_SCAN_STATES,
+            ).fetchone()
+            if existing:
+                return dict(existing)
+
+            cur = conn.execute(
+                """
+                INSERT INTO library_scan_runs
+                  (mode, state, created_at, updated_at, requested_by)
+                VALUES (?, 'queued', ?, ?, ?)
+                """,
+                (mode, now, now, requested_by),
+            )
+            if cur.lastrowid is None:
+                return None
+            run_id = int(cur.lastrowid)
+            jid = f"library-scan-{run_id}"
+            payload = {"run_id": run_id, "mode": mode}
+            job_cur = conn.execute(
+                """
+                INSERT INTO jobs (jid, type, state, priority, created_at, attempts,
+                  max_attempts, dedupe_key, source_type, source_id, payload_json)
+                VALUES (?, ?, 'queued', ?, ?, 0, ?, ?, 'library', ?, ?)
+                """,
+                (
+                    jid,
+                    LIBRARY_SCAN_JOB_TYPE,
+                    LIBRARY_SCAN_PRIORITY,
+                    now,
+                    LIBRARY_SCAN_MAX_ATTEMPTS,
+                    LIBRARY_SCAN_DEDUPE_KEY,
+                    mode,
+                    json.dumps(payload),
+                ),
+            )
+            if job_cur.lastrowid is None:
+                return None
+            job_id = int(job_cur.lastrowid)
+            conn.execute(
+                """
+                UPDATE library_scan_runs
+                SET worker_job_id = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                (job_id, now, run_id),
+            )
+            row = conn.execute(
+                "SELECT * FROM library_scan_runs WHERE id = ?", (run_id,)
+            ).fetchone()
+            return dict(row) if row else None
+    except Exception:
+        log.exception("state_db.enqueue_library_scan failed mode=%s", mode)
+        return None
+
+
+def get_library_scan_run(run_id: int) -> dict | None:
+    """Return one library scan run by id."""
+    if not _ensure_initialized():
+        return None
+    try:
+        with _lock, _connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM library_scan_runs WHERE id = ?", (int(run_id),)
+            ).fetchone()
+            return dict(row) if row else None
+    except Exception:
+        log.exception("state_db.get_library_scan_run failed id=%s", run_id)
+        return None
+
+
+def get_active_library_scan_run() -> dict | None:
+    """Return the newest active library scan run, if any."""
+    if not _ensure_initialized():
+        return None
+    try:
+        with _lock, _connect() as conn:
+            placeholders = ",".join("?" * len(ACTIVE_LIBRARY_SCAN_STATES))
+            row = conn.execute(
+                f"""
+                SELECT * FROM library_scan_runs
+                WHERE state IN ({placeholders})
+                ORDER BY id DESC
+                LIMIT 1
+                """,
+                ACTIVE_LIBRARY_SCAN_STATES,
+            ).fetchone()
+            return dict(row) if row else None
+    except Exception:
+        log.exception("state_db.get_active_library_scan_run failed")
+        return None
+
+
+def list_library_scan_runs(
+    *, state: list[str] | None = None, limit: int = 20, offset: int = 0
+) -> tuple[int, list[dict]]:
+    """List scan runs for status/history views."""
+    if not _ensure_initialized():
+        return (0, [])
+    try:
+        clauses, params = [], []
+        if state:
+            placeholders = ",".join("?" * len(state))
+            clauses.append(f"state IN ({placeholders})")
+            params.extend(state)
+        where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
+        with _lock, _connect() as conn:
+            total = conn.execute(
+                f"SELECT COUNT(*) FROM library_scan_runs {where}", params
+            ).fetchone()[0]
+            rows = conn.execute(
+                f"""
+                SELECT * FROM library_scan_runs {where}
+                ORDER BY created_at DESC
+                LIMIT ? OFFSET ?
+                """,
+                params + [limit, offset],
+            ).fetchall()
+            return (int(total), [dict(r) for r in rows])
+    except Exception:
+        log.exception("state_db.list_library_scan_runs failed")
+        return (0, [])
+
+
+def update_library_scan_run_state(
+    run_id: int,
+    state: str,
+    *,
+    last_error: str | None = None,
+    totals: dict | None = None,
+) -> None:
+    """Update scan-run state/progress.
+
+    Future scanner slices call this as the job moves through queued/running/
+    terminal states. ``totals`` is optional and may contain any of the counter
+    columns; unknown keys are ignored.
+    """
+    if not _ensure_initialized():
+        return
+    try:
+        now = time.time()
+        state = str(state)
+        started_at_expr = "started_at"
+        finished_at_expr = "finished_at"
+        params: list = [state, now, last_error]
+        if state == "running":
+            started_at_expr = "COALESCE(started_at, ?)"
+            params.append(now)
+        if state in TERMINAL_LIBRARY_SCAN_STATES:
+            finished_at_expr = "COALESCE(finished_at, ?)"
+            params.append(now)
+
+        allowed_totals = {
+            "total_items",
+            "processed_items",
+            "measured_items",
+            "fresh_items",
+            "unmeasured_items",
+            "error_items",
+        }
+        assignments = [
+            "state = ?",
+            "updated_at = ?",
+            "last_error = COALESCE(?, last_error)",
+            f"started_at = {started_at_expr}",
+            f"finished_at = {finished_at_expr}",
+        ]
+        for key, value in (totals or {}).items():
+            if key in allowed_totals:
+                assignments.append(f"{key} = ?")
+                params.append(int(value or 0))
+        params.append(int(run_id))
+        with _lock, _connect() as conn:
+            conn.execute(
+                f"""
+                UPDATE library_scan_runs
+                SET {", ".join(assignments)}
+                WHERE id = ?
+                """,
+                params,
+            )
+    except Exception:
+        log.exception(
+            "state_db.update_library_scan_run_state failed id=%s state=%s",
+            run_id,
+            state,
+        )
+
+
+def request_library_scan_cancel(run_id: int) -> bool:
+    """Request cooperative cancellation for a scan run and its backing F2 job."""
+    if not _ensure_initialized():
+        return False
+    try:
+        with _lock, _connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM library_scan_runs WHERE id = ?", (int(run_id),)
+            ).fetchone()
+            if not row or row["state"] not in ACTIVE_LIBRARY_SCAN_STATES:
+                return False
+            now = time.time()
+            conn.execute(
+                """
+                UPDATE library_scan_runs
+                SET cancel_requested = 1,
+                    state = CASE WHEN state = 'running' THEN 'cancelling' ELSE state END,
+                    updated_at = ?
+                WHERE id = ?
+                """,
+                (now, int(run_id)),
+            )
+            job_id = row["worker_job_id"]
+        if job_id is not None:
+            request_job_cancel(int(job_id))
+        return True
+    except Exception:
+        log.exception("state_db.request_library_scan_cancel failed id=%s", run_id)
+        return False
+
+
+def upsert_library_scan_item(
+    run_id: int,
+    trackfile_id: int,
+    *,
+    album_id: int | None = None,
+    state: str,
+    attempts: int | None = None,
+    last_error: str | None = None,
+) -> None:
+    """Insert/update one item in a scan-run ledger.
+
+    The item ledger is the restart/resume substrate for slice 5c+ and mandatory
+    before any background spectral work. It stores IDs and outcomes only; file
+    paths remain in ``library_evidence``.
+    """
+    if not _ensure_initialized():
+        return
+    try:
+        now = time.time()
+        with _lock, _connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO library_scan_items
+                  (run_id, trackfile_id, album_id, state, attempts, updated_at,
+                   last_error)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(run_id, trackfile_id) DO UPDATE SET
+                  album_id=excluded.album_id,
+                  state=excluded.state,
+                  attempts=COALESCE(excluded.attempts, library_scan_items.attempts),
+                  updated_at=excluded.updated_at,
+                  last_error=excluded.last_error
+                """,
+                (
+                    int(run_id),
+                    int(trackfile_id),
+                    album_id,
+                    str(state),
+                    attempts,
+                    now,
+                    last_error,
+                ),
+            )
+    except Exception:
+        log.exception(
+            "state_db.upsert_library_scan_item failed run_id=%s trackfile_id=%s",
+            run_id,
+            trackfile_id,
+        )
+
+
+def list_library_scan_items(
+    run_id: int,
+    *,
+    state: list[str] | None = None,
+    limit: int = 500,
+    offset: int = 0,
+) -> tuple[int, list[dict]]:
+    """List scan-run items with optional state filter."""
+    if not _ensure_initialized():
+        return (0, [])
+    try:
+        clauses = ["run_id = ?"]
+        params: list = [int(run_id)]
+        if state:
+            placeholders = ",".join("?" * len(state))
+            clauses.append(f"state IN ({placeholders})")
+            params.extend(state)
+        where = "WHERE " + " AND ".join(clauses)
+        with _lock, _connect() as conn:
+            total = conn.execute(
+                f"SELECT COUNT(*) FROM library_scan_items {where}", params
+            ).fetchone()[0]
+            rows = conn.execute(
+                f"""
+                SELECT * FROM library_scan_items {where}
+                ORDER BY trackfile_id ASC
+                LIMIT ? OFFSET ?
+                """,
+                params + [limit, offset],
+            ).fetchall()
+            return (int(total), [dict(r) for r in rows])
+    except Exception:
+        log.exception("state_db.list_library_scan_items failed run_id=%s", run_id)
+        return (0, [])

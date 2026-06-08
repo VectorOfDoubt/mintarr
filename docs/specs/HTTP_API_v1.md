@@ -555,8 +555,8 @@ Authenticated. Read-only ranking view over Mintarr's measured existing-library
 quality evidence (F5.4 slice 5d). It groups `library_evidence` rows by album and
 assigns each album one primary worst-first bucket:
 
-`invalid` → `measured_fake` → `stale` → `unmeasured` →
-`lossy_or_low_tier` → `mixed_tier` → `unknown_authenticity` → `ok`.
+`invalid` → `measured_fake` → `checksum_mismatch` → `stale` → `unmeasured` →
+`lossy` → `redbook` → `mixed_tier` → `unknown_authenticity` → `ok`.
 
 The endpoint also includes the active background library-scan run, if any. It
 does not start scans, cancel scans, mutate Lidarr, or expose full library paths;

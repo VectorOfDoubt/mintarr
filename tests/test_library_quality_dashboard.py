@@ -88,7 +88,8 @@ def test_all_non_error_buckets_are_classified(monkeypatch):
     _fresh(monkeypatch)
     monkeypatch.setattr(library_evidence, "spectral_enabled", lambda: True)
     _seed(10, 110, status="unmeasured", reason="library not mounted")
-    _seed(11, 111, codec="mp3", lossless=False, integrity_ok=None)
+    _seed(11, 111, codec="mp3", lossless=False, integrity_ok=None)  # genuinely lossy
+    _seed(16, 115, bit_depth=16, sample_rate=44100)  # all lossless 16/44 → redbook
     _seed(12, 112, bit_depth=24, sample_rate=48000)
     _seed(13, 112, bit_depth=24, sample_rate=96000)
     _seed(14, 113, bit_depth=24, sample_rate=96000)
@@ -107,7 +108,8 @@ def test_all_non_error_buckets_are_classified(monkeypatch):
     by_album = {album["album_id"]: album["primary_bucket"] for album in view["albums"]}
 
     assert by_album[110] == "unmeasured"
-    assert by_album[111] == "lossy_or_low_tier"
+    assert by_album[111] == "lossy"  # genuinely lossy — actionable upgrade
+    assert by_album[115] == "redbook"  # 16/44 lossless — fine, not a defect
     assert by_album[112] == "mixed_tier"
     assert by_album[113] == "unknown_authenticity"
     assert by_album[114] == "ok"
@@ -165,7 +167,7 @@ def test_library_quality_partial_renders(monkeypatch):
     assert resp.status_code == 200
     body = resp.get_data(as_text=True)
     assert "Library quality" in body
-    assert "lossy / low tier" in body.lower()
+    assert "cd quality (16/44)" in body.lower()  # redbook bucket chip renders
     assert "07.flac" in body
 
 
@@ -199,3 +201,24 @@ def test_checksum_mismatch_ranks_below_invalid(monkeypatch):
     _seed(71, 970, integrity_ok=False, checksum_ok=0)
     view = dashboard._build_library_quality_view(bucket="invalid")
     assert {a["album_id"] for a in view["albums"]} == {970}
+
+
+def test_lossy_and_redbook_are_distinct_buckets(monkeypatch):
+    # The dogfood point: a genuinely lossy file (OGG/MP3, tier 0) is an actionable
+    # upgrade candidate; a 16/44 FLAC (tier 1) is fine CD quality. They must not
+    # share a bucket.
+    monkeypatch.setattr(library_evidence, "is_measured_row_fresh", lambda _r: True)
+    monkeypatch.setattr(library_evidence, "is_spectral_row_fresh", lambda _r: True)
+    monkeypatch.setattr(library_evidence, "spectral_enabled", lambda: False)
+    _seed(80, 980, codec="ogg", lossless=False, integrity_ok=None, bit_depth=None)
+    _seed(81, 981, bit_depth=16, sample_rate=44100)  # redbook FLAC
+
+    view = dashboard._build_library_quality_view()
+    by_album = {a["album_id"]: a["primary_bucket"] for a in view["albums"]}
+    counts = {b["key"]: b["count"] for b in view["buckets"]}
+
+    assert by_album[980] == "lossy"
+    assert by_album[981] == "redbook"
+    assert counts["lossy"] == 1
+    assert counts["redbook"] == 1
+    assert "lossy_or_low_tier" not in counts

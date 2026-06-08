@@ -1578,9 +1578,16 @@ _LIBRARY_QUALITY_BUCKETS = [
         "description": "No usable measured quality evidence exists for the album.",
     },
     {
-        "key": "lossy_or_low_tier",
-        "label": "Lossy / low tier",
-        "description": "Fresh evidence is lossy or only the lowest lossless tier.",
+        "key": "lossy",
+        "label": "Lossy",
+        "description": "At least one track is lossy (not lossless) — a real lossless "
+        "upgrade candidate.",
+    },
+    {
+        "key": "redbook",
+        "label": "CD quality (16/44)",
+        "description": "All lossless but only standard CD tier (16-bit/44.1kHz). Fine "
+        "— a hi-res upgrade is optional, not a defect.",
     },
     {
         "key": "mixed_tier",
@@ -1724,8 +1731,14 @@ def _library_quality_album_summary(
         bucket = "stale"
     elif rollup is None:
         bucket = "unmeasured"
-    elif (not rollup.all_lossless) or rollup.min_tier <= 1:
-        bucket = "lossy_or_low_tier"
+    elif not rollup.all_lossless:
+        # A genuinely lossy track (tier 0) — an actionable lossless upgrade.
+        bucket = "lossy"
+    elif rollup.min_tier <= 1:
+        # All lossless, but the weakest track is standard CD tier (16/44). Fine,
+        # not a defect — kept distinct from real lossy so CD rips don't read as a
+        # problem.
+        bucket = "redbook"
     elif len(tiers) > 1:
         bucket = "mixed_tier"
     elif library_evidence_mod.spectral_enabled() and not rollup.authenticity_known:

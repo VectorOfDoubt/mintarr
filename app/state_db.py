@@ -97,6 +97,7 @@ CREATE TABLE IF NOT EXISTS library_evidence (
     integrity_ok INTEGER,
     checksum_ok INTEGER,
     sensor_version TEXT,
+    integrity_sensor_version TEXT,
     evidence_json TEXT,
     measured_at REAL
 );
@@ -227,6 +228,7 @@ def init(db_path: Path | None = None) -> None:
             _ensure_records_source_type_column(conn)
             _ensure_library_spectral_columns(conn)
             _ensure_library_checksum_column(conn)
+            _ensure_library_integrity_sensor_column(conn)
         _initialized = True
         log.info("state_db initialized at %s", _db_path)
 
@@ -287,6 +289,26 @@ def _ensure_library_checksum_column(conn: sqlite3.Connection) -> None:
     if "checksum_ok" not in cols:
         conn.execute("ALTER TABLE library_evidence ADD COLUMN checksum_ok INTEGER")
         log.info("state_db: added library_evidence.checksum_ok column (F5.4)")
+
+
+def _ensure_library_integrity_sensor_column(conn: sqlite3.Connection) -> None:
+    """F5.4 scan-tier migration: add library_evidence.integrity_sensor_version.
+
+    The integrity tier (flac -t) becomes a separate sensor from metadata
+    (ffprobe), so its freshness is keyed independently. Existing rows read NULL ⇒
+    integrity is treated as *unknown* until an integrity scan re-confirms it.
+    Idempotent.
+    """
+    cols = {
+        row[1] for row in conn.execute("PRAGMA table_info(library_evidence)").fetchall()
+    }
+    if "integrity_sensor_version" not in cols:
+        conn.execute(
+            "ALTER TABLE library_evidence ADD COLUMN integrity_sensor_version TEXT"
+        )
+        log.info(
+            "state_db: added library_evidence.integrity_sensor_version column (F5.4)"
+        )
 
 
 def _ensure_initialized() -> bool:
@@ -477,6 +499,7 @@ def upsert_library_evidence(row: dict) -> None:
             if row.get("checksum_ok") is None
             else int(bool(row.get("checksum_ok"))),
             "sensor_version": row.get("sensor_version"),
+            "integrity_sensor_version": row.get("integrity_sensor_version"),
             "evidence_json": json.dumps(row.get("evidence") or {}),
             "measured_at": row.get("measured_at") or time.time(),
         }
@@ -485,10 +508,12 @@ def upsert_library_evidence(row: dict) -> None:
                 """
                 INSERT INTO library_evidence (trackfile_id, album_id, path, size, mtime,
                   status, reason, codec, sample_rate, bit_depth, channels, lossless,
-                  integrity_ok, checksum_ok, sensor_version, evidence_json, measured_at)
+                  integrity_ok, checksum_ok, sensor_version, integrity_sensor_version,
+                  evidence_json, measured_at)
                 VALUES (:trackfile_id, :album_id, :path, :size, :mtime, :status, :reason,
                   :codec, :sample_rate, :bit_depth, :channels, :lossless, :integrity_ok,
-                  :checksum_ok, :sensor_version, :evidence_json, :measured_at)
+                  :checksum_ok, :sensor_version, :integrity_sensor_version,
+                  :evidence_json, :measured_at)
                 ON CONFLICT(trackfile_id) DO UPDATE SET
                   album_id=excluded.album_id, path=excluded.path, size=excluded.size,
                   mtime=excluded.mtime, status=excluded.status, reason=excluded.reason,
@@ -496,7 +521,9 @@ def upsert_library_evidence(row: dict) -> None:
                   bit_depth=excluded.bit_depth, channels=excluded.channels,
                   lossless=excluded.lossless, integrity_ok=excluded.integrity_ok,
                   checksum_ok=excluded.checksum_ok,
-                  sensor_version=excluded.sensor_version, evidence_json=excluded.evidence_json,
+                  sensor_version=excluded.sensor_version,
+                  integrity_sensor_version=excluded.integrity_sensor_version,
+                  evidence_json=excluded.evidence_json,
                   measured_at=excluded.measured_at
             """,
                 payload,
@@ -504,6 +531,107 @@ def upsert_library_evidence(row: dict) -> None:
     except Exception:
         log.exception(
             "state_db.upsert_library_evidence failed for trackfile_id=%s",
+            row.get("trackfile_id"),
+        )
+
+
+def upsert_library_metadata(row: dict) -> None:
+    """Store only the metadata-tier (ffprobe) evidence for one trackfile (F5.4).
+
+    Partial upsert symmetric with ``update_library_integrity``: it writes the
+    codec/tier columns + the metadata ``sensor_version`` and **never touches**
+    ``integrity_ok`` / ``checksum_ok`` / ``integrity_sensor_version`` (or the
+    spectral columns). So a metadata scan that runs *after* an integrity scan
+    cannot clobber the integrity verdict — the tiers stay independent. Used by the
+    metadata scan mode; the legacy fused ``upsert_library_evidence`` still writes
+    both tiers for the back-compat cheap mode.
+    """
+    if not _ensure_initialized() or row.get("trackfile_id") is None:
+        return
+    try:
+        payload = {
+            "trackfile_id": int(row["trackfile_id"]),
+            "album_id": row.get("album_id"),
+            "path": row.get("path"),
+            "size": row.get("size"),
+            "mtime": row.get("mtime"),
+            "status": row.get("status"),
+            "reason": row.get("reason"),
+            "codec": row.get("codec"),
+            "sample_rate": row.get("sample_rate"),
+            "bit_depth": row.get("bit_depth"),
+            "channels": row.get("channels"),
+            "lossless": None
+            if row.get("lossless") is None
+            else int(bool(row.get("lossless"))),
+            "sensor_version": row.get("sensor_version"),
+            "evidence_json": json.dumps(row.get("evidence") or {}),
+            "measured_at": row.get("measured_at") or time.time(),
+        }
+        with _lock, _connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO library_evidence (trackfile_id, album_id, path, size, mtime,
+                  status, reason, codec, sample_rate, bit_depth, channels, lossless,
+                  sensor_version, evidence_json, measured_at)
+                VALUES (:trackfile_id, :album_id, :path, :size, :mtime, :status, :reason,
+                  :codec, :sample_rate, :bit_depth, :channels, :lossless,
+                  :sensor_version, :evidence_json, :measured_at)
+                ON CONFLICT(trackfile_id) DO UPDATE SET
+                  album_id=excluded.album_id, path=excluded.path, size=excluded.size,
+                  mtime=excluded.mtime, status=excluded.status, reason=excluded.reason,
+                  codec=excluded.codec, sample_rate=excluded.sample_rate,
+                  bit_depth=excluded.bit_depth, channels=excluded.channels,
+                  lossless=excluded.lossless, sensor_version=excluded.sensor_version,
+                  evidence_json=excluded.evidence_json, measured_at=excluded.measured_at
+            """,
+                payload,
+            )
+    except Exception:
+        log.exception(
+            "state_db.upsert_library_metadata failed for trackfile_id=%s",
+            row.get("trackfile_id"),
+        )
+
+
+def update_library_integrity(row: dict) -> None:
+    """Store only the integrity-tier verdict for one trackfile (F5.4 scan tiers).
+
+    Partial upsert: never touches the metadata (ffprobe) columns, so an integrity
+    scan layers ``integrity_ok`` / ``checksum_ok`` + ``integrity_sensor_version``
+    onto an existing metadata row without clobbering codec/tier evidence. Creates
+    a stub row if the metadata tier has not run yet, so the tiers are independent.
+    """
+    if not _ensure_initialized() or row.get("trackfile_id") is None:
+        return
+    try:
+        integrity_ok = row.get("integrity_ok")
+        checksum_ok = row.get("checksum_ok")
+        payload = {
+            "trackfile_id": int(row["trackfile_id"]),
+            "album_id": row.get("album_id"),
+            "integrity_ok": None if integrity_ok is None else int(bool(integrity_ok)),
+            "checksum_ok": None if checksum_ok is None else int(bool(checksum_ok)),
+            "integrity_sensor_version": row.get("integrity_sensor_version"),
+        }
+        with _lock, _connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO library_evidence (trackfile_id, album_id, integrity_ok,
+                  checksum_ok, integrity_sensor_version)
+                VALUES (:trackfile_id, :album_id, :integrity_ok, :checksum_ok,
+                  :integrity_sensor_version)
+                ON CONFLICT(trackfile_id) DO UPDATE SET
+                  album_id=excluded.album_id,
+                  integrity_ok=excluded.integrity_ok,
+                  checksum_ok=excluded.checksum_ok,
+                  integrity_sensor_version=excluded.integrity_sensor_version
+            """,
+                payload,
+            )
+    except Exception:
+        log.exception(
+            "state_db.update_library_integrity failed for trackfile_id=%s",
             row.get("trackfile_id"),
         )
 

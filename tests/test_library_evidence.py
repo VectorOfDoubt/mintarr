@@ -605,3 +605,134 @@ def test_is_integrity_row_fresh(tmp_path, monkeypatch):
         le.is_integrity_row_fresh({**fresh, "integrity_sensor_version": "old"}) is False
     )
     assert le.is_integrity_row_fresh({**fresh, "size": st.st_size + 1}) is False
+
+
+# ---- F5.4 scan tiers (slice 1b): integrity-tier storage ----
+
+
+def test_integrity_sensor_column_exists_on_fresh_db():
+    assert state_db._ensure_initialized()
+    with state_db._connect() as conn:
+        cols = {r[1] for r in conn.execute("PRAGMA table_info(library_evidence)")}
+    assert "integrity_sensor_version" in cols
+
+
+def test_upsert_library_evidence_round_trips_integrity_sensor():
+    state_db.upsert_library_evidence(
+        {
+            "trackfile_id": 600,
+            "album_id": 4,
+            "status": "measured",
+            "codec": "flac",
+            "integrity_ok": True,
+            "checksum_ok": True,
+            "sensor_version": le.METADATA_SENSOR_VERSION,
+            "integrity_sensor_version": le.INTEGRITY_SENSOR_VERSION,
+        }
+    )
+    row = state_db.get_library_evidence(600)
+    assert row["integrity_sensor_version"] == le.INTEGRITY_SENSOR_VERSION
+
+
+def test_update_library_integrity_layers_without_clobbering_metadata():
+    # metadata tier writes the row (integrity unknown)…
+    state_db.upsert_library_evidence(
+        {
+            "trackfile_id": 601,
+            "album_id": 5,
+            "status": "measured",
+            "codec": "flac",
+            "sample_rate": 96000,
+            "bit_depth": 24,
+            "lossless": True,
+            "sensor_version": le.METADATA_SENSOR_VERSION,
+        }
+    )
+    # …then the integrity tier layers its verdict on top.
+    state_db.update_library_integrity(
+        {
+            "trackfile_id": 601,
+            "album_id": 5,
+            "integrity_ok": True,
+            "checksum_ok": False,
+            "integrity_sensor_version": le.INTEGRITY_SENSOR_VERSION,
+        }
+    )
+    row = state_db.get_library_evidence(601)
+    # integrity dims set…
+    assert row["integrity_ok"] == 1
+    assert row["checksum_ok"] == 0
+    assert row["integrity_sensor_version"] == le.INTEGRITY_SENSOR_VERSION
+    # …metadata preserved (not clobbered).
+    assert row["bit_depth"] == 24
+    assert row["sample_rate"] == 96000
+    assert row["sensor_version"] == le.METADATA_SENSOR_VERSION
+
+
+def test_update_library_integrity_creates_stub_when_metadata_absent():
+    state_db.update_library_integrity(
+        {
+            "trackfile_id": 602,
+            "album_id": 6,
+            "integrity_ok": True,
+            "checksum_ok": True,
+            "integrity_sensor_version": le.INTEGRITY_SENSOR_VERSION,
+        }
+    )
+    row = state_db.get_library_evidence(602)
+    assert row["integrity_ok"] == 1
+    assert row["integrity_sensor_version"] == le.INTEGRITY_SENSOR_VERSION
+    assert row["bit_depth"] is None  # metadata not yet measured
+
+
+def test_metadata_upsert_after_integrity_preserves_integrity():
+    # The #134 blocker: integrity tier runs first, then the metadata tier writes
+    # its (integrity-less) row — the integrity verdict must survive.
+    state_db.update_library_integrity(
+        {
+            "trackfile_id": 610,
+            "album_id": 7,
+            "integrity_ok": True,
+            "checksum_ok": False,
+            "integrity_sensor_version": le.INTEGRITY_SENSOR_VERSION,
+        }
+    )
+    state_db.upsert_library_metadata(
+        {
+            "trackfile_id": 610,
+            "album_id": 7,
+            "status": "measured",
+            "codec": "flac",
+            "sample_rate": 44100,
+            "bit_depth": 16,
+            "lossless": True,
+            "sensor_version": le.METADATA_SENSOR_VERSION,
+        }
+    )
+    row = state_db.get_library_evidence(610)
+    # metadata written…
+    assert row["bit_depth"] == 16
+    assert row["sensor_version"] == le.METADATA_SENSOR_VERSION
+    # …integrity preserved, not clobbered to NULL.
+    assert row["integrity_ok"] == 1
+    assert row["checksum_ok"] == 0
+    assert row["integrity_sensor_version"] == le.INTEGRITY_SENSOR_VERSION
+
+
+def test_metadata_upsert_leaves_integrity_unknown_on_new_row():
+    state_db.upsert_library_metadata(
+        {
+            "trackfile_id": 611,
+            "album_id": 7,
+            "status": "measured",
+            "codec": "flac",
+            "bit_depth": 24,
+            "sample_rate": 96000,
+            "lossless": True,
+            "sensor_version": le.METADATA_SENSOR_VERSION,
+        }
+    )
+    row = state_db.get_library_evidence(611)
+    assert row["bit_depth"] == 24
+    assert row["integrity_ok"] is None  # unknown until integrity tier runs
+    assert row["integrity_sensor_version"] is None

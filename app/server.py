@@ -3046,6 +3046,21 @@ def _apply_measured_existing(
         # Only evidence that is freshness-validated against the file on disk right
         # now (size + mtime + current sensor_version) may drive the decision.
         fresh = [r for r in rows if library_evidence.is_measured_row_fresh(r)]
+
+        # Let the existing release's spectral authenticity move the decision only
+        # when the operator opted into the spectral tier (F5.4 slice 4b). Off ⇒
+        # authenticity is never read, so the cheaper measured-existing path is
+        # unchanged and never over-routes to review.
+        consider_authenticity = library_evidence.spectral_enabled()
+        if consider_authenticity:
+            # The spectral verdict is a separate sensor with its own freshness: a
+            # row can be cheap-tier-fresh but spectral-stale (older spectral sensor
+            # version, or the verdict never re-run). Stale authenticity must never
+            # drive a decision (same boundary as the cheap tier, #113), so strip
+            # the spectral fields from any row whose spectral evidence is not fresh
+            # — it keeps its tier/validity but reads as unverified authenticity.
+            fresh = [_decision_spectral_view(r, library_evidence) for r in fresh]
+
         existing = lc.album_quality(fresh)
         if existing is None:
             return audio_decision  # no fresh measured evidence — label path unchanged
@@ -3057,12 +3072,31 @@ def _apply_measured_existing(
             expected_track_count > 0 and existing_track_count < expected_track_count
         )
         verdict = lc.compare(
-            candidate, existing, existing_incomplete=existing_incomplete
+            candidate,
+            existing,
+            existing_incomplete=existing_incomplete,
+            consider_existing_authenticity=consider_authenticity,
         )
         return _map_measured_verdict(audio_decision, verdict)
     except Exception:
         log.exception("[measured_existing] adjustment failed (continuing)")
         return audio_decision
+
+
+def _decision_spectral_view(row: dict, library_evidence) -> dict:
+    """Return ``row`` with stale spectral fields stripped for decision use (F5.4 4b).
+
+    A spectral verdict that fails ``is_spectral_row_fresh`` (changed file, older
+    spectral sensor version, or never re-run) must not be decision-active: the row
+    is returned with its authenticity cleared so the rollup reads it as unverified,
+    while its fresh cheap-tier tier/validity evidence is preserved.
+    """
+    if library_evidence.is_spectral_row_fresh(row):
+        return row
+    stripped = dict(row)
+    stripped["spectral_status"] = None
+    stripped["authentic"] = None
+    return stripped
 
 
 def _build_cd_rip_sensor(output_dir: Path) -> dict | None:

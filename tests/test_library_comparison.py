@@ -202,3 +202,128 @@ def test_rollup_authenticity_unknown_when_partially_spectral():
     )
     assert q.any_fake is False
     assert q.authenticity_known is False
+
+
+# ---- compare: existing authenticity (F5.4 slice 4b, gated) ----
+
+
+def _spec(authentic, **over):
+    """A measured row carrying a spectral verdict (authentic: 1 genuine / 0 fake)."""
+    return _row(spectral_status="measured", authentic=authentic, **over)
+
+
+def test_compare_authenticity_off_by_default_no_regression():
+    # Flag off (default): an existing release with no spectral verdict must still
+    # resolve on tier alone — never routed to REVIEW just because authenticity is
+    # unknown. This guards the spectral-disabled majority.
+    existing = lc.album_quality(
+        [_row(bit_depth=16, sample_rate=44100)]
+    )  # tier 1, no spectral
+    assert lc.compare(_cand(tier=1), existing) == lc.EQUIVALENT
+    assert (
+        lc.compare(_cand(tier=1), existing, existing_incomplete=False) == lc.EQUIVALENT
+    )
+    # Same inputs, but reading authenticity (flag on) → abstain, proving the gate.
+    assert (
+        lc.compare(_cand(tier=1), existing, consider_existing_authenticity=True)
+        == lc.REVIEW
+    )
+
+
+def test_compare_existing_fake_is_upgrade_even_at_lower_tier():
+    # A genuine candidate beats a measured-fake existing release even when the fake
+    # claims a higher nominal tier — authenticity (axis 3) outranks tier (axis 4).
+    existing = lc.album_quality(
+        [_spec(0, bit_depth=24, sample_rate=96000)]
+    )  # fake "tier 3"
+    assert (
+        lc.compare(_cand(tier=1), existing) == lc.DOWNGRADE
+    )  # flag off: trusts fake tier
+    assert (
+        lc.compare(_cand(tier=1), existing, consider_existing_authenticity=True)
+        == lc.UPGRADE
+    )
+
+
+def test_compare_existing_fake_upgrades_even_with_unknown_candidate_tier():
+    # any_fake → UPGRADE sits above the candidate-tier abstain: replacing a fake
+    # with a genuine valid file is an authenticity win regardless of candidate tier.
+    existing = lc.album_quality([_spec(0, bit_depth=24, sample_rate=96000)])
+    cand = lc.CandidateQuality(
+        valid=True, authentic=True, tier=0, complete=True, tier_known=False
+    )
+    assert lc.compare(cand, existing, consider_existing_authenticity=True) == lc.UPGRADE
+
+
+def test_compare_unknown_existing_authenticity_same_tier_is_review():
+    # Flag on, existing measured but NOT spectrally verified: a same-tier verdict
+    # would trust a possibly-fake-inflated existing tier → abstain.
+    existing = lc.album_quality(
+        [_row(bit_depth=16, sample_rate=44100)]
+    )  # tier 1, no spectral
+    assert (
+        lc.compare(_cand(tier=1), existing, consider_existing_authenticity=True)
+        == lc.REVIEW
+    )
+
+
+def test_compare_unknown_existing_authenticity_lower_tier_is_review():
+    # Flag on, existing unverified, candidate nominally lower: the "downgrade"
+    # judgment trusts the existing tier, which may be fake-inflated → abstain.
+    existing = lc.album_quality(
+        [_row(bit_depth=24, sample_rate=96000)]
+    )  # tier 3, no spectral
+    assert (
+        lc.compare(_cand(tier=1), existing, consider_existing_authenticity=True)
+        == lc.REVIEW
+    )
+
+
+def test_compare_unknown_existing_authenticity_higher_tier_still_upgrades():
+    # Unknown existing authenticity can only inflate the existing tier, never
+    # deflate it, so a strictly higher candidate tier is an unambiguous UPGRADE.
+    existing = lc.album_quality(
+        [_row(bit_depth=16, sample_rate=44100)]
+    )  # tier 1, no spectral
+    assert (
+        lc.compare(_cand(tier=3), existing, consider_existing_authenticity=True)
+        == lc.UPGRADE
+    )
+
+
+def test_compare_unknown_existing_authenticity_completeness_still_upgrades():
+    # A same-tier complete candidate over an incomplete existing release is a
+    # completeness upgrade — safe regardless of existing authenticity, not REVIEW.
+    existing = lc.album_quality([_row(bit_depth=16, sample_rate=44100)])
+    assert (
+        lc.compare(
+            _cand(tier=1, complete=True),
+            existing,
+            existing_incomplete=True,
+            consider_existing_authenticity=True,
+        )
+        == lc.UPGRADE
+    )
+
+
+def test_compare_verified_genuine_existing_uses_normal_tier_logic():
+    # Flag on, existing spectrally verified genuine: the tier is trustworthy, so
+    # the normal precedence applies (no abstain).
+    existing = lc.album_quality(
+        [_spec(1, bit_depth=16, sample_rate=44100)]
+    )  # genuine tier 1
+    assert (
+        lc.compare(_cand(tier=1), existing, consider_existing_authenticity=True)
+        == lc.EQUIVALENT
+    )
+    assert (
+        lc.compare(_cand(tier=3), existing, consider_existing_authenticity=True)
+        == lc.UPGRADE
+    )
+    existing_hi = lc.album_quality(
+        [_spec(1, bit_depth=24, sample_rate=96000)]
+    )  # genuine tier 3
+    assert (
+        lc.compare(_cand(tier=1), existing_hi, consider_existing_authenticity=True)
+        == lc.DOWNGRADE
+    )

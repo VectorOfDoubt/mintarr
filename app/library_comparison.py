@@ -116,6 +116,7 @@ def compare(
     existing: AlbumQuality | None,
     *,
     existing_incomplete: bool = False,
+    consider_existing_authenticity: bool = False,
 ) -> str:
     """Compare a candidate against measured existing quality (§4 precedence).
 
@@ -129,6 +130,17 @@ def compare(
     Lidarr track stats (existing vs expected track count), supplied by the caller
     in slice 3b — it is NOT inferred from measurement coverage here, since some
     rows being unmeasured says nothing about whether the album is complete.
+
+    ``consider_existing_authenticity`` (F5.4 slice 4b, gated on
+    ``MINTARR_LIBRARY_SPECTRAL``) lets the *existing* release's spectral verdict
+    move the decision. It must stay False unless spectral measurement is enabled:
+    when it is off, ``existing.authenticity_known`` is False for every album, so
+    reading it would route every non-upgrade to REVIEW — a regression. The two
+    new effects rest on one asymmetry: **unknown existing authenticity can only
+    inflate the existing tier (an upsampled fake reports hi-res), never deflate
+    it.** So an UPGRADE verdict is always safe, while a DOWNGRADE/EQUIVALENT
+    verdict — which trusts the existing tier — is suspect when authenticity is
+    unverified, and abstains to REVIEW (symmetric with the candidate tier abstain).
     """
     if existing is None:
         return REVIEW
@@ -146,20 +158,43 @@ def compare(
     if existing.any_invalid:
         return UPGRADE
 
+    # Authenticity (axis 3) outranks tier (axis 4): a genuine candidate replacing
+    # an existing release with a measured-fake track is an upgrade even if the fake
+    # claims a higher nominal tier. Decided here, above the tier comparison and
+    # above the candidate-tier abstain, because it lives on a higher axis.
+    if consider_existing_authenticity and existing.any_fake:
+        return UPGRADE
+
     # Abstain when the candidate's tier is unknown (no bit depth / sample rate):
     # we cannot judge an upgrade vs downgrade, so route to the operator rather
     # than guessing a tier.
     if not candidate.tier_known:
         return REVIEW
 
-    # Lossless tier (existing is valid + measured here).
+    # Lossless tier (existing is valid + measured here). A strictly higher
+    # candidate tier is an upgrade regardless of existing authenticity — unknown
+    # existing authenticity could only inflate the existing tier, so beating even
+    # the inflated tier is unambiguous.
     if candidate.tier > existing.min_tier:
         return UPGRADE
+
+    # Same tier: a complete candidate replacing an incomplete existing release is a
+    # completeness upgrade (axis 5) — also safe regardless of existing authenticity.
+    # Completeness comes from the caller (Lidarr stats), not measurement coverage.
+    if (
+        candidate.tier == existing.min_tier
+        and candidate.complete
+        and existing_incomplete
+    ):
+        return UPGRADE
+
+    # All remaining outcomes (EQUIVALENT at the same tier, DOWNGRADE at a lower
+    # one) *trust the existing tier*. If existing authenticity is unverified that
+    # tier may be a fake-inflated hi-res hiding a real upgrade, so abstain to the
+    # operator rather than silently keeping a possibly-fake existing release.
+    if consider_existing_authenticity and not existing.authenticity_known:
+        return REVIEW
+
     if candidate.tier < existing.min_tier:
         return DOWNGRADE
-
-    # Same tier: a complete candidate can replace an incomplete existing release.
-    # Completeness comes from the caller (Lidarr stats), not measurement coverage.
-    if candidate.complete and existing_incomplete:
-        return UPGRADE
     return EQUIVALENT

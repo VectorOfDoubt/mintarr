@@ -134,6 +134,7 @@ def compare(
     *,
     existing_incomplete: bool = False,
     consider_existing_authenticity: bool = False,
+    consider_existing_integrity: bool = False,
 ) -> str:
     """Compare a candidate against measured existing quality (§4 precedence).
 
@@ -158,6 +159,17 @@ def compare(
     it.** So an UPGRADE verdict is always safe, while a DOWNGRADE/EQUIVALENT
     verdict — which trusts the existing tier — is suspect when authenticity is
     unverified, and abstains to REVIEW (symmetric with the candidate tier abstain).
+
+    ``consider_existing_integrity`` (F5.4 scan tiers, gated on
+    ``MINTARR_REQUIRE_INTEGRITY``) applies the same discipline to hard validity:
+    **unknown existing integrity means we have not verified the existing files
+    decode** — they *might* be corrupt. So an UPGRADE verdict is safe (the
+    candidate, which passed its own hard gates, wins regardless), while a
+    keep/downgrade/equivalent verdict — which trusts the existing files to be
+    good — abstains to REVIEW when integrity is not verified. It must stay False
+    unless integrity verification is required, or every metadata-only album (the
+    default tier) would route to review. A measured integrity *defect*
+    (``any_invalid``) is always an upgrade regardless of this flag.
     """
     if existing is None:
         return REVIEW
@@ -206,9 +218,14 @@ def compare(
         return UPGRADE
 
     # All remaining outcomes (EQUIVALENT at the same tier, DOWNGRADE at a lower
-    # one) *trust the existing tier*. If existing authenticity is unverified that
-    # tier may be a fake-inflated hi-res hiding a real upgrade, so abstain to the
-    # operator rather than silently keeping a possibly-fake existing release.
+    # one) *trust the existing release*. Abstain to REVIEW rather than silently
+    # keeping it when a higher-precedence axis is unverified:
+    #  - hard validity (axis 2): unverified integrity may hide a corrupt existing
+    #    file, so keeping it over a candidate that passed its own gates is suspect;
+    #  - authenticity (axis 3): unverified authenticity may be a fake-inflated
+    #    hi-res hiding a real upgrade.
+    if consider_existing_integrity and not existing.integrity_known:
+        return REVIEW
     if consider_existing_authenticity and not existing.authenticity_known:
         return REVIEW
 

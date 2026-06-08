@@ -379,3 +379,59 @@ def test_stale_spectral_strip_preserves_cheap_tier(monkeypatch, tmp_path):
         _apply("REVIEW_REQUIRED", [833], cand_bits=24, cand_rate=96000)
         == "ACCEPT_PROVISIONAL"
     )
+
+
+# ---- F5.4 scan tiers slice 2: existing integrity known-ness plumbing ----
+
+
+def test_require_integrity_default_off(monkeypatch):
+    monkeypatch.delenv("MINTARR_REQUIRE_INTEGRITY", raising=False)
+    assert server._require_integrity_enabled() is False
+
+
+def test_unknown_integrity_routes_review_only_when_required(monkeypatch, tmp_path):
+    # Metadata-fresh but integrity not verified (no integrity_sensor_version).
+    monkeypatch.setenv("MINTARR_LIBRARY_ROOT", str(tmp_path))
+    _seed_real(tmp_path, 840, 16, 44100, trackfile_id=8401)
+    monkeypatch.delenv("MINTARR_REQUIRE_INTEGRITY", raising=False)
+    assert _apply("ACCEPT", [840], cand_bits=16, cand_rate=44100) == "ACCEPT"
+    monkeypatch.setenv("MINTARR_REQUIRE_INTEGRITY", "true")
+    assert _apply("ACCEPT", [840], cand_bits=16, cand_rate=44100) == "REVIEW_REQUIRED"
+
+
+def test_verified_integrity_keeps_normal_behaviour(monkeypatch, tmp_path):
+    monkeypatch.setenv("MINTARR_LIBRARY_ROOT", str(tmp_path))
+    monkeypatch.setenv("MINTARR_REQUIRE_INTEGRITY", "true")
+    _seed_real(tmp_path, 841, 16, 44100, trackfile_id=8411)
+    state_db.update_library_integrity(
+        {
+            "trackfile_id": 8411,
+            "album_id": 841,
+            "integrity_ok": True,
+            "checksum_ok": True,
+            "integrity_sensor_version": library_evidence.INTEGRITY_SENSOR_VERSION,
+        }
+    )
+    # integrity verified → no abstain → unchanged.
+    assert _apply("ACCEPT", [841], cand_bits=16, cand_rate=44100) == "ACCEPT"
+
+
+def test_stale_integrity_is_not_read_as_invalid(monkeypatch, tmp_path):
+    # A stale integrity verdict (old sensor version) must never drive any_invalid →
+    # it is stripped, so a lower-tier candidate does not get rescued as an upgrade.
+    monkeypatch.setenv("MINTARR_LIBRARY_ROOT", str(tmp_path))
+    _seed_real(tmp_path, 842, 24, 96000, trackfile_id=8421)  # existing tier 3
+    state_db.update_library_integrity(
+        {
+            "trackfile_id": 8421,
+            "album_id": 842,
+            "integrity_ok": False,  # stale "invalid"
+            "integrity_sensor_version": "mintarr-library-integrity OLD",
+        }
+    )
+    # If the stale invalid were read → any_invalid → UPGRADE → rescue to provisional.
+    # Stripped → candidate tier 1 < existing tier 3 → downgrade → stays review.
+    assert (
+        _apply("REVIEW_REQUIRED", [842], cand_bits=16, cand_rate=44100)
+        == "REVIEW_REQUIRED"
+    )

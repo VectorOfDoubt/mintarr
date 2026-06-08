@@ -3047,19 +3047,12 @@ def _apply_measured_existing(
         # now (size + mtime + current sensor_version) may drive the decision.
         fresh = [r for r in rows if library_evidence.is_measured_row_fresh(r)]
 
-        # Let the existing release's spectral authenticity move the decision only
-        # when the operator opted into the spectral tier (F5.4 slice 4b). Off ⇒
-        # authenticity is never read, so the cheaper measured-existing path is
-        # unchanged and never over-routes to review.
-        consider_authenticity = library_evidence.spectral_enabled()
-        if consider_authenticity:
-            # The spectral verdict is a separate sensor with its own freshness: a
-            # row can be cheap-tier-fresh but spectral-stale (older spectral sensor
-            # version, or the verdict never re-run). Stale authenticity must never
-            # drive a decision (same boundary as the cheap tier, #113), so strip
-            # the spectral fields from any row whose spectral evidence is not fresh
-            # — it keeps its tier/validity but reads as unverified authenticity.
-            fresh = [_decision_spectral_view(r, library_evidence) for r in fresh]
+        # Per-tier decision-time freshness (#113 boundary): the spectral and
+        # integrity tiers each have their own sensor version, so a metadata-fresh
+        # row can carry stale/absent integrity or spectral evidence. Strip those to
+        # unknown and tag the row's tier-known flags before the rollup, so a stale
+        # verdict never drives a decision and unknown is never read as good.
+        fresh = [_decision_evidence_view(r, library_evidence) for r in fresh]
 
         existing = lc.album_quality(fresh)
         if existing is None:
@@ -3071,11 +3064,15 @@ def _apply_measured_existing(
         existing_incomplete = (
             expected_track_count > 0 and existing_track_count < expected_track_count
         )
+        # Each known-ness axis moves the decision only when the operator opted into
+        # measuring it. Off ⇒ that axis is never read, so the decision is unchanged
+        # and never over-routes to review on a library that hasn't run that tier.
         verdict = lc.compare(
             candidate,
             existing,
             existing_incomplete=existing_incomplete,
-            consider_existing_authenticity=consider_authenticity,
+            consider_existing_authenticity=library_evidence.spectral_enabled(),
+            consider_existing_integrity=_require_integrity_enabled(),
         )
         return _map_measured_verdict(audio_decision, verdict)
     except Exception:
@@ -3083,20 +3080,40 @@ def _apply_measured_existing(
         return audio_decision
 
 
-def _decision_spectral_view(row: dict, library_evidence) -> dict:
-    """Return ``row`` with stale spectral fields stripped for decision use (F5.4 4b).
+def _require_integrity_enabled() -> bool:
+    """True when the operator requires existing integrity to be verified (F5.4).
 
-    A spectral verdict that fails ``is_spectral_row_fresh`` (changed file, older
-    spectral sensor version, or never re-run) must not be decision-active: the row
-    is returned with its authenticity cleared so the rollup reads it as unverified,
-    while its fresh cheap-tier tier/validity evidence is preserved.
+    Opt-in (``MINTARR_REQUIRE_INTEGRITY``, default off, alongside
+    ``MINTARR_MEASURED_EXISTING``): unknown existing integrity then abstains a
+    keep/downgrade to REVIEW instead of silently trusting an unverified file.
     """
-    if library_evidence.is_spectral_row_fresh(row):
-        return row
-    stripped = dict(row)
-    stripped["spectral_status"] = None
-    stripped["authentic"] = None
-    return stripped
+    return os.environ.get("MINTARR_REQUIRE_INTEGRITY", "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    )
+
+
+def _decision_evidence_view(row: dict, library_evidence) -> dict:
+    """Strip stale spectral/integrity evidence + tag tier-known flags (F5.4).
+
+    Each heavy tier has its own freshness. A verdict that fails its tier's
+    freshness (changed file, older sensor version, or never run) must not be
+    decision-active (#113), so it is cleared to *unknown* while the fresh
+    metadata tier/validity is preserved. ``integrity_known`` is set so the rollup
+    can tell "verified" from "unknown".
+    """
+    view = dict(row)
+    if not library_evidence.is_spectral_row_fresh(view):
+        view["spectral_status"] = None
+        view["authentic"] = None
+    integrity_fresh = library_evidence.is_integrity_row_fresh(view)
+    view["integrity_known"] = integrity_fresh
+    if not integrity_fresh:
+        view["integrity_ok"] = None
+        view["checksum_ok"] = None
+    return view
 
 
 def _build_cd_rip_sensor(output_dir: Path) -> dict | None:

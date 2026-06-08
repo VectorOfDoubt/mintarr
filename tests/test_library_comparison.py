@@ -363,3 +363,67 @@ def test_compare_genuine_invalid_existing_still_upgrades():
     # A real decode failure (integrity_ok False) is still an upgrade opportunity.
     existing = lc.album_quality([_measured(integrity_ok=False)])
     assert lc.compare(_cand(tier=1), existing) == lc.UPGRADE
+
+
+# ---- compare: existing integrity known-ness (F5.4 scan tiers slice 2) ----
+
+
+def test_rollup_integrity_known_from_per_row_flag():
+    assert (
+        lc.album_quality(
+            [_measured(integrity_known=True), _measured(integrity_known=True)]
+        ).integrity_known
+        is True
+    )
+    # one track without a fresh integrity verdict ⇒ album integrity unknown
+    assert (
+        lc.album_quality([_measured(integrity_known=True), _measured()]).integrity_known
+        is False
+    )
+
+
+def test_compare_integrity_off_by_default_no_abstain():
+    # Flag off (default): unknown existing integrity must not route to review, or
+    # every metadata-only album would. Same-tier ⇒ EQUIVALENT.
+    existing = lc.album_quality([_measured(bit_depth=16, sample_rate=44100)])
+    assert lc.compare(_cand(tier=1), existing) == lc.EQUIVALENT
+    assert (
+        lc.compare(_cand(tier=1), existing, consider_existing_integrity=True)
+        == lc.REVIEW
+    )
+
+
+def test_compare_unknown_integrity_still_upgrades_higher_tier():
+    # Unknown existing integrity never blocks a strictly better candidate.
+    existing = lc.album_quality([_measured(bit_depth=16, sample_rate=44100)])  # tier 1
+    assert (
+        lc.compare(_cand(tier=3), existing, consider_existing_integrity=True)
+        == lc.UPGRADE
+    )
+
+
+def test_compare_verified_integrity_uses_normal_tier_logic():
+    same = lc.album_quality(
+        [_measured(integrity_known=True, bit_depth=16, sample_rate=44100)]
+    )
+    assert (
+        lc.compare(_cand(tier=1), same, consider_existing_integrity=True)
+        == lc.EQUIVALENT
+    )
+    hi = lc.album_quality(
+        [_measured(integrity_known=True, bit_depth=24, sample_rate=96000)]
+    )
+    # verified-good existing is protected: a lower candidate is a downgrade.
+    assert (
+        lc.compare(_cand(tier=1), hi, consider_existing_integrity=True) == lc.DOWNGRADE
+    )
+
+
+def test_compare_measured_corruption_upgrades_regardless_of_flag():
+    # A measured integrity *defect* is always an upgrade — not the same as unknown.
+    existing = lc.album_quality([_measured(integrity_ok=False)])
+    assert lc.compare(_cand(tier=1), existing) == lc.UPGRADE
+    assert (
+        lc.compare(_cand(tier=1), existing, consider_existing_integrity=True)
+        == lc.UPGRADE
+    )

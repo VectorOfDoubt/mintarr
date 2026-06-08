@@ -541,6 +541,55 @@ Related detail endpoints:
 | `GET /dashboard/v1/audio-sample/<jid>` | Short review sample when files are still available |
 | `GET /dashboard/v1/spectrum/<jid>` | Spectrum PNG when generated/cached |
 
+### 6.11.1 `GET /dashboard/v1/library-quality`
+
+Authenticated. Read-only ranking view over Mintarr's measured existing-library
+quality evidence (F5.4 slice 5d). It groups `library_evidence` rows by album and
+assigns each album one primary worst-first bucket:
+
+`invalid` → `measured_fake` → `stale` → `unmeasured` →
+`lossy_or_low_tier` → `mixed_tier` → `unknown_authenticity` → `ok`.
+
+The endpoint also includes the active background library-scan run, if any. It
+does not start scans, cancel scans, mutate Lidarr, or expose full library paths;
+file samples are basenames only. Because this is an informational dashboard
+view, it does not synchronously stat the library mount. `stale` means the stored
+row was produced by an older sensor version; size/mtime freshness is refreshed
+by the background scan.
+
+```http
+GET /dashboard/v1/library-quality?bucket=stale&limit=50&offset=0
+X-Api-Key: <MINTARR_API_KEY>
+```
+
+```json
+{
+  "buckets": [
+    { "key": "invalid", "label": "Integrity failed", "count": 0 }
+  ],
+  "albums": [
+    {
+      "album_id": 12345,
+      "primary_bucket": "stale",
+      "track_count": 12,
+      "measured_count": 11,
+      "stale_count": 1,
+      "sample_files": [{ "filename": "01 - Track.flac" }]
+    }
+  ],
+  "scan": {
+    "active": {
+      "id": 12,
+      "mode": "cheap",
+      "state": "running",
+      "processed_items": 40,
+      "total_items": 100,
+      "percent": 40.0
+    }
+  }
+}
+```
+
 ### 6.12 `GET /dashboard/v1/jobs`
 
 ```http

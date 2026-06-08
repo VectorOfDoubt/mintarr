@@ -1,0 +1,48 @@
+<h2>Library quality</h2>
+
+{% set active = quality.scan.active %}
+{% if active %}
+<div class="sys-kv"><span>Scan</span><span>{{ active.mode }} · {{ active.state }}</span></div>
+<div class="sys-kv">
+  <span>Progress</span>
+  <span>{{ active.processed_items }}/{{ active.total_items }}{% if active.percent is not none %} · {{ active.percent }}%{% endif %}</span>
+</div>
+{% else %}
+<div class="sys-kv"><span>Scan</span><span>idle</span></div>
+{% endif %}
+
+<div class="library-buckets">
+  {% for bucket in quality.buckets %}
+  <span class="health-badge health-{{ 'bad' if bucket.key in ['invalid', 'measured_fake'] else 'warn' if bucket.key in ['stale', 'unmeasured', 'lossy_or_low_tier', 'mixed_tier', 'unknown_authenticity'] else 'ok' }}"
+        title="{{ bucket.description }}">{{ bucket.label }}: {{ bucket.count }}</span>
+  {% endfor %}
+</div>
+
+{% if quality.albums %}
+<table class="queue-table library-quality-table">
+  <thead>
+    <tr>
+      <th>Album</th>
+      <th>Bucket</th>
+      <th>Measured</th>
+      <th>Files</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for album in quality.albums %}
+    <tr>
+      <td>{{ album.album_id if album.album_id is not none else 'unknown' }}</td>
+      <td>{{ album.primary_bucket.replace('_', ' ') }}</td>
+      <td>{{ album.measured_count }}/{{ album.track_count }}</td>
+      <td>
+        {% for file in album.sample_files[:3] %}
+        <span class="mono">{{ file.filename or file.trackfile_id }}</span>{% if not loop.last %}, {% endif %}
+        {% endfor %}
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="muted">No measured library evidence yet.</p>
+{% endif %}

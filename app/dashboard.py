@@ -6,6 +6,7 @@ Implements TIDALHIRES_DASHBOARD_API.md v1 endpoints:
 - GET /dashboard/v1/record/<jid>
 - GET /dashboard/v1/connectors
 - GET /dashboard/v1/timings
+- GET /dashboard/v1/library-quality
 - GET /dashboard/v1/audio-sample/<jid>
 - GET /dashboard/v1/spectrum/<jid>
 - POST /dashboard/v1/action/<jid>
@@ -1543,6 +1544,298 @@ def _library_evidence_detail(sidecar: dict) -> dict:
         return payload
     except Exception:
         return {"available": False}
+
+
+_LIBRARY_QUALITY_BUCKETS = [
+    {
+        "key": "invalid",
+        "label": "Integrity failed",
+        "description": "One or more fresh measured tracks failed integrity.",
+    },
+    {
+        "key": "measured_fake",
+        "label": "Measured fake",
+        "description": "Fresh spectral evidence says at least one track is fake/suspicious.",
+    },
+    {
+        "key": "stale",
+        "label": "Stale evidence",
+        "description": "Stored evidence was produced by an older sensor version.",
+    },
+    {
+        "key": "unmeasured",
+        "label": "Unmeasured",
+        "description": "No usable measured quality evidence exists for the album.",
+    },
+    {
+        "key": "lossy_or_low_tier",
+        "label": "Lossy / low tier",
+        "description": "Fresh evidence is lossy or only the lowest lossless tier.",
+    },
+    {
+        "key": "mixed_tier",
+        "label": "Mixed tier",
+        "description": "Tracks in the album roll up to different lossless tiers.",
+    },
+    {
+        "key": "unknown_authenticity",
+        "label": "Unknown authenticity",
+        "description": "Spectral mode is enabled, but authenticity is not known for every measured track.",
+    },
+    {
+        "key": "ok",
+        "label": "Measured OK",
+        "description": "Fresh measured evidence has no known quality warnings.",
+    },
+]
+_LIBRARY_QUALITY_BUCKET_ORDER = {
+    bucket["key"]: index for index, bucket in enumerate(_LIBRARY_QUALITY_BUCKETS)
+}
+
+
+def _library_quality_scan_status(state_db_mod) -> dict:
+    active = state_db_mod.get_active_library_scan_run()
+    _total, recent = state_db_mod.list_library_scan_runs(limit=5)
+
+    def _run_payload(run: dict | None) -> dict | None:
+        if not run:
+            return None
+        total_items = int(run.get("total_items") or 0)
+        processed_items = int(run.get("processed_items") or 0)
+        percent = None
+        if total_items > 0:
+            percent = round((processed_items / total_items) * 100, 1)
+        return {
+            "id": run.get("id"),
+            "mode": run.get("mode"),
+            "state": run.get("state"),
+            "total_items": total_items,
+            "processed_items": processed_items,
+            "measured_items": int(run.get("measured_items") or 0),
+            "fresh_items": int(run.get("fresh_items") or 0),
+            "unmeasured_items": int(run.get("unmeasured_items") or 0),
+            "error_items": int(run.get("error_items") or 0),
+            "cancel_requested": bool(run.get("cancel_requested")),
+            "percent": percent,
+        }
+
+    return {"active": _run_payload(active), "recent": [_run_payload(r) for r in recent]}
+
+
+def _dashboard_measured_row_current(row: dict, library_evidence_mod) -> bool:
+    """DB-only freshness for dashboard ranking.
+
+    Unlike the decision path, this view must not stat the mounted library during
+    render. The background scan owns size/mtime freshness; the dashboard only
+    treats sensor-version drift as stale.
+    """
+    return (
+        row.get("status") == "measured"
+        and row.get("sensor_version") == library_evidence_mod.SENSOR_VERSION
+    )
+
+
+def _dashboard_spectral_row_current(row: dict, library_evidence_mod) -> bool:
+    return (
+        row.get("spectral_status") == "measured"
+        and row.get("spectral_sensor_version")
+        == library_evidence_mod.SPECTRAL_SENSOR_VERSION
+    )
+
+
+def _library_quality_album_summary(
+    album_id: int | None,
+    rows: list[dict],
+    *,
+    library_evidence_mod,
+    library_comparison_mod,
+) -> dict:
+    """Summarize one album for the read-only quality ranking view.
+
+    Bucket precedence is worst-first and mutually exclusive: known hard failures
+    first, stale/unusable evidence next, upgrade opportunities after that, then
+    measured OK. This is an operator ranking view only; it never feeds decisions.
+    """
+    tracks = [
+        {
+            "trackfile_id": r.get("trackfile_id"),
+            "filename": _basename_any(r.get("path")),
+            "status": r.get("status"),
+            "reason": r.get("reason"),
+        }
+        for r in rows[:12]
+    ]
+    measured = [r for r in rows if r.get("status") == "measured"]
+    fresh_rows: list[dict] = []
+    stale_count = 0
+    spectral_stale_count = 0
+    for row in measured:
+        if not _dashboard_measured_row_current(row, library_evidence_mod):
+            stale_count += 1
+            continue
+        view = dict(row)
+        if view.get("lossless") is not None:
+            view["lossless"] = bool(view.get("lossless"))
+        if view.get("integrity_ok") is not None:
+            view["integrity_ok"] = bool(view.get("integrity_ok"))
+        if view.get("authentic") is not None:
+            view["authentic"] = bool(view.get("authentic"))
+        if row.get("spectral_status") == "measured":
+            if _dashboard_spectral_row_current(row, library_evidence_mod):
+                pass
+            else:
+                spectral_stale_count += 1
+                view["authentic"] = None
+                view["spectral_status"] = None
+        fresh_rows.append(view)
+
+    rollup = library_comparison_mod.album_quality(fresh_rows)
+    invalid_count = sum(1 for r in fresh_rows if r.get("integrity_ok") is False)
+    tiers = {
+        library_comparison_mod.tier_rank(
+            lossless=bool(r.get("lossless")),
+            bit_depth=r.get("bit_depth"),
+            sample_rate=r.get("sample_rate"),
+        )
+        for r in fresh_rows
+        if r.get("status") == "measured"
+    }
+    if invalid_count:
+        bucket = "invalid"
+    elif rollup is not None and rollup.any_fake:
+        bucket = "measured_fake"
+    elif stale_count or spectral_stale_count:
+        bucket = "stale"
+    elif rollup is None:
+        bucket = "unmeasured"
+    elif (not rollup.all_lossless) or rollup.min_tier <= 1:
+        bucket = "lossy_or_low_tier"
+    elif len(tiers) > 1:
+        bucket = "mixed_tier"
+    elif library_evidence_mod.spectral_enabled() and not rollup.authenticity_known:
+        bucket = "unknown_authenticity"
+    else:
+        bucket = "ok"
+
+    return {
+        "album_id": album_id,
+        "primary_bucket": bucket,
+        "track_count": len(rows),
+        "measured_count": len(fresh_rows),
+        "stale_count": stale_count + spectral_stale_count,
+        "invalid_count": invalid_count,
+        "any_fake": bool(rollup.any_fake) if rollup else False,
+        "authenticity_known": bool(rollup.authenticity_known) if rollup else False,
+        "min_tier": rollup.min_tier if rollup else None,
+        "all_lossless": bool(rollup.all_lossless) if rollup else False,
+        "sample_files": tracks,
+    }
+
+
+def _build_library_quality_view(
+    *, bucket: str | None = None, limit: int = 50, offset: int = 0
+) -> dict:
+    import library_comparison
+    import library_evidence
+    import state_db
+
+    limit = max(1, min(int(limit or 50), 200))
+    offset = max(0, int(offset or 0))
+    total_rows, rows = state_db.list_library_evidence(limit=10000, offset=0)
+    grouped: dict[int | None, list[dict]] = {}
+    for row in rows:
+        aid = row.get("album_id")
+        grouped.setdefault(int(aid) if aid is not None else None, []).append(row)
+
+    albums = [
+        _library_quality_album_summary(
+            album_id,
+            album_rows,
+            library_evidence_mod=library_evidence,
+            library_comparison_mod=library_comparison,
+        )
+        for album_id, album_rows in grouped.items()
+    ]
+    albums.sort(
+        key=lambda a: (
+            _LIBRARY_QUALITY_BUCKET_ORDER.get(a["primary_bucket"], 999),
+            a["album_id"] is None,
+            a["album_id"] or 0,
+        )
+    )
+    bucket_counts = Counter(a["primary_bucket"] for a in albums)
+    if bucket:
+        albums = [a for a in albums if a["primary_bucket"] == bucket]
+    returned = albums[offset : offset + limit]
+    return {
+        "buckets": [
+            {**b, "count": int(bucket_counts.get(b["key"], 0))}
+            for b in _LIBRARY_QUALITY_BUCKETS
+        ],
+        "albums": returned,
+        "total_albums": len(grouped),
+        "filtered_albums": len(albums),
+        "total_rows": total_rows,
+        "limit": limit,
+        "offset": offset,
+        "scan": _library_quality_scan_status(state_db),
+    }
+
+
+@dashboard_bp.route("/v1/library-quality", methods=["GET"])
+def library_quality_json():
+    """Read-only quality ranking over measured existing-library evidence."""
+    from server import require_apikey_check
+
+    auth_resp = require_apikey_check()
+    if auth_resp:
+        return auth_resp
+    try:
+        payload = _build_library_quality_view(
+            bucket=request.args.get("bucket") or None,
+            limit=int(request.args.get("limit", "50")),
+            offset=int(request.args.get("offset", "0")),
+        )
+    except Exception:
+        payload = {
+            "buckets": [],
+            "albums": [],
+            "total_albums": 0,
+            "filtered_albums": 0,
+            "total_rows": 0,
+            "limit": 50,
+            "offset": 0,
+            "scan": {"active": None, "recent": []},
+        }
+    return jsonify(payload)
+
+
+@dashboard_bp.route("/v1/library-quality/partial", methods=["GET"])
+def library_quality_partial():
+    """Server-rendered System panel for library quality ranking (F5.4 5d)."""
+    from server import require_apikey_check
+
+    auth_resp = require_apikey_check()
+    if auth_resp:
+        return auth_resp
+    try:
+        quality = _build_library_quality_view(
+            bucket=request.args.get("bucket") or None,
+            limit=int(request.args.get("limit", "12")),
+            offset=int(request.args.get("offset", "0")),
+        )
+    except Exception:
+        quality = {
+            "buckets": [],
+            "albums": [],
+            "total_albums": 0,
+            "filtered_albums": 0,
+            "total_rows": 0,
+            "limit": 12,
+            "offset": 0,
+            "scan": {"active": None, "recent": []},
+        }
+    return render_template("partials/library_quality.html", quality=quality)
 
 
 def _build_record_detail(server_mod, jid: str) -> dict | None:

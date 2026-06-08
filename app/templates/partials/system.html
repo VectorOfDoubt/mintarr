@@ -32,6 +32,11 @@
     <h2>Backup &amp; Restore</h2>
     <p class="muted">Loading…</p>
   </div>
+  <div class="panel" hx-get="/dashboard/v1/library-quality/partial"
+       hx-trigger="load" hx-swap="innerHTML">
+    <h2>Library quality</h2>
+    <p class="muted">Loading…</p>
+  </div>
   <div class="panel"><h2>Updates</h2><p class="muted">Update status lands in a later slice.</p></div>
   <div class="panel">
     <h2>Events <a class="audit-download" data-href="/dashboard/v1/actions/download" href="#" title="Download audit trail as CSV">⤓ CSV</a></h2>

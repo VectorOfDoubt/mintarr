@@ -569,6 +569,31 @@ def get_album_library_evidence(album_id: int) -> list[dict]:
         return []
 
 
+def list_library_evidence(
+    *, limit: int = 5000, offset: int = 0
+) -> tuple[int, list[dict]]:
+    """List stored library quality evidence for read-only dashboard views."""
+    if not _ensure_initialized():
+        return (0, [])
+    try:
+        limit = max(1, min(int(limit), 10000))
+        offset = max(0, int(offset))
+        with _lock, _connect() as conn:
+            total = conn.execute("SELECT COUNT(*) FROM library_evidence").fetchone()[0]
+            rows = conn.execute(
+                """
+                SELECT * FROM library_evidence
+                ORDER BY album_id IS NULL, album_id ASC, path ASC, trackfile_id ASC
+                LIMIT ? OFFSET ?
+                """,
+                (limit, offset),
+            ).fetchall()
+            return (int(total), [dict(r) for r in rows])
+    except Exception:
+        log.exception("state_db.list_library_evidence failed")
+        return (0, [])
+
+
 def log_action(
     jid: str, action: str, actor: str, result: str, details: dict | None = None
 ) -> None:

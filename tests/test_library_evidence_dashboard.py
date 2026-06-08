@@ -80,3 +80,62 @@ def test_lossy_track_flagged_not_lossless():
     detail = dashboard._library_evidence_detail({"album_ids": [901]})
     t = detail["tracks"][0]
     assert t["lossless"] is False
+
+
+# ---- F5.4 slice 4a: spectral authenticity surfaced (record-only) ----
+
+
+def test_surfaces_spectral_authenticity():
+    state_db.update_library_spectral(
+        {
+            "trackfile_id": 11,
+            "album_id": 910,
+            "authentic": True,
+            "spectral_status": "measured",
+            "spectral_verdict": "AUTHENTIC",
+        }
+    )
+    _seed(11, 910, path="/lib/Artist/Album/g.flac")
+    state_db.update_library_spectral(
+        {
+            "trackfile_id": 11,
+            "album_id": 910,
+            "authentic": True,
+            "spectral_status": "measured",
+            "spectral_verdict": "AUTHENTIC",
+        }
+    )
+    detail = dashboard._library_evidence_detail({"album_ids": [910]})
+    t = next(t for t in detail["tracks"] if t["filename"] == "g.flac")
+    assert t["authentic"] is True
+    assert t["spectral_status"] == "measured"
+    assert detail["any_fake"] is False
+    assert detail["authenticity_known"] is True
+
+
+def test_surfaces_any_fake_rollup():
+    _seed(41, 911, path="/lib/Artist/Album/a.flac")
+    _seed(42, 911, path="/lib/Artist/Album/b.flac")
+    state_db.update_library_spectral(
+        {
+            "trackfile_id": 41,
+            "album_id": 911,
+            "authentic": True,
+            "spectral_status": "measured",
+            "spectral_verdict": "AUTHENTIC",
+        }
+    )
+    state_db.update_library_spectral(
+        {
+            "trackfile_id": 42,
+            "album_id": 911,
+            "authentic": False,
+            "spectral_status": "measured",
+            "spectral_verdict": "FAKE",
+        }
+    )
+    detail = dashboard._library_evidence_detail({"album_ids": [911]})
+    assert detail["any_fake"] is True
+    assert detail["authenticity_known"] is True
+    fake = next(t for t in detail["tracks"] if t["filename"] == "b.flac")
+    assert fake["authentic"] is False

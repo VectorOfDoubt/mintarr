@@ -146,3 +146,59 @@ def test_unknown_tier_still_upgrades_over_invalid_existing():
         valid=True, authentic=True, tier=0, complete=True, tier_known=False
     )
     assert lc.compare(cand, existing) == lc.UPGRADE
+
+
+# ---- F5.4 slice 4a: spectral authenticity rollup (record-only) ----
+
+
+def _measured(**over):
+    row = {
+        "status": "measured",
+        "integrity_ok": True,
+        "lossless": 1,
+        "bit_depth": 16,
+        "sample_rate": 44100,
+    }
+    row.update(over)
+    return row
+
+
+def test_rollup_authenticity_unknown_without_spectral():
+    q = lc.album_quality([_measured(), _measured()])
+    assert q is not None
+    assert q.any_fake is False
+    assert q.authenticity_known is False
+
+
+def test_rollup_authenticity_known_when_all_spectral_genuine():
+    q = lc.album_quality(
+        [
+            _measured(spectral_status="measured", authentic=1),
+            _measured(spectral_status="measured", authentic=1),
+        ]
+    )
+    assert q.any_fake is False
+    assert q.authenticity_known is True
+
+
+def test_rollup_any_fake_when_one_track_fake():
+    q = lc.album_quality(
+        [
+            _measured(spectral_status="measured", authentic=1),
+            _measured(spectral_status="measured", authentic=0),
+        ]
+    )
+    assert q.any_fake is True
+    assert q.authenticity_known is True
+
+
+def test_rollup_authenticity_unknown_when_partially_spectral():
+    # One measured track has no spectral verdict → authenticity is not "known".
+    q = lc.album_quality(
+        [
+            _measured(spectral_status="measured", authentic=1),
+            _measured(),  # cheap-tier only
+        ]
+    )
+    assert q.any_fake is False
+    assert q.authenticity_known is False

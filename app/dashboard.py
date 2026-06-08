@@ -1518,14 +1518,29 @@ def _library_evidence_detail(sidecar: dict) -> dict:
                     "integrity_ok": None
                     if r.get("integrity_ok") is None
                     else bool(r.get("integrity_ok")),
+                    # F5.4 slice 4a: tri-state spectral authenticity (record-only).
+                    "authentic": None
+                    if r.get("authentic") is None
+                    else bool(r.get("authentic")),
+                    "spectral_status": r.get("spectral_status"),
                 }
             )
-        return {
+        payload = {
             "available": True,
             "track_count": len(rows),
             "measured_count": measured,
             "tracks": tracks[:60],
         }
+        try:
+            import library_comparison
+
+            rollup = library_comparison.album_quality(rows)
+            if rollup is not None:
+                payload["any_fake"] = rollup.any_fake
+                payload["authenticity_known"] = rollup.authenticity_known
+        except Exception:
+            pass
+        return payload
     except Exception:
         return {"available": False}
 

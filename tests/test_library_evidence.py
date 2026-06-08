@@ -408,3 +408,89 @@ def test_is_spectral_row_fresh(tmp_path, monkeypatch):
     )
     assert le.is_spectral_row_fresh({**fresh, "spectral_status": "unmeasured"}) is False
     assert le.is_spectral_row_fresh({**fresh, "size": st.st_size + 1}) is False
+
+
+# ---- F5.4 integrity split: flac -t classification (md5 mismatch vs decode error) ----
+
+
+def test_classify_flac_clean_pass():
+    assert le._classify_flac_test(0, "") == (True, True)
+
+
+def test_classify_flac_unset_md5_is_unknown_checksum():
+    # The real flac wording when STREAMINFO MD5 is unset (rc 0, nothing verified).
+    real = "WARNING, cannot check MD5 signature since it was unset in the STREAMINFO"
+    assert le._classify_flac_test(0, real) == (True, None)
+    # older/alternate phrasings stay covered too
+    assert le._classify_flac_test(0, "skipping MD5 check") == (True, None)
+
+
+def test_classify_flac_md5_mismatch_is_valid_but_checksum_failed():
+    # The dogfood case: decodes fine, only the stored MD5 is stale.
+    ok, checksum = le._classify_flac_test(
+        1, "track.flac: ERROR, MD5 signature mismatch"
+    )
+    assert ok is True
+    assert checksum is False
+
+
+def test_classify_flac_decode_error_is_invalid():
+    ok, checksum = le._classify_flac_test(
+        1, "track.flac: ERROR while decoding data\nlost sync"
+    )
+    assert ok is False
+    assert checksum is None
+
+
+def test_classify_flac_md5_mismatch_with_decode_error_is_invalid():
+    # If real frame errors are present too, the conservative result is invalid.
+    ok, checksum = le._classify_flac_test(
+        1, "MD5 signature mismatch\nERROR: lost sync while decoding"
+    )
+    assert ok is False
+
+
+def test_classify_flac_unrecognized_failure_is_invalid():
+    # Unknown non-zero failure is never softened.
+    ok, checksum = le._classify_flac_test(2, "some unexpected failure")
+    assert ok is False
+
+
+def test_measure_trackfile_passes_checksum_through(tmp_path):
+    root = _lib(tmp_path)
+
+    def _prober(path):
+        return {
+            "codec": "flac",
+            "sample_rate": 44100,
+            "bit_depth": 16,
+            "channels": 2,
+            "integrity_ok": True,
+            "checksum_ok": False,
+        }
+
+    m = le.measure_trackfile(
+        "/music/Artist/Album/01.flac",
+        library_root=root,
+        lidarr_root="/music",
+        prober=_prober,
+    )
+    assert m.status == "measured"
+    assert m.integrity_ok is True
+    assert m.checksum_ok is False
+
+
+def test_library_evidence_checksum_round_trip():
+    state_db.upsert_library_evidence(
+        {
+            "trackfile_id": 555,
+            "album_id": 3,
+            "status": "measured",
+            "integrity_ok": True,
+            "checksum_ok": False,
+            "sensor_version": le.SENSOR_VERSION,
+        }
+    )
+    row = state_db.get_library_evidence(555)
+    assert row["integrity_ok"] == 1
+    assert row["checksum_ok"] == 0

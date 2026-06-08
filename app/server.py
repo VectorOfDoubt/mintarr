@@ -3193,6 +3193,7 @@ def _record_existing_library_evidence(album_id, trackfiles) -> None:
                     "channels": measurement.channels,
                     "lossless": measurement.lossless,
                     "integrity_ok": measurement.integrity_ok,
+                    "checksum_ok": measurement.checksum_ok,
                     "sensor_version": library_evidence.SENSOR_VERSION,
                 }
             )

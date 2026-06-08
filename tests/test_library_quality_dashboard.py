@@ -167,3 +167,35 @@ def test_library_quality_partial_renders(monkeypatch):
     assert "Library quality" in body
     assert "lossy / low tier" in body.lower()
     assert "07.flac" in body
+
+
+def test_checksum_mismatch_gets_own_bucket_not_invalid(monkeypatch):
+    # The dogfood case: a stale-MD5 album (decodes, checksum failed) must land in
+    # checksum_mismatch, never invalid and never ok.
+    def fail_live_freshness(_row):
+        raise AssertionError("dashboard ranking must not stat library files")
+
+    monkeypatch.setattr(library_evidence, "is_measured_row_fresh", fail_live_freshness)
+    monkeypatch.setattr(library_evidence, "is_spectral_row_fresh", fail_live_freshness)
+    monkeypatch.setattr(library_evidence, "spectral_enabled", lambda: False)
+    _seed(61, 960, integrity_ok=True, checksum_ok=0)  # stale MD5
+    _seed(62, 961, integrity_ok=True, checksum_ok=1)  # clean (tier 3)
+
+    view = dashboard._build_library_quality_view()
+    by_album = {a["album_id"]: a for a in view["albums"]}
+
+    assert by_album[960]["primary_bucket"] == "checksum_mismatch"
+    assert by_album[960]["md5_mismatch_count"] == 1
+    assert by_album[961]["primary_bucket"] == "ok"
+    counts = {b["key"]: b["count"] for b in view["buckets"]}
+    assert counts["checksum_mismatch"] == 1
+    assert counts["invalid"] == 0
+
+
+def test_checksum_mismatch_ranks_below_invalid(monkeypatch):
+    # invalid (genuine corruption) outranks checksum_mismatch within an album.
+    monkeypatch.setattr(library_evidence, "is_measured_row_fresh", lambda _r: True)
+    monkeypatch.setattr(library_evidence, "is_spectral_row_fresh", lambda _r: True)
+    _seed(71, 970, integrity_ok=False, checksum_ok=0)
+    view = dashboard._build_library_quality_view(bucket="invalid")
+    assert {a["album_id"] for a in view["albums"]} == {970}

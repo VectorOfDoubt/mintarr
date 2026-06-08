@@ -1519,6 +1519,10 @@ def _library_evidence_detail(sidecar: dict) -> dict:
                     "integrity_ok": None
                     if r.get("integrity_ok") is None
                     else bool(r.get("integrity_ok")),
+                    # F5.4 integrity split: stale FLAC MD5 (decodes, checksum failed).
+                    "checksum_ok": None
+                    if r.get("checksum_ok") is None
+                    else bool(r.get("checksum_ok")),
                     # F5.4 slice 4a: tri-state spectral authenticity (record-only).
                     "authentic": None
                     if r.get("authentic") is None
@@ -1556,6 +1560,12 @@ _LIBRARY_QUALITY_BUCKETS = [
         "key": "measured_fake",
         "label": "Measured fake",
         "description": "Fresh spectral evidence says at least one track is fake/suspicious.",
+    },
+    {
+        "key": "checksum_mismatch",
+        "label": "Checksum mismatch",
+        "description": "Plays fine; the stored FLAC MD5 no longer matches the audio "
+        "(re-tagged/re-encoded after ripping). Not corruption.",
     },
     {
         "key": "stale",
@@ -1678,6 +1688,8 @@ def _library_quality_album_summary(
             view["lossless"] = bool(view.get("lossless"))
         if view.get("integrity_ok") is not None:
             view["integrity_ok"] = bool(view.get("integrity_ok"))
+        if view.get("checksum_ok") is not None:
+            view["checksum_ok"] = bool(view.get("checksum_ok"))
         if view.get("authentic") is not None:
             view["authentic"] = bool(view.get("authentic"))
         if row.get("spectral_status") == "measured":
@@ -1704,6 +1716,10 @@ def _library_quality_album_summary(
         bucket = "invalid"
     elif rollup is not None and rollup.any_fake:
         bucket = "measured_fake"
+    elif rollup is not None and rollup.any_md5_mismatch:
+        # Plays fine, stale FLAC MD5 — a real finding but not corruption and never
+        # a decision trigger; ranked below a fake, above plain staleness.
+        bucket = "checksum_mismatch"
     elif stale_count or spectral_stale_count:
         bucket = "stale"
     elif rollup is None:
@@ -1724,6 +1740,9 @@ def _library_quality_album_summary(
         "measured_count": len(fresh_rows),
         "stale_count": stale_count + spectral_stale_count,
         "invalid_count": invalid_count,
+        "md5_mismatch_count": sum(
+            1 for r in fresh_rows if r.get("checksum_ok") is False
+        ),
         "any_fake": bool(rollup.any_fake) if rollup else False,
         "authenticity_known": bool(rollup.authenticity_known) if rollup else False,
         "min_tier": rollup.min_tier if rollup else None,

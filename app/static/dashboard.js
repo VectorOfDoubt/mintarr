@@ -498,6 +498,7 @@ function renderLibraryEvidence(lib) {
     if (t.lossless === true) flags.push('lossless');
     if (t.lossless === false) flags.push('lossy');
     if (t.integrity_ok === false) flags.push('integrity FAIL');
+    else if (t.checksum_ok === false) flags.push('MD5 stale');
     // F5.4 slice 4a: tri-state spectral authenticity (record-only).
     if (t.authentic === false) flags.push('spectral FAKE');
     else if (t.authentic === true) flags.push('spectral genuine');

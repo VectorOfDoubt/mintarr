@@ -16,7 +16,7 @@ from pathlib import Path
 
 log = logging.getLogger("tidalhires.library_evidence")
 
-SENSOR_VERSION = "mintarr-library-evidence 2026-06-07"
+SENSOR_VERSION = "mintarr-library-evidence 2026-06-08b"
 # The spectral (FLAC Detective) tier is a *separate* sensor with its own version
 # and freshness, layered onto the same library_evidence row (F5.4 §8b). Bumping
 # this re-measures only the spectral verdict, not the cheap ffprobe tier.
@@ -37,7 +37,8 @@ class TrackMeasurement:
     bit_depth: int | None = None
     channels: int | None = None
     lossless: bool | None = None
-    integrity_ok: bool | None = None
+    integrity_ok: bool | None = None  # audio frames decode (genuine corruption ⇒ False)
+    checksum_ok: bool | None = None  # FLAC MD5 verified; False ⇒ stale-MD5 (plays fine)
 
 
 @dataclass(frozen=True)
@@ -206,6 +207,7 @@ def measure_trackfile(
         channels=probe.get("channels"),
         lossless=(codec in _LOSSLESS_CODECS) if codec else None,
         integrity_ok=probe.get("integrity_ok"),
+        checksum_ok=probe.get("checksum_ok"),
     )
 
 
@@ -356,6 +358,7 @@ def _default_prober(path: Path) -> dict:
 
     codec = fields.get("codec_name", "")
     integrity_ok: bool | None = None
+    checksum_ok: bool | None = None
     if codec == "flac":
         result = subprocess.run(
             ["flac", "-t", "-s", str(path)],
@@ -363,14 +366,65 @@ def _default_prober(path: Path) -> dict:
             text=True,
             timeout=120,
         )
-        integrity_ok = result.returncode == 0
+        integrity_ok, checksum_ok = _classify_flac_test(
+            result.returncode, result.stderr or ""
+        )
     return {
         "codec": codec,
         "sample_rate": _int(fields.get("sample_rate")),
         "bit_depth": _int(fields.get("bits_per_raw_sample")),
         "channels": _int(fields.get("channels")),
         "integrity_ok": integrity_ok,
+        "checksum_ok": checksum_ok,
     }
+
+
+def _classify_flac_test(returncode: int, stderr: str) -> tuple[bool, bool | None]:
+    """Map a ``flac -t`` result to (integrity_ok, checksum_ok) — see §2.1.
+
+    ``flac -t`` exits non-zero for both a stale-MD5 file and a genuinely corrupt
+    one. We split them: a pure *MD5 signature mismatch* (the audio decodes, only
+    the stored checksum is stale) is usable audio (``integrity_ok=True``) with a
+    failed checksum (``checksum_ok=False``); any other non-zero result is a hard
+    decode error (``integrity_ok=False``). An unrecognized failure is treated as
+    invalid — never softened. Success ⇒ both ok; an *unset* STREAMINFO MD5 also
+    exits 0 but verifies nothing, so ``checksum_ok`` is None.
+    """
+    if returncode == 0:
+        lowered = stderr.lower()
+        # flac warns and still exits 0 when the STREAMINFO MD5 is unset/zero —
+        # nothing was checked, so report checksum as unknown rather than verified.
+        # The real message is "WARNING, cannot check MD5 signature since it was
+        # unset in the STREAMINFO" (plus older "skipping MD5" phrasings).
+        if (
+            "unset" in lowered
+            or "cannot check md5" in lowered
+            or "skipping md5" in lowered
+        ):
+            return True, None
+        return True, True
+    lowered = stderr.lower()
+    if "md5 signature mismatch" in lowered and not _has_decode_error(lowered):
+        # Frames decoded; only the whole-stream MD5 did not match → stale checksum.
+        return True, False
+    # Genuine decode/frame failure, truncation, or any unrecognized error.
+    return False, None
+
+
+def _has_decode_error(lowered_stderr: str) -> bool:
+    """True if flac -t stderr shows an actual decode/frame failure (not just MD5)."""
+    markers = (
+        "decoder",
+        "lost sync",
+        "frame crc",
+        "crc mismatch",
+        "unparseable",
+        "error reading",
+        "premature eof",
+        "while decoding",
+        "got error code",
+    )
+    return any(m in lowered_stderr for m in markers)
 
 
 def _int(value: str | None) -> int | None:

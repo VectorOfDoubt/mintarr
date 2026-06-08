@@ -48,6 +48,11 @@ class AlbumQuality:
     # authenticity is never silently read as authentic.
     any_fake: bool = False
     authenticity_known: bool = False
+    # F5.4 integrity split: a track that decodes but whose stored FLAC MD5 is stale
+    # (re-tagged/re-encoded after ripping). It is *not* corruption and must never
+    # drive compare() — advisory only, surfaced in the ranking. ``any_invalid``
+    # above stays strictly decode-invalid.
+    any_md5_mismatch: bool = False
 
 
 def album_quality(rows: list[dict]) -> AlbumQuality | None:
@@ -81,6 +86,8 @@ def album_quality(rows: list[dict]) -> AlbumQuality | None:
     spectral = [r for r in measured if r.get("spectral_status") == "measured"]
     any_fake = any(r.get("authentic") == 0 for r in spectral)
     authenticity_known = len(spectral) == len(measured) and len(spectral) > 0
+    # Stale-MD5 (decodes, checksum failed) is advisory: never feeds compare().
+    any_md5_mismatch = any(r.get("checksum_ok") == 0 for r in measured)
     return AlbumQuality(
         measured_count=len(measured),
         track_count=len(rows),
@@ -90,6 +97,7 @@ def album_quality(rows: list[dict]) -> AlbumQuality | None:
         all_lossless=all_lossless,
         any_fake=any_fake,
         authenticity_known=authenticity_known,
+        any_md5_mismatch=any_md5_mismatch,
     )
 
 

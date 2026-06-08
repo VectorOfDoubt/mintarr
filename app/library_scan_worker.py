@@ -315,6 +315,7 @@ def _measure_trackfile_item(run_id: int, tf: dict) -> str:
             "channels": measurement.channels,
             "lossless": measurement.lossless,
             "integrity_ok": measurement.integrity_ok,
+            "checksum_ok": measurement.checksum_ok,
             "sensor_version": library_evidence.SENSOR_VERSION,
         }
     )

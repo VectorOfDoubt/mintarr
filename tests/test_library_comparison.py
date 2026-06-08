@@ -327,3 +327,39 @@ def test_compare_verified_genuine_existing_uses_normal_tier_logic():
         lc.compare(_cand(tier=1), existing_hi, consider_existing_authenticity=True)
         == lc.DOWNGRADE
     )
+
+
+# ---- F5.4 integrity split: md5 mismatch is advisory, never drives compare ----
+
+
+def test_rollup_md5_mismatch_is_not_invalid():
+    # A stale-MD5 track (decodes, checksum failed) sets any_md5_mismatch but NOT
+    # any_invalid — it is usable audio, not corruption.
+    q = lc.album_quality(
+        [_measured(integrity_ok=True, checksum_ok=0), _measured(checksum_ok=1)]
+    )
+    assert q is not None
+    assert q.any_md5_mismatch is True
+    assert q.any_invalid is False
+
+
+def test_rollup_no_md5_mismatch_when_all_checksums_ok():
+    q = lc.album_quality([_measured(checksum_ok=1), _measured(checksum_ok=1)])
+    assert q.any_md5_mismatch is False
+
+
+def test_compare_md5_mismatch_existing_does_not_auto_upgrade():
+    # The dogfood guard: a candidate must NOT auto-replace an existing album whose
+    # only "defect" is a stale MD5 (plays fine). Same tier ⇒ EQUIVALENT, not UPGRADE.
+    existing = lc.album_quality(
+        [_measured(integrity_ok=True, checksum_ok=0, bit_depth=16, sample_rate=44100)]
+    )
+    assert existing.any_md5_mismatch is True
+    assert existing.any_invalid is False
+    assert lc.compare(_cand(tier=1), existing) == lc.EQUIVALENT
+
+
+def test_compare_genuine_invalid_existing_still_upgrades():
+    # A real decode failure (integrity_ok False) is still an upgrade opportunity.
+    existing = lc.album_quality([_measured(integrity_ok=False)])
+    assert lc.compare(_cand(tier=1), existing) == lc.UPGRADE

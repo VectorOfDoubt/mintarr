@@ -95,6 +95,7 @@ CREATE TABLE IF NOT EXISTS library_evidence (
     channels INTEGER,
     lossless INTEGER,
     integrity_ok INTEGER,
+    checksum_ok INTEGER,
     sensor_version TEXT,
     evidence_json TEXT,
     measured_at REAL
@@ -225,6 +226,7 @@ def init(db_path: Path | None = None) -> None:
             conn.executescript(SCHEMA)
             _ensure_records_source_type_column(conn)
             _ensure_library_spectral_columns(conn)
+            _ensure_library_checksum_column(conn)
         _initialized = True
         log.info("state_db initialized at %s", _db_path)
 
@@ -270,6 +272,21 @@ def _ensure_library_spectral_columns(conn: sqlite3.Connection) -> None:
             added = True
     if added:
         log.info("state_db: added library_evidence spectral columns (F5.4 slice 4a)")
+
+
+def _ensure_library_checksum_column(conn: sqlite3.Connection) -> None:
+    """F5.4 integrity-split migration: add library_evidence.checksum_ok. Idempotent.
+
+    Splits FLAC ``flac -t`` integrity into decode validity (``integrity_ok``) and
+    MD5 checksum verification (``checksum_ok``). Existing rows read NULL until the
+    next scan re-measures them (forced by the bumped ``sensor_version``).
+    """
+    cols = {
+        row[1] for row in conn.execute("PRAGMA table_info(library_evidence)").fetchall()
+    }
+    if "checksum_ok" not in cols:
+        conn.execute("ALTER TABLE library_evidence ADD COLUMN checksum_ok INTEGER")
+        log.info("state_db: added library_evidence.checksum_ok column (F5.4)")
 
 
 def _ensure_initialized() -> bool:
@@ -456,6 +473,9 @@ def upsert_library_evidence(row: dict) -> None:
             "integrity_ok": None
             if row.get("integrity_ok") is None
             else int(bool(row.get("integrity_ok"))),
+            "checksum_ok": None
+            if row.get("checksum_ok") is None
+            else int(bool(row.get("checksum_ok"))),
             "sensor_version": row.get("sensor_version"),
             "evidence_json": json.dumps(row.get("evidence") or {}),
             "measured_at": row.get("measured_at") or time.time(),
@@ -465,16 +485,17 @@ def upsert_library_evidence(row: dict) -> None:
                 """
                 INSERT INTO library_evidence (trackfile_id, album_id, path, size, mtime,
                   status, reason, codec, sample_rate, bit_depth, channels, lossless,
-                  integrity_ok, sensor_version, evidence_json, measured_at)
+                  integrity_ok, checksum_ok, sensor_version, evidence_json, measured_at)
                 VALUES (:trackfile_id, :album_id, :path, :size, :mtime, :status, :reason,
                   :codec, :sample_rate, :bit_depth, :channels, :lossless, :integrity_ok,
-                  :sensor_version, :evidence_json, :measured_at)
+                  :checksum_ok, :sensor_version, :evidence_json, :measured_at)
                 ON CONFLICT(trackfile_id) DO UPDATE SET
                   album_id=excluded.album_id, path=excluded.path, size=excluded.size,
                   mtime=excluded.mtime, status=excluded.status, reason=excluded.reason,
                   codec=excluded.codec, sample_rate=excluded.sample_rate,
                   bit_depth=excluded.bit_depth, channels=excluded.channels,
                   lossless=excluded.lossless, integrity_ok=excluded.integrity_ok,
+                  checksum_ok=excluded.checksum_ok,
                   sensor_version=excluded.sensor_version, evidence_json=excluded.evidence_json,
                   measured_at=excluded.measured_at
             """,

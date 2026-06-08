@@ -2940,6 +2940,109 @@ def _apply_cd_rip_scoring(
     return audio_decision
 
 
+def _measured_existing_enabled() -> bool:
+    return _env_bool("MINTARR_MEASURED_EXISTING", default=False)
+
+
+def _candidate_quality(
+    files, normalized_verdict, overrides, new_track_count, expected_track_count
+):
+    """Build the candidate quality vector from the verification context (F5.4)."""
+    import library_comparison as lc
+
+    valid = not any(
+        o in overrides
+        for o in ("codec_mismatch", "flac_t_fail", "validator_error", "no_audio_files")
+    )
+    authentic = normalized_verdict == "AUTHENTIC" and "fake_hi_res" not in overrides
+    # Candidate is lossless (FLAC) once the codec gate passed. Album tier is the
+    # weakest track's tier, mirroring the existing-side rollup (§5).
+    tiers = [
+        lc.tier_rank(
+            lossless=valid,
+            bit_depth=f.get("bit_depth"),
+            sample_rate=f.get("sample_rate"),
+        )
+        for f in (files or [])
+    ]
+    tier = min(tiers) if tiers else 0
+    complete = expected_track_count > 0 and new_track_count >= expected_track_count
+    return lc.CandidateQuality(
+        valid=valid, authentic=authentic, tier=tier, complete=complete
+    )
+
+
+def _map_measured_verdict(
+    audio_decision: VerificationDecision, verdict: str
+) -> VerificationDecision:
+    """Map a library comparison verdict onto the audio decision (default-safe).
+
+    Never overrides a hard-gate ``BLOCK`` and never blocks on its own:
+    - DOWNGRADE / REVIEW vs a measured-better existing release routes a would-be
+      ``ACCEPT``/``ACCEPT_PROVISIONAL`` to ``REVIEW_REQUIRED`` (don't silently
+      replace better existing audio);
+    - UPGRADE rescues a borderline ``REVIEW_REQUIRED`` to ``ACCEPT_PROVISIONAL``.
+    Identity precedence still applies afterwards via combine.
+    """
+    import library_comparison as lc
+
+    if audio_decision == "BLOCK":
+        return "BLOCK"
+    if verdict in (lc.DOWNGRADE, lc.REVIEW) and audio_decision in (
+        "ACCEPT",
+        "ACCEPT_PROVISIONAL",
+    ):
+        return "REVIEW_REQUIRED"
+    if verdict == lc.UPGRADE and audio_decision == "REVIEW_REQUIRED":
+        return "ACCEPT_PROVISIONAL"
+    return audio_decision
+
+
+def _apply_measured_existing(
+    audio_decision: VerificationDecision,
+    *,
+    album_ids,
+    files,
+    normalized_verdict,
+    overrides,
+    new_track_count,
+    existing_track_count,
+    expected_track_count,
+) -> VerificationDecision:
+    """Adjust the decision from measured existing library quality (F5.4 slice 3b).
+
+    Opt-in and never raises. If no measured existing evidence is available, the
+    decision is unchanged (caller's label-based path still applies).
+    """
+    try:
+        import library_comparison as lc
+        import state_db
+
+        rows: list[dict] = []
+        for aid in album_ids or []:
+            try:
+                rows.extend(state_db.get_album_library_evidence(int(aid)))
+            except (TypeError, ValueError):
+                continue
+        existing = lc.album_quality(rows)
+        if existing is None:
+            return audio_decision  # no measured evidence — label path unchanged
+
+        candidate = _candidate_quality(
+            files, normalized_verdict, overrides, new_track_count, expected_track_count
+        )
+        existing_incomplete = (
+            expected_track_count > 0 and existing_track_count < expected_track_count
+        )
+        verdict = lc.compare(
+            candidate, existing, existing_incomplete=existing_incomplete
+        )
+        return _map_measured_verdict(audio_decision, verdict)
+    except Exception:
+        log.exception("[measured_existing] adjustment failed (continuing)")
+        return audio_decision
+
+
 def _build_cd_rip_sensor(output_dir: Path) -> dict | None:
     """Advisory CD-rip evidence sensor (F5.3 slice 2). None when no rip detected."""
     ev = _cd_rip_evidence_or_none(output_dir)
@@ -3233,6 +3336,19 @@ def _compute_verification(
     )
     if cd_rip_ev is not None and _cd_rip_scoring_enabled():
         audio_decision = _apply_cd_rip_scoring(audio_decision, cd_rip_ev)
+    # F5.4 slice 3b: compare against MEASURED existing library quality. Opt-in
+    # (MINTARR_MEASURED_EXISTING, default-off) and subordinate to identity below.
+    if _measured_existing_enabled():
+        audio_decision = _apply_measured_existing(
+            audio_decision,
+            album_ids=album_ids,
+            files=files,
+            normalized_verdict=normalized_verdict,
+            overrides=overrides,
+            new_track_count=new_track_count,
+            existing_track_count=existing_track_count,
+            expected_track_count=expected_track_count,
+        )
     decision = combine_audio_identity_decision(
         audio_decision,
         identity_result.decision.value,

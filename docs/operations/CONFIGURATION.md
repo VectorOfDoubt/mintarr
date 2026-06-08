@@ -75,8 +75,17 @@ One of `LIDARR_API_KEY` or `LIDARR_CONFIG_XML` must be set. The XML extraction i
 | `DOWNLOAD_BASE` | Work area for active downloads | `/downloads` |
 | `OUTPUT_BASE` | Output area for verified files (Lidarr reads from here) | `/output` |
 | `MINTARR_LIDARR_COMPLETE_ROOT` | Lidarr-visible path that maps to `OUTPUT_BASE` for ManualImport | `/downloads/TidalHiRes/complete` |
+| `MINTARR_LIBRARY_ROOT` | F5.4: **read-only** mount of the Lidarr music library, so Mintarr can measure existing files. Unset disables measurement (label-only). | unset |
+| `MINTARR_LIBRARY_LIDARR_ROOT` | Lidarr's view of that library root — the path prefix in trackfile paths. Required (with `MINTARR_LIBRARY_ROOT`) to map a Lidarr path into the mount. | unset |
 
 Both should be mounted volumes. `DOWNLOAD_BASE` is transient (safe to wipe between container restarts); `OUTPUT_BASE` holds files actively being processed.
+
+`MINTARR_LIBRARY_ROOT` should be mounted **read-only** — Mintarr only reads the
+library to measure quality ([F5.4](../design/F5.4_LIBRARY_EVIDENCE_INDEX.md)); it
+never writes, moves, or deletes library files. A Lidarr trackfile path is mapped
+by swapping the `MINTARR_LIBRARY_LIDARR_ROOT` prefix for `MINTARR_LIBRARY_ROOT`,
+with containment + symlink-escape rejection; unmapped/unreadable files fall back
+to the Lidarr label.
 
 `MINTARR_LIDARR_COMPLETE_ROOT` must match Lidarr's view of the same files that
 Mintarr sees under `OUTPUT_BASE`. Keep the default if your existing remote path
@@ -100,6 +109,7 @@ Set `BASE_URL` if Mintarr is behind a reverse proxy or if Lidarr reaches Mintarr
 | `MINTARR_RELEASE_SWITCH_STRATEGY` | F5.1 Lidarr release-switch strategy: `disabled`, `review`, or `auto_high_confidence` | `disabled` |
 | `REVIEW_RETENTION_DAYS` | Days a REVIEW_REQUIRED record is held before auto-expiry | `30` |
 | `MINTARR_CD_RIP_SCORING` | Opt-in (F5.3): let CD-rip evidence adjust the audio-axis decision. Default-off — evidence stays advisory until enabled. | `false` |
+| `MINTARR_MEASURED_EXISTING` | Opt-in (F5.4): compare candidates against the **measured** existing library quality instead of Lidarr's quality label. Requires `MINTARR_LIBRARY_ROOT`/`MINTARR_LIBRARY_LIDARR_ROOT`; default-off. | `false` |
 | `MINTARR_RESCUE_RESCAN_ENABLED` | Allow Mintarr to trigger Lidarr `RescanFolder` as a fallback import path | `true` in current runtime; target public default `false` |
 
 `MINTARR_RELEASE_SWITCH_STRATEGY` controls the only path where Mintarr may change
@@ -122,6 +132,16 @@ an AccurateRip-verified rip can move a borderline `REVIEW_REQUIRED` to
 `ACCEPT_PROVISIONAL`, and a log-backed AccurateRip mismatch routes
 `ACCEPT`/`ACCEPT_PROVISIONAL` to `REVIEW_REQUIRED`. It never overrides a
 hard-gate `BLOCK` or identity `WRONG_ALBUM`, and never blocks on its own.
+
+With `MINTARR_MEASURED_EXISTING=true` (and the library mounted, see §3.3), the
+decision compares the candidate against the **measured** existing-library quality
+([F5.4 library evidence index](../design/F5.4_LIBRARY_EVIDENCE_INDEX.md)) rather
+than trusting Lidarr's quality label: precedence is hard validity → authenticity
+→ lossless tier → completeness. A candidate that would replace measured-better
+existing audio (a downgrade) is routed to `REVIEW_REQUIRED`; a genuine upgrade
+over a measured-worse (or measured-fake) existing release can lift a borderline
+review. It never overrides a hard-gate `BLOCK` or identity `WRONG_ALBUM`, and
+falls back to the label path when no measured evidence is available.
 
 The `ctdb` connector adds an **optional, default-off** online cross-check
 (AccurateRip + CTDB). Enable it from the Integrations dashboard. It is opt-in

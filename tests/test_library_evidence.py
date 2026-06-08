@@ -211,3 +211,48 @@ def test_library_evidence_upsert_replaces():
         {"trackfile_id": 99, "album_id": 1, "status": "measured", "bit_depth": 24}
     )
     assert state_db.get_library_evidence(99)["bit_depth"] == 24
+
+
+# ---- is_measured_row_fresh (F5.4 slice 3b decision-time guard) ----
+
+
+def _fresh_row(tmp_path, monkeypatch):
+    monkeypatch.setenv("MINTARR_LIBRARY_ROOT", str(tmp_path))
+    f = tmp_path / "track.flac"
+    f.write_bytes(b"DATA")
+    st = f.stat()
+    return {
+        "status": "measured",
+        "sensor_version": le.SENSOR_VERSION,
+        "path": str(f),
+        "size": st.st_size,
+        "mtime": st.st_mtime,
+    }
+
+
+def test_fresh_row_is_fresh(tmp_path, monkeypatch):
+    assert le.is_measured_row_fresh(_fresh_row(tmp_path, monkeypatch)) is True
+
+
+def test_unmounted_is_not_fresh(tmp_path, monkeypatch):
+    row = _fresh_row(tmp_path, monkeypatch)
+    monkeypatch.delenv("MINTARR_LIBRARY_ROOT", raising=False)
+    assert le.is_measured_row_fresh(row) is False
+
+
+def test_old_sensor_version_is_not_fresh(tmp_path, monkeypatch):
+    row = _fresh_row(tmp_path, monkeypatch)
+    row["sensor_version"] = "mintarr-library-evidence OLD"
+    assert le.is_measured_row_fresh(row) is False
+
+
+def test_changed_file_is_not_fresh(tmp_path, monkeypatch):
+    row = _fresh_row(tmp_path, monkeypatch)
+    (tmp_path / "track.flac").write_bytes(b"DATA-CHANGED-bigger")  # size/mtime differ
+    assert le.is_measured_row_fresh(row) is False
+
+
+def test_unmeasured_row_is_not_fresh(tmp_path, monkeypatch):
+    row = _fresh_row(tmp_path, monkeypatch)
+    row["status"] = "unmeasured"
+    assert le.is_measured_row_fresh(row) is False

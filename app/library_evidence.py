@@ -71,6 +71,35 @@ def stat_for_freshness(
     return str(mapped), st.st_size, st.st_mtime
 
 
+def is_measured_row_fresh(row: dict) -> bool:
+    """True iff a stored measurement is safe to use for a decision *right now*.
+
+    Guards against stale historical evidence becoming decision-active (F5.4 3b):
+    the library must be mounted now, the stored ``sensor_version`` must be
+    current, and the file on disk must still match the stored size + mtime inside
+    the mount (re-stat, no probing). Anything else ⇒ not fresh ⇒ caller falls
+    back to the Lidarr label.
+    """
+    root = configured_library_root()
+    if not root or row.get("status") != "measured":
+        return False
+    if row.get("sensor_version") != SENSOR_VERSION:
+        return False
+    path = row.get("path")
+    if not path:
+        return False
+    candidate = Path(path)
+    try:
+        if not _is_relative_to(candidate.resolve(), Path(root).resolve()):
+            return False
+        if candidate.is_symlink() or not candidate.is_file():
+            return False
+        st = candidate.stat()
+    except OSError:
+        return False
+    return st.st_size == row.get("size") and st.st_mtime == row.get("mtime")
+
+
 def resolve_library_path(
     lidarr_path: str, *, library_root: str, lidarr_root: str
 ) -> tuple[Path | None, str | None]:

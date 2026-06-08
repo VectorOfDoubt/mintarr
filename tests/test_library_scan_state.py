@@ -196,3 +196,72 @@ def test_active_library_scan_run_tracks_newest_active_only(tmp_path):
 
     state_db.update_library_scan_run_state(first["id"], "completed")
     assert state_db.get_active_library_scan_run() is None
+
+
+# ---- F5.4: reconcile orphaned scan runs after an abnormal worker death ----
+
+
+def test_reconcile_fails_run_with_terminal_job(tmp_path):
+    _fresh_db(tmp_path)
+    run = state_db.enqueue_library_scan(mode="cheap")
+    assert run is not None
+    state_db.update_library_scan_run_state(run["id"], "running")
+    # backing job recovered to a terminal state, but the run row was left running
+    state_db.mark_job_failed(run["worker_job_id"], "lease expired")
+
+    assert state_db.reconcile_orphaned_library_scan_runs() == 1
+
+    reconciled = state_db.get_library_scan_run(run["id"])
+    assert reconciled["state"] == "failed"
+    assert reconciled["finished_at"] is not None
+    # the run had no last_error of its own → the reconcile reason is recorded
+    assert "worker restarted" in reconciled["last_error"]
+    # the run no longer blocks a fresh scan
+    assert state_db.get_active_library_scan_run() is None
+    second = state_db.enqueue_library_scan(mode="cheap")
+    assert second["id"] != run["id"]
+
+
+def test_reconcile_fails_run_with_missing_job(tmp_path):
+    _fresh_db(tmp_path)
+    run = state_db.enqueue_library_scan(mode="cheap")
+    state_db.update_library_scan_run_state(run["id"], "running")
+    with state_db._connect() as conn:
+        conn.execute("DELETE FROM jobs WHERE id = ?", (run["worker_job_id"],))
+
+    assert state_db.reconcile_orphaned_library_scan_runs() == 1
+    assert state_db.get_library_scan_run(run["id"])["state"] == "failed"
+
+
+def test_reconcile_leaves_queued_job_run_alone(tmp_path):
+    _fresh_db(tmp_path)
+    run = state_db.enqueue_library_scan(mode="cheap")  # run + job both queued
+
+    assert state_db.reconcile_orphaned_library_scan_runs() == 0
+
+    still = state_db.get_library_scan_run(run["id"])
+    assert still["state"] == "queued"
+    assert state_db.get_active_library_scan_run()["id"] == run["id"]
+
+
+def test_reconcile_leaves_running_job_run_alone(tmp_path):
+    _fresh_db(tmp_path)
+    run = state_db.enqueue_library_scan(mode="cheap")
+    # a live worker claimed the job (now running) — must not be reconciled away
+    state_db.dequeue_next_job(
+        worker_id="scan-w", include_types=(state_db.LIBRARY_SCAN_JOB_TYPE,)
+    )
+    state_db.update_library_scan_run_state(run["id"], "running")
+
+    assert state_db.reconcile_orphaned_library_scan_runs() == 0
+    assert state_db.get_library_scan_run(run["id"])["state"] == "running"
+
+
+def test_reconcile_ignores_terminal_runs(tmp_path):
+    _fresh_db(tmp_path)
+    run = state_db.enqueue_library_scan(mode="cheap")
+    state_db.mark_job_completed(run["worker_job_id"], result_state="done")
+    state_db.update_library_scan_run_state(run["id"], "completed")
+
+    assert state_db.reconcile_orphaned_library_scan_runs() == 0
+    assert state_db.get_library_scan_run(run["id"])["state"] == "completed"

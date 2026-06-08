@@ -588,6 +588,22 @@ def _execute_library_scan_job(job: dict) -> None:
 
 def _scan_loop() -> None:
     log.info("library scan worker starting (worker_id=%s)", _worker_id)
+    # A scan run whose worker died (e.g. a container restart) is left active with a
+    # terminal/absent backing job, blocking every future scan via dedupe. Clear
+    # those once at startup so a fresh scan can be queued.
+    # NOTE: this relies on the import worker's boot recovery (which fails the stale
+    # backing job) running before this reconcile — true today since both start in
+    # one process. If the workers are ever split into separate processes, this
+    # reconcile must first run the same stale-job recovery (or treat an expired
+    # backing lease as orphaned) instead of assuming the job is already terminal.
+    try:
+        reconciled = state_db.reconcile_orphaned_library_scan_runs()
+        if reconciled:
+            log.info(
+                "reconciled %d orphaned library scan run(s) at startup", reconciled
+            )
+    except Exception:
+        log.exception("library scan run reconciliation failed at startup")
     while not _shutdown_event.is_set():
         try:
             job = state_db.dequeue_next_job(

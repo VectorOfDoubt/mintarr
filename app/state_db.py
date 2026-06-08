@@ -1446,6 +1446,60 @@ def get_library_scan_run(run_id: int) -> dict | None:
         return None
 
 
+def reconcile_orphaned_library_scan_runs() -> int:
+    """Fail active scan runs whose backing F2 job is terminal or missing.
+
+    On an abnormal worker death (e.g. a container restart mid-scan), boot recovery
+    fails the ``library_scan`` job, but nothing updates the ``library_scan_runs``
+    row — it stays ``running``/``cancelling`` forever and blocks every future scan
+    via the active-run dedupe. Called at scan-worker startup: any active run whose
+    job is terminal or gone is marked ``failed`` so a fresh scan can start. A run
+    whose job is still ``queued``/``running`` is left alone — a live worker (or
+    stale-job recovery) still owns it. Returns the number of runs reconciled.
+    """
+    if not _ensure_initialized():
+        return 0
+    try:
+        now = time.time()
+        with _lock, _connect() as conn:
+            placeholders = ",".join("?" * len(ACTIVE_LIBRARY_SCAN_STATES))
+            rows = conn.execute(
+                f"""
+                SELECT id, worker_job_id FROM library_scan_runs
+                WHERE state IN ({placeholders})
+                """,
+                ACTIVE_LIBRARY_SCAN_STATES,
+            ).fetchall()
+            orphaned: list[int] = []
+            for row in rows:
+                job_id = row["worker_job_id"]
+                if job_id is None:
+                    orphaned.append(int(row["id"]))
+                    continue
+                job = conn.execute(
+                    "SELECT state FROM jobs WHERE id = ?", (int(job_id),)
+                ).fetchone()
+                if job is None or job["state"] in TERMINAL_JOB_STATES:
+                    orphaned.append(int(row["id"]))
+            for run_id in orphaned:
+                conn.execute(
+                    """
+                    UPDATE library_scan_runs
+                    SET state = 'failed',
+                        finished_at = COALESCE(finished_at, ?),
+                        updated_at = ?,
+                        last_error = COALESCE(last_error,
+                          'worker restarted; backing job no longer running')
+                    WHERE id = ?
+                    """,
+                    (now, now, run_id),
+                )
+            return len(orphaned)
+    except Exception:
+        log.exception("state_db.reconcile_orphaned_library_scan_runs failed")
+        return 0
+
+
 def get_active_library_scan_run() -> dict | None:
     """Return the newest active library scan run, if any."""
     if not _ensure_initialized():

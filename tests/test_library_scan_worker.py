@@ -673,3 +673,22 @@ def test_cheap_scan_cancel_drains_inflight_and_terminalizes(monkeypatch, tmp_pat
     assert final_run["state"] == "cancelled"
     assert final_job["state"] == "cancelled"
     assert finished["count"] >= 1  # in-flight probe(s) drained, not killed
+
+
+def test_scan_loop_reconciles_orphaned_runs_at_startup(monkeypatch, tmp_path):
+    # The worker must clear orphaned runs once on startup (before claiming work),
+    # so a scan orphaned by a previous process can't block all future scans.
+    _fresh_db(tmp_path)
+    calls = {"n": 0}
+    monkeypatch.setattr(
+        state_db,
+        "reconcile_orphaned_library_scan_runs",
+        lambda: calls.__setitem__("n", calls["n"] + 1) or 1,
+    )
+    monkeypatch.setattr(
+        library_scan_worker._shutdown_event, "is_set", lambda: True
+    )  # exit the loop immediately after the startup reconcile
+
+    library_scan_worker._scan_loop()
+
+    assert calls["n"] == 1

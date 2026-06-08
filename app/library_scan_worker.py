@@ -16,6 +16,7 @@ import uuid
 from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 from collections.abc import Callable
 from pathlib import Path
+from typing import NamedTuple
 
 import requests
 
@@ -94,6 +95,26 @@ def _cheap_scan_workers() -> int:
             return 1
     cpus = os.cpu_count() or 1
     return max(1, min(4, cpus // 4))
+
+
+def _scan_workers_from_env(env: str, default: int, cap: int) -> int:
+    raw = os.environ.get(env)
+    if raw:
+        try:
+            return max(1, min(int(raw), cap))
+        except ValueError:
+            return 1
+    return default
+
+
+def _metadata_scan_workers() -> int:
+    """Metadata tier (ffprobe, header reads only) — light, can fan out."""
+    return _scan_workers_from_env("MINTARR_LIBRARY_METADATA_SCAN_WORKERS", 8, 16)
+
+
+def _integrity_scan_workers() -> int:
+    """Integrity tier (flac -t, full-file decode) — NAS-I/O-bound, stays modest."""
+    return _scan_workers_from_env("MINTARR_LIBRARY_INTEGRITY_SCAN_WORKERS", 4, 16)
 
 
 def _lidarr_db_path() -> Path:
@@ -285,6 +306,8 @@ def _measure_trackfile_item(run_id: int, tf: dict) -> str:
 
     resolved_path, size, mtime = library_evidence.stat_for_freshness(path)
     prior = state_db.get_library_evidence(int(trackfile_id))
+    # The legacy cheap tier measures metadata *and* integrity, so it only skips
+    # when both tiers are already fresh for this file.
     if (
         prior
         and prior.get("status") == "measured"
@@ -292,7 +315,9 @@ def _measure_trackfile_item(run_id: int, tf: dict) -> str:
         and prior.get("path") == resolved_path
         and prior.get("size") == size
         and prior.get("mtime") == mtime
-        and prior.get("sensor_version") == library_evidence.SENSOR_VERSION
+        and prior.get("sensor_version") == library_evidence.METADATA_SENSOR_VERSION
+        and prior.get("integrity_sensor_version")
+        == library_evidence.INTEGRITY_SENSOR_VERSION
     ):
         state_db.upsert_library_scan_item(
             run_id, int(trackfile_id), album_id=album_id, state="fresh"
@@ -316,7 +341,8 @@ def _measure_trackfile_item(run_id: int, tf: dict) -> str:
             "lossless": measurement.lossless,
             "integrity_ok": measurement.integrity_ok,
             "checksum_ok": measurement.checksum_ok,
-            "sensor_version": library_evidence.SENSOR_VERSION,
+            "sensor_version": library_evidence.METADATA_SENSOR_VERSION,
+            "integrity_sensor_version": library_evidence.INTEGRITY_SENSOR_VERSION,
         }
     )
     state = "measured" if measurement.status == "measured" else "unmeasured"
@@ -324,6 +350,102 @@ def _measure_trackfile_item(run_id: int, tf: dict) -> str:
         run_id, int(trackfile_id), album_id=album_id, state=state
     )
     return state
+
+
+def _measure_metadata_item(run_id: int, tf: dict) -> str:
+    """Metadata tier (ffprobe only): fast lossless-tier axis. Integrity stays unknown."""
+    trackfile_id = tf.get("id")
+    path = tf.get("path")
+    album_id = tf.get("albumId") or tf.get("album_id")
+    if trackfile_id is None or not path:
+        return "unmeasured"
+    resolved_path, size, mtime = library_evidence.stat_for_freshness(path)
+    prior = state_db.get_library_evidence(int(trackfile_id))
+    if (
+        prior
+        and prior.get("status") == "measured"
+        and resolved_path is not None
+        and prior.get("path") == resolved_path
+        and prior.get("size") == size
+        and prior.get("mtime") == mtime
+        and prior.get("sensor_version") == library_evidence.METADATA_SENSOR_VERSION
+    ):
+        state_db.upsert_library_scan_item(
+            run_id, int(trackfile_id), album_id=album_id, state="fresh"
+        )
+        return "fresh"
+
+    measurement = library_evidence.measure_trackfile_metadata(path)
+    state_db.upsert_library_metadata(
+        {
+            "trackfile_id": trackfile_id,
+            "album_id": album_id,
+            "path": resolved_path or path,
+            "size": size,
+            "mtime": mtime,
+            "status": measurement.status,
+            "reason": measurement.reason,
+            "codec": measurement.codec,
+            "sample_rate": measurement.sample_rate,
+            "bit_depth": measurement.bit_depth,
+            "channels": measurement.channels,
+            "lossless": measurement.lossless,
+            "sensor_version": library_evidence.METADATA_SENSOR_VERSION,
+        }
+    )
+    state = "measured" if measurement.status == "measured" else "unmeasured"
+    state_db.upsert_library_scan_item(
+        run_id, int(trackfile_id), album_id=album_id, state=state
+    )
+    return state
+
+
+def _measure_integrity_item(run_id: int, tf: dict) -> str:
+    """Integrity tier (flac -t): only on metadata-fresh rows; skips if already fresh."""
+    trackfile_id = tf.get("id")
+    path = tf.get("path")
+    album_id = tf.get("albumId") or tf.get("album_id")
+    if trackfile_id is None or not path:
+        return "unmeasured"
+    trackfile_id = int(trackfile_id)
+    prior = state_db.get_library_evidence(trackfile_id)
+    # Integrity only runs on a fresh metadata row (we need the resolved file).
+    if not prior or not library_evidence.is_measured_row_fresh(prior):
+        state_db.upsert_library_scan_item(
+            run_id, trackfile_id, album_id=album_id, state="integrity_skipped"
+        )
+        return "unmeasured"
+    if library_evidence.is_integrity_row_fresh(prior):
+        state_db.upsert_library_scan_item(
+            run_id, trackfile_id, album_id=album_id, state="integrity_fresh"
+        )
+        return "fresh"
+
+    measurement = library_evidence.measure_trackfile_integrity(path)
+    if measurement.status != "measured":
+        # Transient flac -t failure/timeout: do NOT stamp the integrity sensor
+        # version, or is_integrity_row_fresh would read True and the next integrity
+        # scan would never retry. Leave library_evidence integrity stale/unknown;
+        # only the ledger records the attempt. (Non-FLAC returns "measured" with
+        # None/None = definitively not-applicable, and is stamped below.)
+        state_db.upsert_library_scan_item(
+            run_id, trackfile_id, album_id=album_id, state="integrity_unmeasured"
+        )
+        return "unmeasured"
+
+    state_db.update_library_integrity(
+        {
+            "trackfile_id": trackfile_id,
+            "album_id": album_id,
+            "integrity_ok": measurement.integrity_ok,
+            "checksum_ok": measurement.checksum_ok,
+            "integrity_sensor_version": library_evidence.INTEGRITY_SENSOR_VERSION,
+        }
+    )
+    state_db.upsert_library_scan_item(
+        run_id, trackfile_id, album_id=album_id, state="integrity_measured"
+    )
+    return "measured"
 
 
 def _measure_spectral_item(run_id: int, tf: dict) -> str:
@@ -406,15 +528,28 @@ def _count_scan_outcome(counters: dict, outcome: str) -> None:
         counters["unmeasured_items"] += 1
 
 
-def _execute_cheap_scan_items(
-    job_id: int, run_id: int, trackfiles: list[dict], counters: dict
+def _execute_parallel_scan_items(
+    job_id: int,
+    run_id: int,
+    trackfiles: list[dict],
+    counters: dict,
+    *,
+    mode: str,
+    workers: int,
+    measure_fn,
+    measuring_state: str,
 ) -> None:
-    workers = _cheap_scan_workers()
+    """Run a bounded-parallel tier scan. Shared by cheap/metadata/integrity modes.
+
+    ``measure_fn(run_id, tf) -> outcome`` does the per-item work; ``workers`` is
+    the per-tier parallelism; ``measuring_state`` is the ledger in-flight marker.
+    Import-yield, lease heartbeat, cancel drain and progress are tier-agnostic.
+    """
     total_items = len(trackfiles)
     pending: dict[Future[str], tuple[int, int | None]] = {}
     next_index = 0
     with ThreadPoolExecutor(
-        max_workers=workers, thread_name_prefix="library-cheap-scan"
+        max_workers=workers, thread_name_prefix=f"library-{mode}-scan"
     ) as pool:
         while pending or next_index < total_items:
             while len(pending) < workers and next_index < total_items:
@@ -428,15 +563,13 @@ def _execute_cheap_scan_items(
                 if trackfile_id is None:
                     counters["unmeasured_items"] += 1
                     counters["processed_items"] += 1
-                    _update_scan_progress(
-                        job_id, run_id, "cheap", counters, total_items
-                    )
+                    _update_scan_progress(job_id, run_id, mode, counters, total_items)
                     continue
                 trackfile_id_int = int(trackfile_id)
                 state_db.upsert_library_scan_item(
-                    run_id, trackfile_id_int, album_id=album_id, state="measuring"
+                    run_id, trackfile_id_int, album_id=album_id, state=measuring_state
                 )
-                future = pool.submit(_measure_trackfile_item, run_id, tf)
+                future = pool.submit(measure_fn, run_id, tf)
                 pending[future] = (trackfile_id_int, album_id)
 
             if not pending:
@@ -468,9 +601,27 @@ def _execute_cheap_scan_items(
                     )
                 finally:
                     counters["processed_items"] += 1
-                    _update_scan_progress(
-                        job_id, run_id, "cheap", counters, total_items
-                    )
+                    _update_scan_progress(job_id, run_id, mode, counters, total_items)
+
+
+class _ScanTier(NamedTuple):
+    """Per-mode scan config: parallelism, per-item measure fn, ledger marker."""
+
+    workers: Callable[[], int]
+    measure: Callable[[int, dict], str]
+    measuring: str
+
+
+# Non-spectral scan tiers. `cheap` is the legacy fused tier (metadata+integrity).
+_SCAN_TIERS: dict[str, _ScanTier] = {
+    "cheap": _ScanTier(_cheap_scan_workers, _measure_trackfile_item, "measuring"),
+    "metadata": _ScanTier(
+        _metadata_scan_workers, _measure_metadata_item, "metadata_measuring"
+    ),
+    "integrity": _ScanTier(
+        _integrity_scan_workers, _measure_integrity_item, "integrity_measuring"
+    ),
+}
 
 
 def _execute_library_scan_job(job: dict) -> None:
@@ -506,7 +657,19 @@ def _execute_library_scan_job(job: dict) -> None:
         state_db.update_library_scan_run_state(run_id, "running", totals=counters)
 
         if mode != "spectral_missing":
-            _execute_cheap_scan_items(job_id, run_id, trackfiles, counters)
+            tier = _SCAN_TIERS.get(mode)
+            if tier is None:
+                raise RuntimeError(f"unknown library scan mode: {mode}")
+            _execute_parallel_scan_items(
+                job_id,
+                run_id,
+                trackfiles,
+                counters,
+                mode=mode,
+                workers=tier.workers(),
+                measure_fn=tier.measure,
+                measuring_state=tier.measuring,
+            )
             state_db.update_library_scan_run_state(run_id, "completed", totals=counters)
             state_db.mark_job_completed(
                 job_id,

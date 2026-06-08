@@ -113,7 +113,7 @@ def _seed_real(tmp_path, album_id, bit_depth, sample_rate, *, trackfile_id):
             "sample_rate": sample_rate,
             "lossless": True,
             "integrity_ok": True,
-            "sensor_version": library_evidence.SENSOR_VERSION,
+            "sensor_version": library_evidence.METADATA_SENSOR_VERSION,
         }
     )
     return f

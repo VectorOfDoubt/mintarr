@@ -3174,9 +3174,12 @@ def _record_existing_library_evidence(album_id, trackfiles) -> None:
                 and prior.get("path") == resolved_path
                 and prior.get("size") == size
                 and prior.get("mtime") == mtime
-                and prior.get("sensor_version") == library_evidence.SENSOR_VERSION
+                and prior.get("sensor_version")
+                == library_evidence.METADATA_SENSOR_VERSION
+                and prior.get("integrity_sensor_version")
+                == library_evidence.INTEGRITY_SENSOR_VERSION
             ):
-                continue  # path, size, mtime + sensor version all fresh — skip
+                continue  # both tiers fresh for this file — skip
             measurement = library_evidence.measure_trackfile(path)
             state_db.upsert_library_evidence(
                 {
@@ -3194,7 +3197,8 @@ def _record_existing_library_evidence(album_id, trackfiles) -> None:
                     "lossless": measurement.lossless,
                     "integrity_ok": measurement.integrity_ok,
                     "checksum_ok": measurement.checksum_ok,
-                    "sensor_version": library_evidence.SENSOR_VERSION,
+                    "sensor_version": library_evidence.METADATA_SENSOR_VERSION,
+                    "integrity_sensor_version": library_evidence.INTEGRITY_SENSOR_VERSION,
                 }
             )
             _record_existing_spectral_evidence(album_id, trackfile_id, path)
@@ -6117,7 +6121,7 @@ def library_scan_start():
         body = request.get_json(silent=True) or {}
         mode = str(body.get("mode") or request.args.get("mode") or "cheap").strip()
         mode = mode or "cheap"
-        if mode not in {"cheap", "spectral_missing"}:
+        if mode not in {"cheap", "metadata", "integrity", "spectral_missing"}:
             return jsonify({"error": "unsupported scan mode", "mode": mode}), 400
         if mode == "spectral_missing":
             import library_evidence

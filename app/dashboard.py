@@ -1648,7 +1648,7 @@ def _dashboard_measured_row_current(row: dict, library_evidence_mod) -> bool:
     """
     return (
         row.get("status") == "measured"
-        and row.get("sensor_version") == library_evidence_mod.SENSOR_VERSION
+        and row.get("sensor_version") == library_evidence_mod.METADATA_SENSOR_VERSION
     )
 
 

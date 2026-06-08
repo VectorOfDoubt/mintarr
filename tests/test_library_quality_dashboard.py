@@ -21,7 +21,7 @@ def _seed(trackfile_id: int, album_id: int, **overrides):
         "bit_depth": 24,
         "lossless": True,
         "integrity_ok": True,
-        "sensor_version": library_evidence.SENSOR_VERSION,
+        "sensor_version": library_evidence.METADATA_SENSOR_VERSION,
     }
     row.update(overrides)
     state_db.upsert_library_evidence(row)

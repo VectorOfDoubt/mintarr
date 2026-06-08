@@ -192,7 +192,7 @@ def test_library_evidence_storage_round_trip():
             "channels": 2,
             "lossless": True,
             "integrity_ok": True,
-            "sensor_version": le.SENSOR_VERSION,
+            "sensor_version": le.METADATA_SENSOR_VERSION,
             "evidence": {"x": 1},
         }
     )
@@ -223,7 +223,7 @@ def _fresh_row(tmp_path, monkeypatch):
     st = f.stat()
     return {
         "status": "measured",
-        "sensor_version": le.SENSOR_VERSION,
+        "sensor_version": le.METADATA_SENSOR_VERSION,
         "path": str(f),
         "size": st.st_size,
         "mtime": st.st_mtime,
@@ -488,7 +488,7 @@ def test_library_evidence_checksum_round_trip():
             "status": "measured",
             "integrity_ok": True,
             "checksum_ok": False,
-            "sensor_version": le.SENSOR_VERSION,
+            "sensor_version": le.METADATA_SENSOR_VERSION,
         }
     )
     row = state_db.get_library_evidence(555)

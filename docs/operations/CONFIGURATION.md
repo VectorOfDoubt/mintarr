@@ -411,7 +411,9 @@ In production, leave the worker enabled. Mintarr's worker is N=1 (single thread)
 |---|---|---|
 | `MINTARR_LIBRARY_SCAN_SCHEDULE_ENABLED` | Start Mintarr's internal scheduled cheap library-quality scan thread | `false` |
 | `MINTARR_LIBRARY_SCAN_INTERVAL_HOURS` | Hours between scheduled cheap scans | `168` |
-| `MINTARR_LIBRARY_SCAN_WORKERS` | Parallel cheap-scan workers for `ffprobe` + `flac -t`; unset uses a conservative CPU-based default | auto (`min(4, cpu_count/4)`) |
+| `MINTARR_LIBRARY_SCAN_WORKERS` | Parallel workers for the legacy fused `cheap` scan (`ffprobe` + `flac -t`); unset uses a conservative CPU-based default | auto (`min(4, cpu_count/4)`) |
+| `MINTARR_LIBRARY_METADATA_SCAN_WORKERS` | Parallel workers for the `metadata` scan (ffprobe only, header reads — light, can fan out) | `8` (cap 16) |
+| `MINTARR_LIBRARY_INTEGRITY_SCAN_WORKERS` | Parallel workers for the `integrity` scan (`flac -t`, full-file decode — NAS/disk-I/O-bound, keep modest) | `4` (cap 16) |
 
 Scheduled library scans enqueue the same low-priority `library_scan` job as the
 operator-triggered `/library/scan` endpoint. The scheduler is disabled by
@@ -425,6 +427,13 @@ four. Increase `MINTARR_LIBRARY_SCAN_WORKERS` only if your storage can handle
 the additional concurrent reads; lower it to `1` for very slow disks or network
 mounts. If import work appears, the scan stops starting new items and lets only
 already-started probes finish.
+
+The scan is tiered (see [F5.4 scan tiers](../design/F5.4_SCAN_TIERS.md)). The fast
+`metadata` mode runs ffprobe only (the lossless-tier axis) and can fan out
+(`MINTARR_LIBRARY_METADATA_SCAN_WORKERS`, default 8); the heavy `integrity` mode
+runs `flac -t` (full-file decode) only on metadata-fresh rows and stays modest
+(`MINTARR_LIBRARY_INTEGRITY_SCAN_WORKERS`, default 4) because it is I/O-bound.
+`cheap` is the legacy fused tier (metadata + integrity in one pass).
 
 Background FLAC Detective over the existing library is separate from scheduled
 cheap scans. To run it, enable both `MINTARR_LIBRARY_SPECTRAL=true` and
@@ -564,7 +573,9 @@ MINTARR_DISABLE_WORKER=false
 # Scheduled library scans
 MINTARR_LIBRARY_SCAN_SCHEDULE_ENABLED=false
 MINTARR_LIBRARY_SCAN_INTERVAL_HOURS=168
-MINTARR_LIBRARY_SCAN_WORKERS=       # auto: min(4, cpu_count/4)
+MINTARR_LIBRARY_SCAN_WORKERS=       # auto: min(4, cpu_count/4) — legacy cheap tier
+MINTARR_LIBRARY_METADATA_SCAN_WORKERS=8    # ffprobe tier (cap 16)
+MINTARR_LIBRARY_INTEGRITY_SCAN_WORKERS=4   # flac -t tier (cap 16)
 
 # Scheduled backups
 MINTARR_BACKUP_SCHEDULE_ENABLED=false

@@ -155,3 +155,22 @@ def test_library_scan_cancel_invalid_run_id_is_bad_request():
     )
 
     assert resp.status_code == 400
+
+
+def test_start_scan_accepts_metadata_and_integrity_modes():
+    for mode in ("metadata", "integrity"):
+        # fresh client/run each iteration; cancel any active run to avoid dedupe
+        client = server.app.test_client()
+        active = state_db.get_active_library_scan_run()
+        if active:
+            state_db.request_library_scan_cancel(active["id"])
+            state_db.update_library_scan_run_state(active["id"], "cancelled")
+        resp = client.post("/library/scan", headers=_headers(), json={"mode": mode})
+        assert resp.status_code == 202, mode
+        assert resp.get_json()["run"]["mode"] == mode
+
+
+def test_start_scan_rejects_unknown_mode():
+    client = server.app.test_client()
+    resp = client.post("/library/scan", headers=_headers(), json={"mode": "bogus"})
+    assert resp.status_code == 400

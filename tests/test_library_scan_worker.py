@@ -212,7 +212,9 @@ def test_library_scan_job_skips_fresh_evidence(monkeypatch, tmp_path):
             "size": 99,
             "mtime": 5.0,
             "status": "measured",
-            "sensor_version": library_evidence.SENSOR_VERSION,
+            "sensor_version": library_evidence.METADATA_SENSOR_VERSION,
+            # cheap skips only when BOTH tiers are fresh.
+            "integrity_sensor_version": library_evidence.INTEGRITY_SENSOR_VERSION,
         }
     )
     monkeypatch.setattr(
@@ -335,7 +337,7 @@ def test_spectral_scan_measures_stale_spectral_only(monkeypatch, tmp_path):
             "status": "measured",
             "lossless": True,
             "integrity_ok": True,
-            "sensor_version": library_evidence.SENSOR_VERSION,
+            "sensor_version": library_evidence.METADATA_SENSOR_VERSION,
         }
     )
     monkeypatch.setattr(
@@ -416,7 +418,7 @@ def test_spectral_scan_uses_ledger_to_skip_completed_item(monkeypatch, tmp_path)
             "album_id": 802,
             "path": "/lib/Artist/03.flac",
             "status": "measured",
-            "sensor_version": library_evidence.SENSOR_VERSION,
+            "sensor_version": library_evidence.METADATA_SENSOR_VERSION,
         }
     )
     monkeypatch.setattr(
@@ -450,7 +452,7 @@ def test_spectral_scan_waits_before_detective_when_import_active(monkeypatch, tm
             "album_id": 803,
             "path": "/lib/Artist/04.flac",
             "status": "measured",
-            "sensor_version": library_evidence.SENSOR_VERSION,
+            "sensor_version": library_evidence.METADATA_SENSOR_VERSION,
         }
     )
     monkeypatch.setattr(
@@ -502,7 +504,7 @@ def test_spectral_scan_extends_lease_before_detective(monkeypatch, tmp_path):
             "album_id": 804,
             "path": "/lib/Artist/05.flac",
             "status": "measured",
-            "sensor_version": library_evidence.SENSOR_VERSION,
+            "sensor_version": library_evidence.METADATA_SENSOR_VERSION,
         }
     )
     monkeypatch.setattr(
@@ -692,3 +694,138 @@ def test_scan_loop_reconciles_orphaned_runs_at_startup(monkeypatch, tmp_path):
     library_scan_worker._scan_loop()
 
     assert calls["n"] == 1
+
+
+# ---- F5.4 scan tiers (1b-ii): metadata / integrity worker modes ----
+
+
+def test_per_tier_worker_defaults(monkeypatch):
+    monkeypatch.delenv("MINTARR_LIBRARY_METADATA_SCAN_WORKERS", raising=False)
+    monkeypatch.delenv("MINTARR_LIBRARY_INTEGRITY_SCAN_WORKERS", raising=False)
+    assert library_scan_worker._metadata_scan_workers() == 8
+    assert library_scan_worker._integrity_scan_workers() == 4
+    monkeypatch.setenv("MINTARR_LIBRARY_METADATA_SCAN_WORKERS", "99")
+    assert library_scan_worker._metadata_scan_workers() == 16  # capped
+
+
+def test_metadata_scan_writes_metadata_leaves_integrity_unknown(monkeypatch, tmp_path):
+    _fresh_db(tmp_path)
+    run = state_db.enqueue_library_scan(mode="metadata")
+    monkeypatch.setattr(
+        library_scan_worker,
+        "_fetch_lidarr_trackfiles",
+        lambda: [{"id": 1, "albumId": 10, "path": "/music/a.flac"}],
+    )
+    monkeypatch.setattr(
+        library_evidence, "stat_for_freshness", lambda p: ("/lib/a.flac", 10, 1.0)
+    )
+    monkeypatch.setattr(
+        library_evidence,
+        "measure_trackfile_metadata",
+        lambda path: library_evidence.TrackMeasurement(
+            status="measured",
+            codec="flac",
+            sample_rate=96000,
+            bit_depth=24,
+            lossless=True,
+        ),
+    )
+    library_scan_worker._execute_library_scan_job(_claim_scan_job(run))
+    row = state_db.get_library_evidence(1)
+    assert row["bit_depth"] == 24
+    assert row["sensor_version"] == library_evidence.METADATA_SENSOR_VERSION
+    assert row["integrity_ok"] is None  # unknown — metadata never sets it
+    assert row["integrity_sensor_version"] is None
+    assert state_db.get_library_scan_run(run["id"])["state"] == "completed"
+
+
+def test_integrity_scan_skips_when_metadata_not_fresh(monkeypatch, tmp_path):
+    _fresh_db(tmp_path)
+    run = state_db.enqueue_library_scan(mode="integrity")
+    monkeypatch.setattr(
+        library_scan_worker,
+        "_fetch_lidarr_trackfiles",
+        lambda: [{"id": 2, "albumId": 10, "path": "/music/b.flac"}],
+    )
+    monkeypatch.setattr(library_evidence, "is_measured_row_fresh", lambda r: False)
+    called = {"n": 0}
+    monkeypatch.setattr(
+        library_evidence,
+        "measure_trackfile_integrity",
+        lambda p: called.__setitem__("n", called["n"] + 1),
+    )
+    library_scan_worker._execute_library_scan_job(_claim_scan_job(run))
+    assert called["n"] == 0  # integrity never decodes without fresh metadata
+    _, items = state_db.list_library_scan_items(run["id"])
+    assert items[0]["state"] == "integrity_skipped"
+
+
+def test_integrity_scan_measures_metadata_fresh_row(monkeypatch, tmp_path):
+    _fresh_db(tmp_path)
+    run = state_db.enqueue_library_scan(mode="integrity")
+    state_db.upsert_library_metadata(
+        {
+            "trackfile_id": 3,
+            "album_id": 10,
+            "status": "measured",
+            "codec": "flac",
+            "sensor_version": library_evidence.METADATA_SENSOR_VERSION,
+        }
+    )
+    monkeypatch.setattr(
+        library_scan_worker,
+        "_fetch_lidarr_trackfiles",
+        lambda: [{"id": 3, "albumId": 10, "path": "/music/c.flac"}],
+    )
+    monkeypatch.setattr(library_evidence, "is_measured_row_fresh", lambda r: True)
+    monkeypatch.setattr(library_evidence, "is_integrity_row_fresh", lambda r: False)
+    monkeypatch.setattr(
+        library_evidence,
+        "measure_trackfile_integrity",
+        lambda p: library_evidence.IntegrityMeasurement(
+            status="measured", integrity_ok=True, checksum_ok=False
+        ),
+    )
+    library_scan_worker._execute_library_scan_job(_claim_scan_job(run))
+    row = state_db.get_library_evidence(3)
+    assert row["integrity_ok"] == 1
+    assert row["checksum_ok"] == 0
+    assert row["integrity_sensor_version"] == library_evidence.INTEGRITY_SENSOR_VERSION
+    # metadata preserved
+    assert row["sensor_version"] == library_evidence.METADATA_SENSOR_VERSION
+
+
+def test_integrity_scan_unmeasured_does_not_stamp_sensor(monkeypatch, tmp_path):
+    # Transient flac -t failure: library_evidence integrity must stay unknown so the
+    # next integrity scan retries — never stamped fresh on an unmeasured result.
+    _fresh_db(tmp_path)
+    run = state_db.enqueue_library_scan(mode="integrity")
+    state_db.upsert_library_metadata(
+        {
+            "trackfile_id": 4,
+            "album_id": 10,
+            "status": "measured",
+            "codec": "flac",
+            "sensor_version": library_evidence.METADATA_SENSOR_VERSION,
+        }
+    )
+    monkeypatch.setattr(
+        library_scan_worker,
+        "_fetch_lidarr_trackfiles",
+        lambda: [{"id": 4, "albumId": 10, "path": "/music/d.flac"}],
+    )
+    monkeypatch.setattr(library_evidence, "is_measured_row_fresh", lambda r: True)
+    monkeypatch.setattr(library_evidence, "is_integrity_row_fresh", lambda r: False)
+    monkeypatch.setattr(
+        library_evidence,
+        "measure_trackfile_integrity",
+        lambda p: library_evidence.IntegrityMeasurement(
+            status="unmeasured", reason="integrity probe failed"
+        ),
+    )
+    library_scan_worker._execute_library_scan_job(_claim_scan_job(run))
+    row = state_db.get_library_evidence(4)
+    assert row["integrity_sensor_version"] is None  # not stamped → will retry
+    assert row["integrity_ok"] is None
+    _, items = state_db.list_library_scan_items(run["id"])
+    assert items[0]["state"] == "integrity_unmeasured"

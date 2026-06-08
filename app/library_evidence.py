@@ -138,7 +138,7 @@ def is_measured_row_fresh(row: dict) -> bool:
     root = configured_library_root()
     if not root or row.get("status") != "measured":
         return False
-    if row.get("sensor_version") != SENSOR_VERSION:
+    if row.get("sensor_version") != METADATA_SENSOR_VERSION:
         return False
     path = row.get("path")
     if not path:

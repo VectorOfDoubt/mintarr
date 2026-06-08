@@ -52,7 +52,7 @@ def test_records_measured_evidence(monkeypatch):
     assert row["size"] == 123
     assert row["mtime"] == 1000.0
     assert row["bit_depth"] == 24
-    assert row["sensor_version"] == library_evidence.SENSOR_VERSION
+    assert row["sensor_version"] == library_evidence.METADATA_SENSOR_VERSION
 
 
 def test_skips_when_fully_fresh(monkeypatch):

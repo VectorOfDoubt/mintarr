@@ -70,6 +70,38 @@ def test_start_library_scan_rejects_unsupported_mode():
     assert resp.status_code == 400
 
 
+def test_start_spectral_scan_requires_explicit_opt_in(monkeypatch):
+    client = server.app.test_client()
+    monkeypatch.delenv("MINTARR_LIBRARY_SPECTRAL", raising=False)
+    monkeypatch.delenv("MINTARR_LIBRARY_BACKGROUND_SPECTRAL", raising=False)
+
+    resp = client.post(
+        "/library/scan", headers=_headers(), json={"mode": "spectral_missing"}
+    )
+
+    assert resp.status_code == 403
+    body = resp.get_json()
+    assert body["error"] == "background spectral scan disabled"
+    assert "MINTARR_LIBRARY_BACKGROUND_SPECTRAL" in body["required_env"]
+
+
+def test_start_spectral_scan_enqueues_when_enabled(monkeypatch):
+    client = server.app.test_client()
+    monkeypatch.setenv("MINTARR_LIBRARY_SPECTRAL", "true")
+    monkeypatch.setenv("MINTARR_LIBRARY_BACKGROUND_SPECTRAL", "true")
+
+    resp = client.post(
+        "/library/scan", headers=_headers(), json={"mode": "spectral_missing"}
+    )
+
+    assert resp.status_code == 202
+    body = resp.get_json()
+    assert body["run"]["mode"] == "spectral_missing"
+    assert body["started"] is True
+    job = state_db.get_job(body["run"]["worker_job_id"])
+    assert job["source_id"] == "spectral_missing"
+
+
 def test_library_scan_status_lists_runs():
     client = server.app.test_client()
     state_db.enqueue_library_scan(mode="cheap")

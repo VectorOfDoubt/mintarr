@@ -223,3 +223,248 @@ def test_scan_yields_while_import_work_is_active(monkeypatch, tmp_path):
     assert final_job["state"] == "completed"
     assert "library_scan" in progress
     assert run["worker_job_id"] in heartbeat_calls
+
+
+def test_spectral_scan_measures_stale_spectral_only(monkeypatch, tmp_path):
+    _fresh_db(tmp_path)
+    monkeypatch.setenv("MINTARR_LIBRARY_SPECTRAL", "true")
+    monkeypatch.setenv("MINTARR_LIBRARY_BACKGROUND_SPECTRAL", "true")
+    run = state_db.enqueue_library_scan(mode="spectral_missing")
+    assert run is not None
+    path = "/lib/Artist/01.flac"
+    state_db.upsert_library_evidence(
+        {
+            "trackfile_id": 80,
+            "album_id": 800,
+            "path": path,
+            "size": 10,
+            "mtime": 1.0,
+            "status": "measured",
+            "lossless": True,
+            "integrity_ok": True,
+            "sensor_version": library_evidence.SENSOR_VERSION,
+        }
+    )
+    monkeypatch.setattr(
+        library_scan_worker,
+        "_fetch_lidarr_trackfiles",
+        lambda: [{"id": 80, "albumId": 800, "path": "/music/Artist/01.flac"}],
+    )
+    monkeypatch.setattr(library_evidence, "is_measured_row_fresh", lambda row: True)
+    monkeypatch.setattr(library_evidence, "is_spectral_row_fresh", lambda row: False)
+    calls = {"spectral": 0}
+
+    def _spectral(path):
+        calls["spectral"] += 1
+        return library_evidence.SpectralMeasurement(
+            status="measured", authentic=False, verdict="FAKE"
+        )
+
+    monkeypatch.setattr(library_evidence, "measure_trackfile_spectral", _spectral)
+
+    library_scan_worker._execute_library_scan_job(_claim_scan_job(run))
+
+    row = state_db.get_library_evidence(80)
+    final_run = state_db.get_library_scan_run(run["id"])
+    assert calls["spectral"] == 1
+    assert row["spectral_status"] == "measured"
+    assert row["authentic"] == 0
+    assert row["spectral_verdict"] == "FAKE"
+    assert final_run["measured_items"] == 1
+    assert state_db.get_library_scan_item(run["id"], 80)["state"] == "spectral_measured"
+
+
+def test_spectral_scan_skips_when_cheap_evidence_not_fresh(monkeypatch, tmp_path):
+    _fresh_db(tmp_path)
+    monkeypatch.setenv("MINTARR_LIBRARY_SPECTRAL", "true")
+    monkeypatch.setenv("MINTARR_LIBRARY_BACKGROUND_SPECTRAL", "true")
+    run = state_db.enqueue_library_scan(mode="spectral_missing")
+    assert run is not None
+    state_db.upsert_library_evidence(
+        {
+            "trackfile_id": 81,
+            "album_id": 801,
+            "path": "/lib/Artist/02.flac",
+            "status": "measured",
+            "sensor_version": "old",
+        }
+    )
+    monkeypatch.setattr(
+        library_scan_worker,
+        "_fetch_lidarr_trackfiles",
+        lambda: [{"id": 81, "albumId": 801, "path": "/music/Artist/02.flac"}],
+    )
+    monkeypatch.setattr(library_evidence, "is_measured_row_fresh", lambda row: False)
+    calls = {"spectral": 0}
+    monkeypatch.setattr(
+        library_evidence,
+        "measure_trackfile_spectral",
+        lambda path: calls.__setitem__("spectral", calls["spectral"] + 1),
+    )
+
+    library_scan_worker._execute_library_scan_job(_claim_scan_job(run))
+
+    assert calls["spectral"] == 0
+    assert state_db.get_library_scan_item(run["id"], 81)["state"] == "spectral_skipped"
+
+
+def test_spectral_scan_uses_ledger_to_skip_completed_item(monkeypatch, tmp_path):
+    _fresh_db(tmp_path)
+    monkeypatch.setenv("MINTARR_LIBRARY_SPECTRAL", "true")
+    monkeypatch.setenv("MINTARR_LIBRARY_BACKGROUND_SPECTRAL", "true")
+    run = state_db.enqueue_library_scan(mode="spectral_missing")
+    assert run is not None
+    state_db.upsert_library_scan_item(
+        run["id"], 82, album_id=802, state="spectral_measured"
+    )
+    state_db.upsert_library_evidence(
+        {
+            "trackfile_id": 82,
+            "album_id": 802,
+            "path": "/lib/Artist/03.flac",
+            "status": "measured",
+            "sensor_version": library_evidence.SENSOR_VERSION,
+        }
+    )
+    monkeypatch.setattr(
+        library_scan_worker,
+        "_fetch_lidarr_trackfiles",
+        lambda: [{"id": 82, "albumId": 802, "path": "/music/Artist/03.flac"}],
+    )
+    monkeypatch.setattr(library_evidence, "is_measured_row_fresh", lambda row: True)
+    calls = {"spectral": 0}
+    monkeypatch.setattr(
+        library_evidence,
+        "measure_trackfile_spectral",
+        lambda path: calls.__setitem__("spectral", calls["spectral"] + 1),
+    )
+
+    library_scan_worker._execute_library_scan_job(_claim_scan_job(run))
+
+    assert calls["spectral"] == 0
+    assert state_db.get_library_scan_run(run["id"])["fresh_items"] == 1
+
+
+def test_spectral_scan_waits_before_detective_when_import_active(monkeypatch, tmp_path):
+    _fresh_db(tmp_path)
+    monkeypatch.setenv("MINTARR_LIBRARY_SPECTRAL", "true")
+    monkeypatch.setenv("MINTARR_LIBRARY_BACKGROUND_SPECTRAL", "true")
+    run = state_db.enqueue_library_scan(mode="spectral_missing")
+    assert run is not None
+    state_db.upsert_library_evidence(
+        {
+            "trackfile_id": 83,
+            "album_id": 803,
+            "path": "/lib/Artist/04.flac",
+            "status": "measured",
+            "sensor_version": library_evidence.SENSOR_VERSION,
+        }
+    )
+    monkeypatch.setattr(
+        library_scan_worker,
+        "_fetch_lidarr_trackfiles",
+        lambda: [{"id": 83, "albumId": 803, "path": "/music/Artist/04.flac"}],
+    )
+    monkeypatch.setattr(library_evidence, "is_measured_row_fresh", lambda row: True)
+    monkeypatch.setattr(library_evidence, "is_spectral_row_fresh", lambda row: False)
+    # Two wait sites in spectral mode: before the item and immediately before
+    # Detective. The second one sees import work and must drain before measuring.
+    active = [False, True, False]
+    monkeypatch.setattr(
+        library_scan_worker,
+        "_is_import_work_active",
+        lambda: active.pop(0) if active else False,
+    )
+    monkeypatch.setattr(
+        library_scan_worker._shutdown_event, "wait", lambda timeout: None
+    )
+    order = []
+
+    def _spectral(path):
+        order.append("spectral")
+        return library_evidence.SpectralMeasurement(status="unmeasured", reason="x")
+
+    def _heartbeat(job_id, *, lease_sec=state_db.DEFAULT_LEASE_SEC):
+        order.append("heartbeat")
+        return True
+
+    monkeypatch.setattr(state_db, "heartbeat_job", _heartbeat)
+    monkeypatch.setattr(library_evidence, "measure_trackfile_spectral", _spectral)
+
+    library_scan_worker._execute_library_scan_job(_claim_scan_job(run))
+
+    assert "heartbeat" in order
+    assert order.index("heartbeat") < order.index("spectral")
+
+
+def test_spectral_scan_extends_lease_before_detective(monkeypatch, tmp_path):
+    _fresh_db(tmp_path)
+    monkeypatch.setenv("MINTARR_LIBRARY_SPECTRAL", "true")
+    monkeypatch.setenv("MINTARR_LIBRARY_BACKGROUND_SPECTRAL", "true")
+    run = state_db.enqueue_library_scan(mode="spectral_missing")
+    assert run is not None
+    state_db.upsert_library_evidence(
+        {
+            "trackfile_id": 84,
+            "album_id": 804,
+            "path": "/lib/Artist/05.flac",
+            "status": "measured",
+            "sensor_version": library_evidence.SENSOR_VERSION,
+        }
+    )
+    monkeypatch.setattr(
+        library_scan_worker,
+        "_fetch_lidarr_trackfiles",
+        lambda: [{"id": 84, "albumId": 804, "path": "/music/Artist/05.flac"}],
+    )
+    monkeypatch.setattr(library_evidence, "is_measured_row_fresh", lambda row: True)
+    monkeypatch.setattr(library_evidence, "is_spectral_row_fresh", lambda row: False)
+    calls = []
+
+    def _heartbeat(job_id, *, lease_sec=state_db.DEFAULT_LEASE_SEC):
+        calls.append(("heartbeat", lease_sec))
+        return True
+
+    def _spectral(path):
+        calls.append(("spectral", None))
+        return library_evidence.SpectralMeasurement(status="unmeasured", reason="x")
+
+    monkeypatch.setattr(state_db, "heartbeat_job", _heartbeat)
+    monkeypatch.setattr(library_evidence, "measure_trackfile_spectral", _spectral)
+
+    library_scan_worker._execute_library_scan_job(_claim_scan_job(run))
+
+    extended = [
+        index
+        for index, call in enumerate(calls)
+        if call[0] == "heartbeat" and call[1] > state_db.DEFAULT_LEASE_SEC
+    ]
+    spectral_index = next(
+        index for index, call in enumerate(calls) if call[0] == "spectral"
+    )
+    assert extended
+    assert max(extended) < spectral_index
+    assert calls[extended[-1]][1] > 900
+
+
+def test_spectral_scan_worker_rejects_when_background_flag_disabled(
+    monkeypatch, tmp_path
+):
+    _fresh_db(tmp_path)
+    monkeypatch.setenv("MINTARR_LIBRARY_SPECTRAL", "true")
+    monkeypatch.delenv("MINTARR_LIBRARY_BACKGROUND_SPECTRAL", raising=False)
+    run = state_db.enqueue_library_scan(mode="spectral_missing")
+    assert run is not None
+    monkeypatch.setattr(
+        library_scan_worker,
+        "_fetch_lidarr_trackfiles",
+        lambda: (_ for _ in ()).throw(AssertionError("must not fetch")),
+    )
+
+    library_scan_worker._execute_library_scan_job(_claim_scan_job(run))
+
+    final_run = state_db.get_library_scan_run(run["id"])
+    final_job = state_db.get_job(run["worker_job_id"])
+    assert final_run["state"] == "failed"
+    assert "background spectral scan disabled" in final_run["last_error"]
+    assert final_job["state"] == "failed"

@@ -371,9 +371,8 @@ the restore marker and staged zip. Returns `404` if no restore is staged, or
 ### 6.5 `POST /library/scan`
 
 Authenticated. Starts an operator-triggered F5.4 background library-quality scan.
-The first implementation supports `mode=cheap` only: read-only ffprobe +
-`flac -t` evidence over Lidarr trackfiles. It is backed by a low-priority F2
-`library_scan` job and never occupies the import worker slot.
+It is backed by a low-priority F2 `library_scan` job and never occupies the
+import worker slot.
 
 ```json
 { "mode": "cheap" }
@@ -393,9 +392,18 @@ Returns `202` when a new scan is queued:
 }
 ```
 
-If the same scan mode is already active, returns `200` with `started=false` and
-the active run. If a different active mode exists, returns `409` with the active
-mode and requested mode. Unsupported modes return `400`.
+Supported modes:
+
+| Mode | Description |
+|---|---|
+| `cheap` | Read-only ffprobe + `flac -t` evidence over Lidarr trackfiles |
+| `spectral_missing` | Default-off background FLAC Detective over trackfiles whose cheap evidence is fresh and spectral evidence is absent/stale |
+
+`spectral_missing` requires both `MINTARR_LIBRARY_SPECTRAL=true` and
+`MINTARR_LIBRARY_BACKGROUND_SPECTRAL=true`; otherwise the endpoint returns
+`403`. If the same scan mode is already active, returns `200` with
+`started=false` and the active run. If a different active mode exists, returns
+`409` with the active mode and requested mode. Unsupported modes return `400`.
 
 ### 6.6 `GET /library/scan`
 

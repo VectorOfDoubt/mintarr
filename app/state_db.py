@@ -1625,6 +1625,29 @@ def upsert_library_scan_item(
         )
 
 
+def get_library_scan_item(run_id: int, trackfile_id: int) -> dict | None:
+    """Return one scan-run item ledger row, if present."""
+    if not _ensure_initialized():
+        return None
+    try:
+        with _lock, _connect() as conn:
+            row = conn.execute(
+                """
+                SELECT * FROM library_scan_items
+                WHERE run_id = ? AND trackfile_id = ?
+                """,
+                (int(run_id), int(trackfile_id)),
+            ).fetchone()
+            return dict(row) if row else None
+    except Exception:
+        log.exception(
+            "state_db.get_library_scan_item failed run_id=%s trackfile_id=%s",
+            run_id,
+            trackfile_id,
+        )
+        return None
+
+
 def list_library_scan_items(
     run_id: int,
     *,

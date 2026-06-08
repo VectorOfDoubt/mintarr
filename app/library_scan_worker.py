@@ -26,6 +26,15 @@ _scan_thread: threading.Thread | None = None
 _worker_id = ""
 _POLL_INTERVAL_SEC = 2.0
 _PAUSE_INTERVAL_SEC = 2.0
+# FLAC Detective calls can legally take up to 900s. Extend the F2 lease before
+# each background spectral item so stale-job recovery cannot fail a live scan.
+_SPECTRAL_LEASE_SEC = 15 * 60 + 120
+_SPECTRAL_TERMINAL_ITEM_STATES = {
+    "spectral_fresh",
+    "spectral_measured",
+    "spectral_unmeasured",
+    "spectral_skipped",
+}
 
 
 class LibraryScanCancelled(Exception):
@@ -90,6 +99,12 @@ def _is_import_work_active() -> bool:
     return (
         state_db.count_active_jobs(exclude_types=(state_db.LIBRARY_SCAN_JOB_TYPE,)) > 0
     )
+
+
+def _background_spectral_enabled() -> bool:
+    return library_evidence.spectral_enabled() and os.environ.get(
+        "MINTARR_LIBRARY_BACKGROUND_SPECTRAL", ""
+    ).strip().lower() in ("1", "true", "yes", "on")
 
 
 def _raise_if_cancelled(job_id: int, run_id: int) -> None:
@@ -163,6 +178,57 @@ def _measure_trackfile_item(run_id: int, tf: dict) -> str:
     return state
 
 
+def _measure_spectral_item(run_id: int, tf: dict) -> str:
+    """Measure missing/stale spectral authenticity for one trackfile.
+
+    Background spectral is the expensive tier. It only runs when cheap evidence
+    for this trackfile is fresh, and it relies on the scan item ledger so a
+    resumed/retried run can skip items already processed by this run.
+    """
+    trackfile_id = tf.get("id")
+    path = tf.get("path")
+    album_id = tf.get("albumId") or tf.get("album_id")
+    if trackfile_id is None or not path:
+        return "unmeasured"
+    trackfile_id = int(trackfile_id)
+
+    prior_item = state_db.get_library_scan_item(run_id, trackfile_id)
+    if prior_item and prior_item.get("state") in _SPECTRAL_TERMINAL_ITEM_STATES:
+        return "fresh"
+
+    prior = state_db.get_library_evidence(trackfile_id)
+    if not prior or not library_evidence.is_measured_row_fresh(prior):
+        state_db.upsert_library_scan_item(
+            run_id, trackfile_id, album_id=album_id, state="spectral_skipped"
+        )
+        return "unmeasured"
+    if library_evidence.is_spectral_row_fresh(prior):
+        state_db.upsert_library_scan_item(
+            run_id, trackfile_id, album_id=album_id, state="spectral_fresh"
+        )
+        return "fresh"
+
+    spectral = library_evidence.measure_trackfile_spectral(path)
+    state_db.update_library_spectral(
+        {
+            "trackfile_id": trackfile_id,
+            "album_id": album_id,
+            "authentic": spectral.authentic,
+            "spectral_status": spectral.status,
+            "spectral_reason": spectral.reason,
+            "spectral_verdict": spectral.verdict,
+            "spectral_sensor_version": library_evidence.SPECTRAL_SENSOR_VERSION,
+        }
+    )
+    state = (
+        "spectral_measured" if spectral.status == "measured" else "spectral_unmeasured"
+    )
+    state_db.upsert_library_scan_item(
+        run_id, trackfile_id, album_id=album_id, state=state
+    )
+    return "measured" if spectral.status == "measured" else "unmeasured"
+
+
 def _execute_library_scan_job(job: dict) -> None:
     """Run one queued library_scan job and keep run/job states in sync."""
     job_id = int(job["id"])
@@ -187,6 +253,8 @@ def _execute_library_scan_job(job: dict) -> None:
         "error_items": 0,
     }
     try:
+        if mode == "spectral_missing" and not _background_spectral_enabled():
+            raise RuntimeError("background spectral scan disabled")
         state_db.update_library_scan_run_state(run_id, "running")
         state_db.heartbeat_job(job_id)
         trackfiles = _fetch_lidarr_trackfiles()
@@ -203,10 +271,34 @@ def _execute_library_scan_job(job: dict) -> None:
                 counters["processed_items"] += 1
                 continue
             try:
-                state_db.upsert_library_scan_item(
-                    run_id, int(trackfile_id), album_id=album_id, state="measuring"
-                )
-                outcome = _measure_trackfile_item(run_id, tf)
+                if mode == "spectral_missing":
+                    prior_item = state_db.get_library_scan_item(
+                        run_id, int(trackfile_id)
+                    )
+                    if (
+                        prior_item
+                        and prior_item.get("state") in _SPECTRAL_TERMINAL_ITEM_STATES
+                    ):
+                        outcome = "fresh"
+                    else:
+                        state_db.upsert_library_scan_item(
+                            run_id,
+                            int(trackfile_id),
+                            album_id=album_id,
+                            state="spectral_measuring",
+                        )
+                        # Explicit contention rule: never start a background
+                        # Detective request while import work is already waiting.
+                        # If import work appears after the HTTP request begins, v1
+                        # allows one in-flight file to finish; the next item yields.
+                        _wait_for_import_quiet(job_id, run_id)
+                        state_db.heartbeat_job(job_id, lease_sec=_SPECTRAL_LEASE_SEC)
+                        outcome = _measure_spectral_item(run_id, tf)
+                else:
+                    state_db.upsert_library_scan_item(
+                        run_id, int(trackfile_id), album_id=album_id, state="measuring"
+                    )
+                    outcome = _measure_trackfile_item(run_id, tf)
                 if outcome == "fresh":
                     counters["fresh_items"] += 1
                 elif outcome == "measured":

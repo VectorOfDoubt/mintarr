@@ -169,6 +169,23 @@ def test_library_scan_item_ledger_upserts_and_filters(tmp_path):
     assert error_rows[0]["last_error"] == "missing"
 
 
+def test_get_library_scan_item_returns_one_ledger_row(tmp_path):
+    _fresh_db(tmp_path)
+    run = state_db.enqueue_library_scan(mode="cheap")
+    assert run is not None
+    state_db.upsert_library_scan_item(
+        run["id"], 9, album_id=90, state="spectral_measured", attempts=1
+    )
+
+    row = state_db.get_library_scan_item(run["id"], 9)
+
+    assert row is not None
+    assert row["trackfile_id"] == 9
+    assert row["album_id"] == 90
+    assert row["state"] == "spectral_measured"
+    assert state_db.get_library_scan_item(run["id"], 999) is None
+
+
 def test_active_library_scan_run_tracks_newest_active_only(tmp_path):
     _fresh_db(tmp_path)
 

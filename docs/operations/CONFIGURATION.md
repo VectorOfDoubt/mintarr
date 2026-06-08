@@ -111,6 +111,7 @@ Set `BASE_URL` if Mintarr is behind a reverse proxy or if Lidarr reaches Mintarr
 | `MINTARR_CD_RIP_SCORING` | Opt-in (F5.3): let CD-rip evidence adjust the audio-axis decision. Default-off — evidence stays advisory until enabled. | `false` |
 | `MINTARR_MEASURED_EXISTING` | Opt-in (F5.4): compare candidates against the **measured** existing library quality instead of Lidarr's quality label. Requires `MINTARR_LIBRARY_ROOT`/`MINTARR_LIBRARY_LIDARR_ROOT`; default-off. | `false` |
 | `MINTARR_LIBRARY_SPECTRAL` | Opt-in (F5.4 slice 4a/4b): also run FLAC Detective on existing library files to measure **authenticity** (genuine vs measured-fake), per-trackfile and freshness-cached. Heavier than the ffprobe tier; requires the Detective service to mount the library read-only at the same path Mintarr resolves. With `MINTARR_MEASURED_EXISTING` also on, the existing authenticity moves the decision: a genuine candidate over a measured-fake existing release lifts to provisional, and an *unverified* existing tier (Detective could not measure it) abstains to review instead of being trusted. Requires `MINTARR_LIBRARY_ROOT`; default-off. | `false` |
+| `MINTARR_LIBRARY_BACKGROUND_SPECTRAL` | Opt-in for operator-started background `spectral_missing` scans. Requires `MINTARR_LIBRARY_SPECTRAL=true`. Default-off even when on-demand library spectral is enabled. | `false` |
 | `MINTARR_RESCUE_RESCAN_ENABLED` | Allow Mintarr to trigger Lidarr `RescanFolder` as a fallback import path | `true` in current runtime; target public default `false` |
 
 `MINTARR_RELEASE_SWITCH_STRATEGY` controls the only path where Mintarr may change
@@ -396,6 +397,15 @@ operator-triggered `/library/scan` endpoint. The scheduler is disabled by
 default and only queues a scan when no import work and no other library scan are
 active. The first scheduled scan runs after the interval elapses.
 
+Background FLAC Detective over the existing library is separate from scheduled
+cheap scans. To run it, enable both `MINTARR_LIBRARY_SPECTRAL=true` and
+`MINTARR_LIBRARY_BACKGROUND_SPECTRAL=true`, then start `/library/scan` with
+`{"mode":"spectral_missing"}`. The worker only scans trackfiles with fresh cheap
+evidence and missing/stale spectral evidence, uses the scan item ledger to skip
+completed files, and pauses before each Detective request when import work is
+active. If import work arrives after one Detective request has already started,
+that single file may finish before the background scan yields again.
+
 ## 12. Scheduled backups
 
 | Variable | Purpose | Default |
@@ -462,6 +472,9 @@ BASE_URL=                       # derived from request Host header
 # Verification
 V2_VERIFICATION_ENABLED=true
 REVIEW_RETENTION_DAYS=30
+MINTARR_MEASURED_EXISTING=false
+MINTARR_LIBRARY_SPECTRAL=false
+MINTARR_LIBRARY_BACKGROUND_SPECTRAL=false
 MINTARR_RESCUE_RESCAN_ENABLED=false
 
 # TIDAL adapter

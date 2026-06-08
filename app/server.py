@@ -6116,8 +6116,27 @@ def library_scan_start():
         body = request.get_json(silent=True) or {}
         mode = str(body.get("mode") or request.args.get("mode") or "cheap").strip()
         mode = mode or "cheap"
-        if mode != "cheap":
+        if mode not in {"cheap", "spectral_missing"}:
             return jsonify({"error": "unsupported scan mode", "mode": mode}), 400
+        if mode == "spectral_missing":
+            import library_evidence
+
+            if not library_evidence.spectral_enabled() or not _env_bool(
+                "MINTARR_LIBRARY_BACKGROUND_SPECTRAL", default=False
+            ):
+                return (
+                    jsonify(
+                        {
+                            "error": "background spectral scan disabled",
+                            "mode": mode,
+                            "required_env": [
+                                "MINTARR_LIBRARY_SPECTRAL",
+                                "MINTARR_LIBRARY_BACKGROUND_SPECTRAL",
+                            ],
+                        }
+                    ),
+                    403,
+                )
 
         active = state_db.get_active_library_scan_run()
         if active:

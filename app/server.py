@@ -2966,9 +2966,19 @@ def _candidate_quality(
         for f in (files or [])
     ]
     tier = min(tiers) if tiers else 0
+    # The tier is only trustworthy when at least one file reported bit depth or
+    # sample rate; otherwise compare() abstains to review rather than guessing.
+    tier_known = any(
+        f.get("bit_depth") is not None or f.get("sample_rate") is not None
+        for f in (files or [])
+    )
     complete = expected_track_count > 0 and new_track_count >= expected_track_count
     return lc.CandidateQuality(
-        valid=valid, authentic=authentic, tier=tier, complete=complete
+        valid=valid,
+        authentic=authentic,
+        tier=tier,
+        complete=complete,
+        tier_known=tier_known,
     )
 
 

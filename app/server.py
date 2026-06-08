@@ -2966,9 +2966,22 @@ def _candidate_quality(
         for f in (files or [])
     ]
     tier = min(tiers) if tiers else 0
+    # Album tier is the weakest track, so the tier is only trustworthy when
+    # EVERY file reported bit depth and sample rate. A single file missing either
+    # could be silently treated as 16/44 and drag the tier down, so one unknown
+    # file makes the whole candidate tier unknown → compare() abstains to review.
+    file_list = files or []
+    tier_known = bool(file_list) and all(
+        f.get("bit_depth") is not None and f.get("sample_rate") is not None
+        for f in file_list
+    )
     complete = expected_track_count > 0 and new_track_count >= expected_track_count
     return lc.CandidateQuality(
-        valid=valid, authentic=authentic, tier=tier, complete=complete
+        valid=valid,
+        authentic=authentic,
+        tier=tier,
+        complete=complete,
+        tier_known=tier_known,
     )
 
 

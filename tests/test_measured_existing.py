@@ -174,3 +174,66 @@ def test_stale_row_falls_back_to_label(monkeypatch, tmp_path):
     f = _seed_real(tmp_path, 814, 24, 96000, trackfile_id=8141)  # tier 3
     f.write_bytes(b"Y" * 5000)  # size + mtime now differ from the stored row
     assert _apply("ACCEPT", [814], cand_bits=16, cand_rate=44100) == "ACCEPT"
+
+
+def test_candidate_tier_unknown_when_no_file_metadata():
+    c = server._candidate_quality(
+        files=[{"bit_depth": None, "sample_rate": None}],
+        normalized_verdict="AUTHENTIC",
+        overrides=[],
+        new_track_count=10,
+        expected_track_count=10,
+    )
+    assert c.tier_known is False
+
+
+def test_candidate_tier_known_with_metadata():
+    c = server._candidate_quality(
+        files=[{"bit_depth": 24, "sample_rate": 96000}],
+        normalized_verdict="AUTHENTIC",
+        overrides=[],
+        new_track_count=10,
+        expected_track_count=10,
+    )
+    assert c.tier_known is True
+
+
+def test_candidate_tier_unknown_when_any_file_lacks_metadata():
+    # Album tier = weakest track, so one metadata-less file makes the tier unknown.
+    c = server._candidate_quality(
+        files=[
+            {"bit_depth": 24, "sample_rate": 96000},  # known
+            {"bit_depth": None, "sample_rate": None},  # unknown
+        ],
+        normalized_verdict="AUTHENTIC",
+        overrides=[],
+        new_track_count=10,
+        expected_track_count=10,
+    )
+    assert c.tier_known is False
+
+
+def test_candidate_tier_unknown_with_partial_metadata():
+    # sample rate present but bit depth missing → not trustworthy (would assume 16-bit).
+    c = server._candidate_quality(
+        files=[{"bit_depth": None, "sample_rate": 96000}],
+        normalized_verdict="AUTHENTIC",
+        overrides=[],
+        new_track_count=10,
+        expected_track_count=10,
+    )
+    assert c.tier_known is False
+
+
+def test_candidate_tier_known_when_all_files_complete():
+    c = server._candidate_quality(
+        files=[
+            {"bit_depth": 24, "sample_rate": 96000},
+            {"bit_depth": 16, "sample_rate": 44100},
+        ],
+        normalized_verdict="AUTHENTIC",
+        overrides=[],
+        new_track_count=10,
+        expected_track_count=10,
+    )
+    assert c.tier_known is True

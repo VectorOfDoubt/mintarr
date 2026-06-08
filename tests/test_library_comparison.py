@@ -126,3 +126,23 @@ def test_compare_completeness_comes_from_caller_not_coverage():
         lc.compare(_cand(tier=1, complete=True), existing, existing_incomplete=True)
         == lc.UPGRADE
     )
+
+
+# ---- unknown candidate tier abstains (Codex follow-up) ----
+
+
+def test_unknown_candidate_tier_abstains_to_review():
+    existing = lc.album_quality([_row(bit_depth=16, sample_rate=44100)])
+    cand = lc.CandidateQuality(
+        valid=True, authentic=True, tier=0, complete=True, tier_known=False
+    )
+    assert lc.compare(cand, existing) == lc.REVIEW
+
+
+def test_unknown_tier_still_upgrades_over_invalid_existing():
+    # Fixing an existing integrity defect outranks the unknown-tier abstain.
+    existing = lc.album_quality([_row(integrity_ok=False)])
+    cand = lc.CandidateQuality(
+        valid=True, authentic=True, tier=0, complete=True, tier_known=False
+    )
+    assert lc.compare(cand, existing) == lc.UPGRADE

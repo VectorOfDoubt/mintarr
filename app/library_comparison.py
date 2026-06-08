@@ -85,6 +85,7 @@ class CandidateQuality:
     authentic: bool  # not a measured fake (FLAC Detective)
     tier: int  # tier_rank of the candidate
     complete: bool  # fills/matches the expected track count
+    tier_known: bool = True  # False when bit depth / sample rate is unknown
 
 
 # Comparison verdicts — slice 3b maps these onto the ACCEPT/REVIEW decisions.
@@ -128,6 +129,12 @@ def compare(
     # existing integrity defect is an upgrade.
     if existing.any_invalid:
         return UPGRADE
+
+    # Abstain when the candidate's tier is unknown (no bit depth / sample rate):
+    # we cannot judge an upgrade vs downgrade, so route to the operator rather
+    # than guessing a tier.
+    if not candidate.tier_known:
+        return REVIEW
 
     # Lossless tier (existing is valid + measured here).
     if candidate.tier > existing.min_tier:

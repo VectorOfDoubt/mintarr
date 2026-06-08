@@ -411,11 +411,20 @@ In production, leave the worker enabled. Mintarr's worker is N=1 (single thread)
 |---|---|---|
 | `MINTARR_LIBRARY_SCAN_SCHEDULE_ENABLED` | Start Mintarr's internal scheduled cheap library-quality scan thread | `false` |
 | `MINTARR_LIBRARY_SCAN_INTERVAL_HOURS` | Hours between scheduled cheap scans | `168` |
+| `MINTARR_LIBRARY_SCAN_WORKERS` | Parallel cheap-scan workers for `ffprobe` + `flac -t`; unset uses a conservative CPU-based default | auto (`min(4, cpu_count/4)`) |
 
 Scheduled library scans enqueue the same low-priority `library_scan` job as the
 operator-triggered `/library/scan` endpoint. The scheduler is disabled by
 default and only queues a scan when no import work and no other library scan are
 active. The first scheduled scan runs after the interval elapses.
+
+Cheap library scans can safely use limited parallelism because each item is a
+read-only probe of one existing trackfile. The default intentionally does not
+consume every visible CPU: it uses roughly one worker per four CPUs, capped at
+four. Increase `MINTARR_LIBRARY_SCAN_WORKERS` only if your storage can handle
+the additional concurrent reads; lower it to `1` for very slow disks or network
+mounts. If import work appears, the scan stops starting new items and lets only
+already-started probes finish.
 
 Background FLAC Detective over the existing library is separate from scheduled
 cheap scans. To run it, enable both `MINTARR_LIBRARY_SPECTRAL=true` and
@@ -555,6 +564,7 @@ MINTARR_DISABLE_WORKER=false
 # Scheduled library scans
 MINTARR_LIBRARY_SCAN_SCHEDULE_ENABLED=false
 MINTARR_LIBRARY_SCAN_INTERVAL_HOURS=168
+MINTARR_LIBRARY_SCAN_WORKERS=       # auto: min(4, cpu_count/4)
 
 # Scheduled backups
 MINTARR_BACKUP_SCHEDULE_ENABLED=false

@@ -27,6 +27,19 @@ def _fresh_db(tmp_path):
     return db_file
 
 
+def test_cheap_scan_workers_defaults_to_conservative_cpu_fraction(monkeypatch):
+    monkeypatch.delenv("MINTARR_LIBRARY_SCAN_WORKERS", raising=False)
+    monkeypatch.setattr(library_scan_worker.os, "cpu_count", lambda: 16)
+
+    assert library_scan_worker._cheap_scan_workers() == 4
+
+
+def test_cheap_scan_workers_env_override_is_clamped(monkeypatch):
+    monkeypatch.setenv("MINTARR_LIBRARY_SCAN_WORKERS", "64")
+
+    assert library_scan_worker._cheap_scan_workers() == 32
+
+
 def test_fetch_lidarr_trackfiles_snapshots_album_trackfiles_in_album_mode(
     monkeypatch,
 ):

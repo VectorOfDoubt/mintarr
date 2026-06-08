@@ -13,6 +13,7 @@ import os
 import sqlite3
 import threading
 import uuid
+from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 from collections.abc import Callable
 from pathlib import Path
 
@@ -77,6 +78,24 @@ def _lidarr_request_timeout() -> int:
         return 30
 
 
+def _cheap_scan_workers() -> int:
+    """Cheap scan subprocess parallelism.
+
+    One trackfile measurement runs ffprobe and, for FLAC, ``flac -t``. That is
+    mostly external CPU + disk I/O, so a small amount of parallelism improves
+    full-library scans without letting the background scanner saturate the host.
+    Operators can raise/lower it explicitly for their storage.
+    """
+    raw = os.environ.get("MINTARR_LIBRARY_SCAN_WORKERS")
+    if raw:
+        try:
+            return max(1, min(int(raw), 32))
+        except ValueError:
+            return 1
+    cpus = os.cpu_count() or 1
+    return max(1, min(4, cpus // 4))
+
+
 def _lidarr_db_path() -> Path:
     raw = os.environ.get("MINTARR_LIDARR_DB_PATH")
     if raw:
@@ -95,7 +114,8 @@ def _fetch_lidarr_trackfiles_sqlite(db_path: Path | None = None) -> list[dict]:
     path = db_path or _lidarr_db_path()
     uri = f"file:{path}?mode=ro"
     rows: list[dict] = []
-    with sqlite3.connect(uri, uri=True, timeout=10) as conn:
+    conn = sqlite3.connect(uri, uri=True, timeout=10)
+    try:
         conn.row_factory = sqlite3.Row
         for row in conn.execute(
             """
@@ -112,6 +132,8 @@ def _fetch_lidarr_trackfiles_sqlite(db_path: Path | None = None) -> list[dict]:
                     "path": str(row["Path"]),
                 }
             )
+    finally:
+        conn.close()
     return rows
 
 
@@ -354,6 +376,102 @@ def _measure_spectral_item(run_id: int, tf: dict) -> str:
     return "measured" if spectral.status == "measured" else "unmeasured"
 
 
+def _update_scan_progress(
+    job_id: int, run_id: int, mode: str, counters: dict, total_items: int
+) -> None:
+    pct = int((counters["processed_items"] / max(1, total_items)) * 100)
+    state_db.update_job_progress(
+        job_id,
+        {
+            "stage": "library_scan",
+            "percent": pct,
+            "message": (
+                f"Scanned {counters['processed_items']}/{total_items} "
+                "library trackfiles"
+            ),
+            "mode": mode,
+        },
+    )
+    state_db.update_library_scan_run_state(run_id, "running", totals=counters)
+    state_db.heartbeat_job(job_id)
+
+
+def _count_scan_outcome(counters: dict, outcome: str) -> None:
+    if outcome == "fresh":
+        counters["fresh_items"] += 1
+    elif outcome == "measured":
+        counters["measured_items"] += 1
+    else:
+        counters["unmeasured_items"] += 1
+
+
+def _execute_cheap_scan_items(
+    job_id: int, run_id: int, trackfiles: list[dict], counters: dict
+) -> None:
+    workers = _cheap_scan_workers()
+    total_items = len(trackfiles)
+    pending: dict[Future[str], tuple[int, int | None]] = {}
+    next_index = 0
+    with ThreadPoolExecutor(
+        max_workers=workers, thread_name_prefix="library-cheap-scan"
+    ) as pool:
+        while pending or next_index < total_items:
+            while len(pending) < workers and next_index < total_items:
+                _raise_if_cancelled(job_id, run_id)
+                _wait_for_import_quiet(job_id, run_id)
+                tf = trackfiles[next_index]
+                next_index += 1
+                trackfile_id = tf.get("id")
+                album_id_raw = tf.get("albumId") or tf.get("album_id")
+                album_id = int(album_id_raw) if album_id_raw is not None else None
+                if trackfile_id is None:
+                    counters["unmeasured_items"] += 1
+                    counters["processed_items"] += 1
+                    _update_scan_progress(
+                        job_id, run_id, "cheap", counters, total_items
+                    )
+                    continue
+                trackfile_id_int = int(trackfile_id)
+                state_db.upsert_library_scan_item(
+                    run_id, trackfile_id_int, album_id=album_id, state="measuring"
+                )
+                future = pool.submit(_measure_trackfile_item, run_id, tf)
+                pending[future] = (trackfile_id_int, album_id)
+
+            if not pending:
+                continue
+
+            done, _not_done = wait(
+                pending.keys(), timeout=1.0, return_when=FIRST_COMPLETED
+            )
+            if not done:
+                state_db.heartbeat_job(job_id)
+                _raise_if_cancelled(job_id, run_id)
+                continue
+
+            for future in done:
+                trackfile_id, album_id = pending.pop(future)
+                try:
+                    _count_scan_outcome(counters, future.result())
+                except Exception as exc:
+                    counters["error_items"] += 1
+                    state_db.upsert_library_scan_item(
+                        run_id,
+                        trackfile_id,
+                        album_id=album_id,
+                        state="error",
+                        last_error=str(exc)[:1000],
+                    )
+                    log.exception(
+                        "library scan item failed trackfile_id=%s", trackfile_id
+                    )
+                finally:
+                    counters["processed_items"] += 1
+                    _update_scan_progress(
+                        job_id, run_id, "cheap", counters, total_items
+                    )
+
+
 def _execute_library_scan_job(job: dict) -> None:
     """Run one queued library_scan job and keep run/job states in sync."""
     job_id = int(job["id"])
@@ -385,6 +503,16 @@ def _execute_library_scan_job(job: dict) -> None:
         trackfiles = _fetch_lidarr_trackfiles()
         counters["total_items"] = len(trackfiles)
         state_db.update_library_scan_run_state(run_id, "running", totals=counters)
+
+        if mode != "spectral_missing":
+            _execute_cheap_scan_items(job_id, run_id, trackfiles, counters)
+            state_db.update_library_scan_run_state(run_id, "completed", totals=counters)
+            state_db.mark_job_completed(
+                job_id,
+                result_state="library_scan_completed",
+                result={"run_id": run_id, **counters},
+            )
+            return
 
         for index, tf in enumerate(trackfiles, start=1):
             _raise_if_cancelled(job_id, run_id)
@@ -424,12 +552,7 @@ def _execute_library_scan_job(job: dict) -> None:
                         run_id, int(trackfile_id), album_id=album_id, state="measuring"
                     )
                     outcome = _measure_trackfile_item(run_id, tf)
-                if outcome == "fresh":
-                    counters["fresh_items"] += 1
-                elif outcome == "measured":
-                    counters["measured_items"] += 1
-                else:
-                    counters["unmeasured_items"] += 1
+                _count_scan_outcome(counters, outcome)
             except Exception as exc:
                 counters["error_items"] += 1
                 state_db.upsert_library_scan_item(
@@ -442,20 +565,7 @@ def _execute_library_scan_job(job: dict) -> None:
                 log.exception("library scan item failed trackfile_id=%s", trackfile_id)
             finally:
                 counters["processed_items"] += 1
-                pct = int((counters["processed_items"] / max(1, len(trackfiles))) * 100)
-                state_db.update_job_progress(
-                    job_id,
-                    {
-                        "stage": "library_scan",
-                        "percent": pct,
-                        "message": f"Scanned {counters['processed_items']}/{len(trackfiles)} library trackfiles",
-                        "mode": mode,
-                    },
-                )
-                state_db.update_library_scan_run_state(
-                    run_id, "running", totals=counters
-                )
-                state_db.heartbeat_job(job_id)
+                _update_scan_progress(job_id, run_id, mode, counters, len(trackfiles))
 
         state_db.update_library_scan_run_state(run_id, "completed", totals=counters)
         state_db.mark_job_completed(

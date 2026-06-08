@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import sqlite3
+
 import library_evidence
 import library_scan_worker
 import state_db
@@ -25,7 +27,10 @@ def _fresh_db(tmp_path):
     return db_file
 
 
-def test_fetch_lidarr_trackfiles_snapshots_album_trackfiles():
+def test_fetch_lidarr_trackfiles_snapshots_album_trackfiles_in_album_mode(
+    monkeypatch,
+):
+    monkeypatch.setenv("MINTARR_LIDARR_INVENTORY_MODE", "album")
     calls = []
 
     def fake_get(url, headers=None, timeout=None):
@@ -49,8 +54,82 @@ def test_fetch_lidarr_trackfiles_snapshots_album_trackfiles():
     assert calls[0] == (
         "http://lidarr/api/v1/album",
         {"X-Api-Key": "k"},
-        30,
+        120,
     )
+
+
+def test_fetch_lidarr_trackfiles_uses_sqlite_inventory(monkeypatch, tmp_path):
+    db_path = tmp_path / "lidarr.db"
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            """
+            CREATE TABLE TrackFiles (
+                Id INTEGER PRIMARY KEY,
+                AlbumId INTEGER NOT NULL,
+                Path TEXT NOT NULL
+            )
+            """
+        )
+        conn.execute(
+            "INSERT INTO TrackFiles (Id, AlbumId, Path) VALUES (?, ?, ?)",
+            (1, 10, "/music/a.flac"),
+        )
+        conn.execute(
+            "INSERT INTO TrackFiles (Id, AlbumId, Path) VALUES (?, ?, ?)",
+            (2, 20, "/music/b.flac"),
+        )
+    monkeypatch.setenv("MINTARR_LIDARR_INVENTORY_MODE", "sqlite")
+    monkeypatch.setenv("MINTARR_LIDARR_DB_PATH", str(db_path))
+
+    rows = library_scan_worker._fetch_lidarr_trackfiles(
+        api="http://lidarr/api/v1",
+        key="k",
+        get=lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("api call")),
+    )
+
+    assert rows == [
+        {"id": 1, "albumId": 10, "path": "/music/a.flac"},
+        {"id": 2, "albumId": 20, "path": "/music/b.flac"},
+    ]
+
+
+def test_fetch_lidarr_trackfiles_uses_artist_inventory(monkeypatch):
+    monkeypatch.setenv("MINTARR_LIDARR_INVENTORY_MODE", "artist")
+    calls = []
+
+    def fake_get(url, headers=None, timeout=None):
+        calls.append((url, headers, timeout))
+        if url == "http://lidarr/api/v1/artist":
+            return _Resp([{"id": 1}, {"id": 2}])
+        if url == "http://lidarr/api/v1/album?artistId=1":
+            return _Resp([{"id": 10}, {"id": 20}])
+        if url == "http://lidarr/api/v1/album?artistId=2":
+            return _Resp([{"id": 20}, {"id": 30}])
+        if url == "http://lidarr/api/v1/trackfile?albumId=10":
+            return _Resp([{"id": 1, "path": "/music/a.flac"}])
+        if url == "http://lidarr/api/v1/trackfile?albumId=20":
+            return _Resp([{"id": 2, "path": "/music/b.flac"}])
+        if url == "http://lidarr/api/v1/trackfile?albumId=30":
+            return _Resp([{"id": 3, "path": "/music/c.flac"}])
+        raise AssertionError(url)
+
+    rows = library_scan_worker._fetch_lidarr_trackfiles(
+        api="http://lidarr/api/v1", key="k", get=fake_get
+    )
+
+    assert rows == [
+        {"id": 1, "path": "/music/a.flac", "albumId": 10},
+        {"id": 2, "path": "/music/b.flac", "albumId": 20},
+        {"id": 3, "path": "/music/c.flac", "albumId": 30},
+    ]
+    assert calls[0] == (
+        "http://lidarr/api/v1/artist",
+        {"X-Api-Key": "k"},
+        120,
+    )
+    assert [call[0] for call in calls].count(
+        "http://lidarr/api/v1/trackfile?albumId=20"
+    ) == 1
 
 
 def _claim_scan_job(run):

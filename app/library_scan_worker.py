@@ -10,9 +10,11 @@ from __future__ import annotations
 import json
 import logging
 import os
+import sqlite3
 import threading
 import uuid
 from collections.abc import Callable
+from pathlib import Path
 
 import requests
 
@@ -54,6 +56,127 @@ def _lidarr_key() -> str:
         return os.environ.get("LIDARR_API_KEY", "")
 
 
+def _lidarr_inventory_mode() -> str:
+    mode = os.environ.get("MINTARR_LIDARR_INVENTORY_MODE", "sqlite")
+    return mode.strip().lower() or "artist"
+
+
+def _lidarr_inventory_timeout() -> int:
+    raw = os.environ.get("MINTARR_LIDARR_INVENTORY_TIMEOUT", "120")
+    try:
+        return max(1, int(raw))
+    except ValueError:
+        return 120
+
+
+def _lidarr_request_timeout() -> int:
+    raw = os.environ.get("MINTARR_LIDARR_REQUEST_TIMEOUT", "30")
+    try:
+        return max(1, int(raw))
+    except ValueError:
+        return 30
+
+
+def _lidarr_db_path() -> Path:
+    raw = os.environ.get("MINTARR_LIDARR_DB_PATH")
+    if raw:
+        return Path(raw)
+    config_xml = Path(os.environ.get("LIDARR_CONFIG_XML", "/lidarr-config/config.xml"))
+    return config_xml.with_name("lidarr.db")
+
+
+def _fetch_lidarr_trackfiles_sqlite(db_path: Path | None = None) -> list[dict]:
+    """Snapshot Lidarr trackfiles from its SQLite DB, read-only.
+
+    The API's global ``/album`` payload can be very large on real libraries.
+    For full-library scans, TrackFiles has the exact stable identity/path data
+    Mintarr needs and avoids thousands of read-only API calls.
+    """
+    path = db_path or _lidarr_db_path()
+    uri = f"file:{path}?mode=ro"
+    rows: list[dict] = []
+    with sqlite3.connect(uri, uri=True, timeout=10) as conn:
+        conn.row_factory = sqlite3.Row
+        for row in conn.execute(
+            """
+            SELECT Id, AlbumId, Path
+            FROM TrackFiles
+            WHERE Path IS NOT NULL AND Path != ''
+            ORDER BY Id
+            """
+        ):
+            rows.append(
+                {
+                    "id": int(row["Id"]),
+                    "albumId": int(row["AlbumId"]),
+                    "path": str(row["Path"]),
+                }
+            )
+    return rows
+
+
+def _fetch_albums_global(api: str, headers: dict, get: Callable) -> list[dict]:
+    albums_resp = get(
+        f"{api}/album", headers=headers, timeout=_lidarr_inventory_timeout()
+    )
+    albums_resp.raise_for_status()
+    albums = albums_resp.json()
+    if not isinstance(albums, list):
+        raise RuntimeError("Lidarr /album returned non-list")
+    return [album for album in albums if isinstance(album, dict)]
+
+
+def _fetch_albums_by_artist(api: str, headers: dict, get: Callable) -> list[dict]:
+    artists_resp = get(
+        f"{api}/artist", headers=headers, timeout=_lidarr_inventory_timeout()
+    )
+    artists_resp.raise_for_status()
+    artists = artists_resp.json()
+    if not isinstance(artists, list):
+        raise RuntimeError("Lidarr /artist returned non-list")
+
+    albums: list[dict] = []
+    seen_album_ids: set[int] = set()
+    for artist in artists:
+        if not isinstance(artist, dict) or artist.get("id") is None:
+            continue
+        artist_id = artist.get("id")
+        albums_resp = get(
+            f"{api}/album?artistId={artist_id}",
+            headers=headers,
+            timeout=_lidarr_request_timeout(),
+        )
+        albums_resp.raise_for_status()
+        rows = albums_resp.json()
+        if not isinstance(rows, list):
+            continue
+        for album in rows:
+            if not isinstance(album, dict) or album.get("id") is None:
+                continue
+            album_id = int(album["id"])
+            if album_id in seen_album_ids:
+                continue
+            seen_album_ids.add(album_id)
+            albums.append(album)
+    return albums
+
+
+def _fetch_lidarr_albums(api: str, headers: dict, get: Callable) -> list[dict]:
+    mode = _lidarr_inventory_mode()
+    if mode == "album":
+        return _fetch_albums_global(api, headers, get)
+    if mode == "artist":
+        return _fetch_albums_by_artist(api, headers, get)
+    if mode != "auto":
+        log.warning("unknown MINTARR_LIDARR_INVENTORY_MODE=%r; using artist", mode)
+        return _fetch_albums_by_artist(api, headers, get)
+    try:
+        return _fetch_albums_global(api, headers, get)
+    except Exception as exc:
+        log.warning("Lidarr /album inventory failed; falling back to /artist: %s", exc)
+        return _fetch_albums_by_artist(api, headers, get)
+
+
 def _fetch_lidarr_trackfiles(
     *,
     api: str | None = None,
@@ -65,11 +188,13 @@ def _fetch_lidarr_trackfiles(
     key = key if key is not None else _lidarr_key()
     get = get or requests.get
     headers = {"X-Api-Key": key}
-    albums_resp = get(f"{api}/album", headers=headers, timeout=30)
-    albums_resp.raise_for_status()
-    albums = albums_resp.json()
-    if not isinstance(albums, list):
-        raise RuntimeError("Lidarr /album returned non-list")
+    mode = _lidarr_inventory_mode()
+    if mode == "sqlite":
+        try:
+            return _fetch_lidarr_trackfiles_sqlite()
+        except Exception as exc:
+            log.warning("Lidarr SQLite inventory failed; falling back to API: %s", exc)
+    albums = _fetch_lidarr_albums(api, headers, get)
 
     out: list[dict] = []
     for album in albums:
@@ -79,7 +204,7 @@ def _fetch_lidarr_trackfiles(
         tf_resp = get(
             f"{api}/trackfile?albumId={album_id}",
             headers=headers,
-            timeout=30,
+            timeout=_lidarr_request_timeout(),
         )
         tf_resp.raise_for_status()
         rows = tf_resp.json()

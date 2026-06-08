@@ -232,7 +232,10 @@ def _worker_loop() -> None:
             if now - last_recovery >= _RECOVERY_INTERVAL_SEC:
                 state_db.recover_stale_running_jobs()
                 last_recovery = now
-            job = state_db.dequeue_next_job(worker_id=_worker_id)
+            job = state_db.dequeue_next_job(
+                worker_id=_worker_id,
+                exclude_types=(state_db.LIBRARY_SCAN_JOB_TYPE,),
+            )
             if job is None:
                 # Sleep with periodic wakeup-check to respond to shutdown
                 _shutdown_event.wait(timeout=_POLL_INTERVAL_SEC)

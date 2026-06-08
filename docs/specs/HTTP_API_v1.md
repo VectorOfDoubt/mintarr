@@ -36,6 +36,7 @@ Endpoints group into five categories:
 | Source ingest | `/local/ingest`, `/soulseek/ingest`, `/sab/ingest`, `/qbit/ingest` | Manual operator triggers per source |
 | Webhook-in | `/webhook/ingest` | Generic source-routed ingest for external automation (n8n, IFTTT, scripts) |
 | Backup / restore | `/backup`, `/restore`, `/restore/status` | State export and staged restore |
+| Library quality | `/library/scan` | Operator-triggered read-only background scan of existing library quality |
 | Dashboard | `/dashboard`, `/dashboard/v1/...` | Web UI and JSON API for it |
 | Legacy verification | `/verification`, `/decisions`, `/jobs` | Pre-dashboard V2 inspection/action endpoints retained for compatibility |
 | NZB pointer | `/download/<int>.nzb`, `/download/<source>/<id>.nzb` | NZB generation for SAB roundtrip |
@@ -367,13 +368,68 @@ Authenticated. Cancels a staged restore before boot-time apply starts. It remove
 the restore marker and staged zip. Returns `404` if no restore is staged, or
 `409` if apply has already started (`state=applying`).
 
-### 6.5 `GET /dashboard`
+### 6.5 `POST /library/scan`
+
+Authenticated. Starts an operator-triggered F5.4 background library-quality scan.
+The first implementation supports `mode=cheap` only: read-only ffprobe +
+`flac -t` evidence over Lidarr trackfiles. It is backed by a low-priority F2
+`library_scan` job and never occupies the import worker slot.
+
+```json
+{ "mode": "cheap" }
+```
+
+Returns `202` when a new scan is queued:
+
+```json
+{
+  "started": true,
+  "run": {
+    "id": 12,
+    "mode": "cheap",
+    "state": "queued",
+    "worker_job_id": 42
+  }
+}
+```
+
+If the same scan mode is already active, returns `200` with `started=false` and
+the active run. If a different active mode exists, returns `409` with the active
+mode and requested mode. Unsupported modes return `400`.
+
+### 6.6 `GET /library/scan`
+
+Authenticated. Returns the active scan run, if any, plus recent scan history.
+
+```json
+{
+  "active": null,
+  "runs": [],
+  "returned": 0,
+  "total": 0
+}
+```
+
+### 6.7 `POST /library/scan/cancel`
+
+Authenticated. Requests cooperative cancellation for the active scan, or for a
+specific `run_id` supplied in JSON body or query string. Queued cancellation is
+made terminal when the dedicated scan worker claims the backing F2 job; running
+scans stop at the next yield point.
+
+```json
+{ "run_id": 12 }
+```
+
+Returns `404` if no run exists and `409` if the run is already terminal.
+
+### 6.8 `GET /dashboard`
 
 Returns the dashboard HTML. Server-side rendered. Phase 2 work replaces this with a sidebar layout.
 
 The HTML shell itself does not require authentication. It stores the operator-provided API key in browser localStorage and sends it to the JSON endpoints below. No JSON variant — use the `/dashboard/v1/...` endpoints below for programmatic access.
 
-### 6.6 `GET /dashboard/v1/summary`
+### 6.9 `GET /dashboard/v1/summary`
 
 ```http
 200 OK
@@ -414,7 +470,7 @@ Content-Type: application/json
 }
 ```
 
-### 6.7 `GET /dashboard/v1/records`
+### 6.10 `GET /dashboard/v1/records`
 
 ```http
 GET /dashboard/v1/records?limit=50&offset=0&status=needs_review
@@ -460,7 +516,7 @@ Query parameters:
 | `status` | string | Filter by `derived_status` (`imported`, `needs_review`, `blocked`, `failed`, `discarded`, `expired`) |
 | `source_type` | string | Reserved for source filtering. Current implementation includes source data in detailed records and DB-backed views; UI filters may lag this parameter. |
 
-### 6.8 `GET /dashboard/v1/record/<jid>`
+### 6.11 `GET /dashboard/v1/record/<jid>`
 
 ```http
 200 OK
@@ -485,7 +541,7 @@ Related detail endpoints:
 | `GET /dashboard/v1/audio-sample/<jid>` | Short review sample when files are still available |
 | `GET /dashboard/v1/spectrum/<jid>` | Spectrum PNG when generated/cached |
 
-### 6.9 `GET /dashboard/v1/jobs`
+### 6.12 `GET /dashboard/v1/jobs`
 
 ```http
 200 OK
@@ -510,7 +566,7 @@ Related detail endpoints:
 }
 ```
 
-### 6.10 `POST /dashboard/v1/action/<jid>`
+### 6.13 `POST /dashboard/v1/action/<jid>`
 
 Unified operator-action endpoint. The request body selects the action.
 
@@ -549,15 +605,15 @@ Supported actions:
 
 Invalid actions or invalid record state return `409 Conflict` with a human-readable `error`.
 
-### 6.11 `GET /dashboard/v1/actions` and `GET /dashboard/v1/actions/<jid>`
+### 6.14 `GET /dashboard/v1/actions` and `GET /dashboard/v1/actions/<jid>`
 
 Returns the operator-action audit timeline. The unscoped endpoint supports recent global audit views; the scoped endpoint is used by the record drawer.
 
-### 6.12 `POST /dashboard/v1/jobs/<job_id>/cancel`
+### 6.15 `POST /dashboard/v1/jobs/<job_id>/cancel`
 
 Request cancellation of a running worker job. Cooperative cancel — the adapter's next `check_cancelled()` call raises `JobCancelled`.
 
-### 6.13 `GET /dashboard/v1/connectors`
+### 6.16 `GET /dashboard/v1/connectors`
 
 Returns the static connector registry + runtime status. Shape defined in [`CONNECTOR_MANIFEST_v1.md`](CONNECTOR_MANIFEST_v1.md) §6.
 
@@ -569,7 +625,7 @@ secret-safe: it may include env var names, service/profile hints, docs links,
 and action text, but never env values, API keys, tokens, local private host
 paths, or Docker socket access.
 
-### 6.14 `POST /dashboard/v1/connectors/<connector_id>/config`
+### 6.17 `POST /dashboard/v1/connectors/<connector_id>/config`
 
 Validate or persist connector runtime mode.
 
@@ -596,11 +652,11 @@ Responses include:
 - `404 Not Found` for unknown connector IDs
 - `409 Conflict` when required connector or import-mode invariants would be violated
 
-### 6.15 `GET /dashboard/v1/timings`
+### 6.18 `GET /dashboard/v1/timings`
 
 Aggregate timing statistics for performance analysis.
 
-### 6.16 `GET /decisions`
+### 6.19 `GET /decisions`
 
 ```http
 GET /decisions?limit=100

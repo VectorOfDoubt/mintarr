@@ -82,6 +82,49 @@ def test_dequeue_respects_priority_then_fifo(fresh_db):
     assert job["id"] == id_high
 
 
+def test_dequeue_can_include_or_exclude_job_types(fresh_db):
+    scan = state_db.enqueue_job(jid="scan", type=state_db.LIBRARY_SCAN_JOB_TYPE)
+    regular = state_db.enqueue_job(jid="regular", type="noop")
+
+    job = state_db.dequeue_next_job(
+        worker_id="scan-w", include_types=(state_db.LIBRARY_SCAN_JOB_TYPE,)
+    )
+    assert job["id"] == scan
+
+    job = state_db.dequeue_next_job(
+        worker_id="main-w", exclude_types=(state_db.LIBRARY_SCAN_JOB_TYPE,)
+    )
+    assert job["id"] == regular
+
+
+def test_import_worker_excludes_library_scan_jobs(fresh_db):
+    scan = state_db.enqueue_library_scan(mode="cheap")
+    regular = state_db.enqueue_job(jid="regular", type="noop")
+
+    job = state_db.dequeue_next_job(
+        worker_id="main-w", exclude_types=(state_db.LIBRARY_SCAN_JOB_TYPE,)
+    )
+
+    assert scan is not None
+    assert regular is not None
+    assert job["id"] == regular
+    assert state_db.get_job(scan["worker_job_id"])["state"] == "queued"
+
+
+def test_import_worker_leaves_library_scan_queued(fresh_db):
+    scan = state_db.enqueue_library_scan(mode="cheap")
+    assert scan is not None
+
+    worker.start_worker()
+    try:
+        time.sleep(0.15)
+        job = state_db.get_job(scan["worker_job_id"])
+        assert job["state"] == "queued"
+        assert job["error_text"] is None
+    finally:
+        worker.stop_worker(timeout=2)
+
+
 def test_dequeue_respects_next_attempt_at(fresh_db):
     """Jobs with future next_attempt_at are not eligible yet."""
     job_id = state_db.enqueue_job(jid="future1", type="noop")

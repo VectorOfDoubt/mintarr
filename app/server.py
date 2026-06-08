@@ -6106,6 +6106,97 @@ def restore_delete():
     return jsonify({"status": True, **payload})
 
 
+@app.route("/library/scan", methods=["POST"])
+@require_apikey
+def library_scan_start():
+    """Start an operator-triggered background library quality scan (F5.4 5c)."""
+    try:
+        import state_db
+
+        body = request.get_json(silent=True) or {}
+        mode = str(body.get("mode") or request.args.get("mode") or "cheap").strip()
+        mode = mode or "cheap"
+        if mode != "cheap":
+            return jsonify({"error": "unsupported scan mode", "mode": mode}), 400
+
+        active = state_db.get_active_library_scan_run()
+        if active:
+            if active.get("mode") != mode:
+                return (
+                    jsonify(
+                        {
+                            "error": "library scan already active",
+                            "active_mode": active.get("mode"),
+                            "requested_mode": mode,
+                            "run": active,
+                        }
+                    ),
+                    409,
+                )
+            return jsonify({"run": active, "started": False}), 200
+
+        run = state_db.enqueue_library_scan(mode=mode, requested_by="operator")
+        if not run:
+            return jsonify({"error": "failed to enqueue library scan"}), 500
+        return jsonify({"run": run, "started": True}), 202
+    except Exception:
+        log.exception("library_scan_start failed")
+        return jsonify({"error": "internal error"}), 500
+
+
+@app.route("/library/scan", methods=["GET"])
+@require_apikey
+def library_scan_status():
+    """Return current/latest background library scan status."""
+    try:
+        import state_db
+
+        active = state_db.get_active_library_scan_run()
+        total, runs = state_db.list_library_scan_runs(limit=10)
+        return jsonify(
+            {"active": active, "runs": runs, "returned": len(runs), "total": total}
+        )
+    except Exception:
+        log.exception("library_scan_status failed")
+        return jsonify({"active": None, "runs": [], "returned": 0, "total": 0})
+
+
+@app.route("/library/scan/cancel", methods=["POST"])
+@require_apikey
+def library_scan_cancel():
+    """Request cooperative cancellation of the active/current library scan."""
+    try:
+        import state_db
+
+        body = request.get_json(silent=True) or {}
+        run_id = body.get("run_id") or request.args.get("run_id")
+        if run_id is not None:
+            try:
+                run = state_db.get_library_scan_run(int(run_id))
+            except (TypeError, ValueError):
+                return jsonify({"error": "invalid run_id"}), 400
+        else:
+            run = state_db.get_active_library_scan_run()
+        if not run:
+            return jsonify({"error": "library scan not found"}), 404
+        if run.get("state") not in state_db.ACTIVE_LIBRARY_SCAN_STATES:
+            return (
+                jsonify(
+                    {
+                        "error": "cannot cancel terminal library scan",
+                        "run": run,
+                    }
+                ),
+                409,
+            )
+        ok = state_db.request_library_scan_cancel(int(run["id"]))
+        current = state_db.get_library_scan_run(int(run["id"])) or run
+        return jsonify({"cancel_requested": ok, "run": current})
+    except Exception:
+        log.exception("library_scan_cancel failed")
+        return jsonify({"error": "internal error"}), 500
+
+
 @app.route("/docs")
 def swagger_docs():
     """Swagger UI for the OpenAPI spec (Phase 3 slice 3b).
@@ -6633,6 +6724,15 @@ if _restore_start_workers and not (
     except Exception:
         log.exception(
             "worker.start_worker() failed — continuing without background worker"
+        )
+
+    try:
+        import library_scan_worker
+
+        library_scan_worker.start_worker()
+    except Exception:
+        log.exception(
+            "library_scan_worker.start_worker() failed — continuing without scan worker"
         )
 
 # Phase 3: optional scheduled backup export. Disabled by default so upgrades do

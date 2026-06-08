@@ -872,7 +872,11 @@ def enqueue_job(
 
 
 def dequeue_next_job(
-    *, worker_id: str, lease_sec: float = DEFAULT_LEASE_SEC
+    *,
+    worker_id: str,
+    lease_sec: float = DEFAULT_LEASE_SEC,
+    include_types: list[str] | tuple[str, ...] | None = None,
+    exclude_types: list[str] | tuple[str, ...] | None = None,
 ) -> dict | None:
     """Atomically claim the next eligible job. Returns job dict or None.
 
@@ -884,15 +888,28 @@ def dequeue_next_job(
     try:
         now = time.time()
         with _lock, _connect() as conn:
+            clauses = [
+                "state = 'queued'",
+                "(next_attempt_at IS NULL OR next_attempt_at <= ?)",
+            ]
+            params: list = [now]
+            if include_types:
+                placeholders = ",".join("?" * len(include_types))
+                clauses.append(f"type IN ({placeholders})")
+                params.extend(include_types)
+            if exclude_types:
+                placeholders = ",".join("?" * len(exclude_types))
+                clauses.append(f"type NOT IN ({placeholders})")
+                params.extend(exclude_types)
+            where = " AND ".join(clauses)
             row = conn.execute(
-                """
+                f"""
                 SELECT * FROM jobs
-                WHERE state = 'queued'
-                  AND (next_attempt_at IS NULL OR next_attempt_at <= ?)
+                WHERE {where}
                 ORDER BY priority ASC, created_at ASC
                 LIMIT 1
             """,
-                (now,),
+                params,
             ).fetchone()
             if not row:
                 return None
@@ -1225,17 +1242,34 @@ def recover_stale_running_jobs(
         return 0
 
 
-def count_active_jobs() -> int:
+def count_active_jobs(
+    *,
+    include_types: list[str] | tuple[str, ...] | None = None,
+    exclude_types: list[str] | tuple[str, ...] | None = None,
+) -> int:
     """Quick count of jobs in non-terminal states (for dashboard summary)."""
     if not _ensure_initialized():
         return 0
     try:
         with _lock, _connect() as conn:
+            clauses = []
+            params: list = []
             placeholders = ",".join("?" * len(ACTIVE_JOB_STATES))
+            clauses.append(f"state IN ({placeholders})")
+            params.extend(ACTIVE_JOB_STATES)
+            if include_types:
+                placeholders = ",".join("?" * len(include_types))
+                clauses.append(f"type IN ({placeholders})")
+                params.extend(include_types)
+            if exclude_types:
+                placeholders = ",".join("?" * len(exclude_types))
+                clauses.append(f"type NOT IN ({placeholders})")
+                params.extend(exclude_types)
+            where = " AND ".join(clauses)
             return int(
                 conn.execute(
-                    f"SELECT COUNT(*) FROM jobs WHERE state IN ({placeholders})",
-                    ACTIVE_JOB_STATES,
+                    f"SELECT COUNT(*) FROM jobs WHERE {where}",
+                    params,
                 ).fetchone()[0]
             )
     except Exception:

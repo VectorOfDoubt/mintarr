@@ -3016,7 +3016,13 @@ def _apply_measured_existing(
     """
     try:
         import library_comparison as lc
+        import library_evidence
         import state_db
+
+        # The library must be mounted *now* — never decide on stale historical
+        # evidence when measurement isn't currently possible.
+        if not library_evidence.configured_library_root():
+            return audio_decision
 
         rows: list[dict] = []
         for aid in album_ids or []:
@@ -3024,9 +3030,12 @@ def _apply_measured_existing(
                 rows.extend(state_db.get_album_library_evidence(int(aid)))
             except (TypeError, ValueError):
                 continue
-        existing = lc.album_quality(rows)
+        # Only evidence that is freshness-validated against the file on disk right
+        # now (size + mtime + current sensor_version) may drive the decision.
+        fresh = [r for r in rows if library_evidence.is_measured_row_fresh(r)]
+        existing = lc.album_quality(fresh)
         if existing is None:
-            return audio_decision  # no measured evidence — label path unchanged
+            return audio_decision  # no fresh measured evidence — label path unchanged
 
         candidate = _candidate_quality(
             files, normalized_verdict, overrides, new_track_count, expected_track_count

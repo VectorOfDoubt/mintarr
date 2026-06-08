@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import library_evidence
 import server
 import state_db
 
@@ -91,23 +92,31 @@ def test_map_equivalent_and_accept_unchanged():
     assert server._map_measured_verdict("ACCEPT", "upgrade") == "ACCEPT"
 
 
-# ---- full adjustment over the index ----
+# ---- full adjustment over the index (only FRESH measured rows may decide) ----
 
 
-def _seed_album(album_id, bit_depth, sample_rate, *, trackfile_id):
+def _seed_real(tmp_path, album_id, bit_depth, sample_rate, *, trackfile_id):
+    """Seed a fresh measured row backed by a real file under the mount."""
+    f = tmp_path / f"{trackfile_id}.flac"
+    f.write_bytes(b"X" * 100)
+    st = f.stat()
     state_db.upsert_library_evidence(
         {
             "trackfile_id": trackfile_id,
             "album_id": album_id,
-            "path": f"/lib/{trackfile_id}.flac",
+            "path": str(f),
+            "size": st.st_size,
+            "mtime": st.st_mtime,
             "status": "measured",
             "codec": "flac",
             "bit_depth": bit_depth,
             "sample_rate": sample_rate,
             "lossless": True,
             "integrity_ok": True,
+            "sensor_version": library_evidence.SENSOR_VERSION,
         }
     )
+    return f
 
 
 def _apply(
@@ -125,24 +134,43 @@ def _apply(
     )
 
 
-def test_no_measured_evidence_leaves_decision_unchanged():
+def test_no_measured_evidence_leaves_decision_unchanged(monkeypatch, tmp_path):
+    monkeypatch.setenv("MINTARR_LIBRARY_ROOT", str(tmp_path))
     assert _apply("ACCEPT", [424242], cand_bits=16, cand_rate=44100) == "ACCEPT"
 
 
-def test_lower_tier_candidate_routes_accept_to_review():
-    _seed_album(810, 24, 96000, trackfile_id=8101)  # existing tier 3
-    # candidate tier 1 vs measured tier-3 existing → downgrade → review
+def test_lower_tier_candidate_routes_accept_to_review(monkeypatch, tmp_path):
+    monkeypatch.setenv("MINTARR_LIBRARY_ROOT", str(tmp_path))
+    _seed_real(tmp_path, 810, 24, 96000, trackfile_id=8101)  # existing tier 3
     assert _apply("ACCEPT", [810], cand_bits=16, cand_rate=44100) == "REVIEW_REQUIRED"
 
 
-def test_higher_tier_candidate_rescues_review():
-    _seed_album(811, 16, 44100, trackfile_id=8111)  # existing tier 1
+def test_higher_tier_candidate_rescues_review(monkeypatch, tmp_path):
+    monkeypatch.setenv("MINTARR_LIBRARY_ROOT", str(tmp_path))
+    _seed_real(tmp_path, 811, 16, 44100, trackfile_id=8111)  # existing tier 1
     assert (
         _apply("REVIEW_REQUIRED", [811], cand_bits=24, cand_rate=96000)
         == "ACCEPT_PROVISIONAL"
     )
 
 
-def test_same_tier_is_unchanged():
-    _seed_album(812, 16, 44100, trackfile_id=8121)
+def test_same_tier_is_unchanged(monkeypatch, tmp_path):
+    monkeypatch.setenv("MINTARR_LIBRARY_ROOT", str(tmp_path))
+    _seed_real(tmp_path, 812, 16, 44100, trackfile_id=8121)
     assert _apply("ACCEPT", [812], cand_bits=16, cand_rate=44100) == "ACCEPT"
+
+
+def test_mount_unconfigured_falls_back_to_label(monkeypatch, tmp_path):
+    # Fresh row exists, but the library is not mounted now → must NOT decide on it.
+    monkeypatch.setenv("MINTARR_LIBRARY_ROOT", str(tmp_path))
+    _seed_real(tmp_path, 813, 24, 96000, trackfile_id=8131)  # tier 3
+    monkeypatch.delenv("MINTARR_LIBRARY_ROOT", raising=False)
+    assert _apply("ACCEPT", [813], cand_bits=16, cand_rate=44100) == "ACCEPT"
+
+
+def test_stale_row_falls_back_to_label(monkeypatch, tmp_path):
+    # Row's stored size/mtime no longer match the file (it changed) → not fresh.
+    monkeypatch.setenv("MINTARR_LIBRARY_ROOT", str(tmp_path))
+    f = _seed_real(tmp_path, 814, 24, 96000, trackfile_id=8141)  # tier 3
+    f.write_bytes(b"Y" * 5000)  # size + mtime now differ from the stored row
+    assert _apply("ACCEPT", [814], cand_bits=16, cand_rate=44100) == "ACCEPT"

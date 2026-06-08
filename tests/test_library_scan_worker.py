@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sqlite3
+import threading
 
 import library_evidence
 import library_scan_worker
@@ -560,3 +561,115 @@ def test_spectral_scan_worker_rejects_when_background_flag_disabled(
     assert final_run["state"] == "failed"
     assert "background spectral scan disabled" in final_run["last_error"]
     assert final_job["state"] == "failed"
+
+
+# ---- F5.4 slice 5c: parallel cheap-scan concurrency (Claude follow-up) ----
+
+
+def _measured_tm():
+    return library_evidence.TrackMeasurement(
+        status="measured",
+        codec="flac",
+        sample_rate=44100,
+        bit_depth=16,
+        lossless=True,
+        integrity_ok=True,
+    )
+
+
+def test_cheap_scan_dispatches_multiple_items_concurrently(monkeypatch, tmp_path):
+    # Proves the ThreadPoolExecutor actually runs >1 probe at once: each probe
+    # blocks on a 2-party barrier, so the test can only complete if at least two
+    # probes are in flight simultaneously.
+    _fresh_db(tmp_path)
+    monkeypatch.setenv("MINTARR_LIBRARY_SCAN_WORKERS", "4")
+    run = state_db.enqueue_library_scan(mode="cheap")
+    assert run is not None
+    monkeypatch.setattr(
+        library_scan_worker,
+        "_fetch_lidarr_trackfiles",
+        lambda: [
+            {"id": i, "albumId": 10, "path": f"/music/{i}.flac"} for i in range(1, 5)
+        ],
+    )
+    monkeypatch.setattr(
+        library_evidence, "stat_for_freshness", lambda path: (None, None, None)
+    )
+    barrier = threading.Barrier(2, timeout=10)
+    lock = threading.Lock()
+    concurrency = {"now": 0, "peak": 0}
+
+    def _measure(path):
+        with lock:
+            concurrency["now"] += 1
+            concurrency["peak"] = max(concurrency["peak"], concurrency["now"])
+        try:
+            barrier.wait()  # only releases once a second probe is also in flight
+        except threading.BrokenBarrierError:
+            pass
+        with lock:
+            concurrency["now"] -= 1
+        return _measured_tm()
+
+    monkeypatch.setattr(library_evidence, "measure_trackfile", _measure)
+
+    library_scan_worker._execute_library_scan_job(_claim_scan_job(run))
+
+    assert concurrency["peak"] >= 2  # genuine parallelism, not sequential
+    final_run = state_db.get_library_scan_run(run["id"])
+    assert final_run["state"] == "completed"
+    assert final_run["processed_items"] == 4
+    assert final_run["measured_items"] == 4
+    assert final_run["error_items"] == 0
+
+
+def test_cheap_scan_cancel_drains_inflight_and_terminalizes(monkeypatch, tmp_path):
+    # Cancel while probes are in flight: the run/job must terminalize to cancelled
+    # and the already-started probes must be allowed to finish (pool drain), not
+    # be torn down mid-measurement.
+    _fresh_db(tmp_path)
+    monkeypatch.setenv("MINTARR_LIBRARY_SCAN_WORKERS", "2")
+    run = state_db.enqueue_library_scan(mode="cheap")
+    assert run is not None
+    monkeypatch.setattr(
+        library_scan_worker,
+        "_fetch_lidarr_trackfiles",
+        lambda: [
+            {"id": i, "albumId": 10, "path": f"/music/{i}.flac"} for i in range(1, 5)
+        ],
+    )
+    monkeypatch.setattr(
+        library_evidence, "stat_for_freshness", lambda path: (None, None, None)
+    )
+    started = threading.Event()
+    release = threading.Event()
+    lock = threading.Lock()
+    finished = {"count": 0}
+
+    def _measure(path):
+        started.set()
+        release.wait(timeout=10)  # hold the probe in flight until cancel is in
+        with lock:
+            finished["count"] += 1
+        return _measured_tm()
+
+    monkeypatch.setattr(library_evidence, "measure_trackfile", _measure)
+
+    def _cancel_once_inflight():
+        if started.wait(timeout=10):
+            state_db.request_library_scan_cancel(run["id"])
+            release.set()  # let the in-flight probes complete
+
+    canceller = threading.Thread(target=_cancel_once_inflight)
+    canceller.start()
+    try:
+        library_scan_worker._execute_library_scan_job(_claim_scan_job(run))
+    finally:
+        release.set()  # safety: never leave a probe blocked if the test fails
+        canceller.join(timeout=10)
+
+    final_run = state_db.get_library_scan_run(run["id"])
+    final_job = state_db.get_job(run["worker_job_id"])
+    assert final_run["state"] == "cancelled"
+    assert final_job["state"] == "cancelled"
+    assert finished["count"] >= 1  # in-flight probe(s) drained, not killed

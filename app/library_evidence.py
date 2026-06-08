@@ -17,7 +17,13 @@ from pathlib import Path
 log = logging.getLogger("tidalhires.library_evidence")
 
 SENSOR_VERSION = "mintarr-library-evidence 2026-06-07"
+# The spectral (FLAC Detective) tier is a *separate* sensor with its own version
+# and freshness, layered onto the same library_evidence row (F5.4 §8b). Bumping
+# this re-measures only the spectral verdict, not the cheap ffprobe tier.
+SPECTRAL_SENSOR_VERSION = "mintarr-library-spectral 2026-06-08"
 _LOSSLESS_CODECS = {"flac", "alac"}
+# Detective per-file verdicts that mean "not a genuine lossless file".
+_FAKE_VERDICTS = {"FAKE", "FAKE_CERTAIN", "SUSPICIOUS"}
 
 
 @dataclass(frozen=True)
@@ -34,8 +40,34 @@ class TrackMeasurement:
     integrity_ok: bool | None = None
 
 
+@dataclass(frozen=True)
+class SpectralMeasurement:
+    """FLAC Detective authenticity verdict for one existing library trackfile.
+
+    ``authentic`` is deliberately tri-state (§8b): True (genuine), False (a
+    measured fake), or None (not spectrally measured — disabled, Detective
+    unreachable, or no per-file result could be matched back to this exact file).
+    Unknown must never be read as authentic.
+    """
+
+    status: str  # "measured" | "unmeasured"
+    reason: str | None = None
+    authentic: bool | None = None
+    verdict: str | None = None
+
+
 def configured_library_root() -> str | None:
     return os.environ.get("MINTARR_LIBRARY_ROOT") or None
+
+
+def spectral_enabled() -> bool:
+    """True only when the operator opted into the heavier spectral tier (§8b)."""
+    return os.environ.get("MINTARR_LIBRARY_SPECTRAL", "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    )
 
 
 def _lidarr_root() -> str:
@@ -175,6 +207,124 @@ def measure_trackfile(
         lossless=(codec in _LOSSLESS_CODECS) if codec else None,
         integrity_ok=probe.get("integrity_ok"),
     )
+
+
+def is_spectral_row_fresh(row: dict) -> bool:
+    """True iff a stored spectral verdict is current for the file on disk.
+
+    Independent of the cheap-tier freshness (``is_measured_row_fresh``): a row can
+    have fresh ffprobe evidence but stale/absent spectral evidence. Same basis as
+    §3.4 but keyed on the *spectral* sensor version — re-measure unless the file's
+    path/size/mtime still match and ``spectral_sensor_version`` is current.
+    """
+    root = configured_library_root()
+    if not root or row.get("spectral_status") != "measured":
+        return False
+    if row.get("spectral_sensor_version") != SPECTRAL_SENSOR_VERSION:
+        return False
+    path = row.get("path")
+    if not path:
+        return False
+    candidate = Path(path)
+    try:
+        if not _is_relative_to(candidate.resolve(), Path(root).resolve()):
+            return False
+        if candidate.is_symlink() or not candidate.is_file():
+            return False
+        st = candidate.stat()
+    except OSError:
+        return False
+    return st.st_size == row.get("size") and st.st_mtime == row.get("mtime")
+
+
+def measure_trackfile_spectral(
+    lidarr_path: str,
+    *,
+    library_root: str | None = None,
+    lidarr_root: str | None = None,
+    client=None,
+) -> SpectralMeasurement:
+    """Spectrally measure one existing trackfile via FLAC Detective. Never raises.
+
+    Per §8b.1 the analysis unit is this *single trackfile* at its exact resolved
+    path — never a directory. The Detective response is matched back to that exact
+    file; an unmatched or empty result is discarded as ``unmeasured`` (unknown),
+    not cached as authentic.
+    """
+    if not spectral_enabled():
+        return SpectralMeasurement("unmeasured", "spectral disabled")
+    root = library_root if library_root is not None else configured_library_root()
+    if not root:
+        return SpectralMeasurement("unmeasured", "library not mounted")
+    mapped, reason = resolve_library_path(
+        lidarr_path,
+        library_root=root,
+        lidarr_root=lidarr_root if lidarr_root is not None else _lidarr_root(),
+    )
+    if mapped is None:
+        return SpectralMeasurement("unmeasured", reason)
+
+    try:
+        result = (client or _default_spectral_client)(mapped)
+    except Exception:
+        log.exception("[library_evidence] spectral probe failed for a library file")
+        return SpectralMeasurement("unmeasured", "detective unreachable")
+
+    entry = _match_detective_file(result, mapped)
+    if entry is None:
+        # No per-file result for THIS exact file — never assume authentic (§8b.1).
+        return SpectralMeasurement("unmeasured", "no detective result for file")
+    verdict = (
+        entry.get("verdict") or result.get("overall_verdict") or ""
+    ).upper() or None
+    fake = bool(entry.get("is_fake_high_res")) or (verdict in _FAKE_VERDICTS)
+    return SpectralMeasurement(
+        status="measured",
+        authentic=not fake,
+        verdict=verdict,
+    )
+
+
+def _match_detective_file(result: dict | None, mapped: Path) -> dict | None:
+    """Return the per-file Detective entry for the *exact* ``mapped`` path, else None.
+
+    Requires a full-path match, never a basename one: two albums can both hold an
+    ``01.flac``, so basename matching could cache one file's authenticity against
+    another's ``trackfile_id`` (§8b.1). Detective must mount the library at the
+    same path Mintarr resolved (§8b deployment requirement), so the reported path
+    equals the path we sent; anything else ⇒ None ⇒ caller records *unknown*.
+    """
+    if not isinstance(result, dict):
+        return None
+    files = result.get("files")
+    if not isinstance(files, list):
+        return None
+    target = os.path.normpath(str(mapped))
+    for item in files:
+        if not isinstance(item, dict):
+            continue
+        item_path = item.get("path")
+        if isinstance(item_path, str) and os.path.normpath(item_path) == target:
+            return item
+    return None
+
+
+def _default_spectral_client(path: Path) -> dict:
+    """POST the single file path to the FLAC Detective service and return JSON.
+
+    Detective must mount the library read-only at the same path Mintarr resolved
+    (§8b deployment requirement), so the resolved path is sent as-is.
+    """
+    import requests  # local import: keeps the module importable without the dep
+
+    url = os.environ.get("FLAC_API_URL", "http://host.docker.internal:8889/analyze")
+    resp = requests.post(url, json={"path": str(path)}, timeout=900)
+    if resp.status_code != 200:
+        raise RuntimeError(f"detective HTTP {resp.status_code}")
+    data = resp.json()
+    if not isinstance(data, dict):
+        raise RuntimeError("detective returned non-object")
+    return data
 
 
 def _default_prober(path: Path) -> dict:

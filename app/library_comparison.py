@@ -41,6 +41,13 @@ class AlbumQuality:
     any_invalid: bool  # at least one measured track failed integrity
     min_tier: int  # weakest track tier (a release is only as good as its worst)
     all_lossless: bool
+    # Spectral authenticity rollup (F5.4 slice 4a, §8b). Record-only here —
+    # compare() does not read these yet (that is slice 4b). ``any_fake`` is True
+    # iff a track was spectrally measured as fake; ``authenticity_known`` is True
+    # only when *every* measured track has a spectral verdict, so unknown
+    # authenticity is never silently read as authentic.
+    any_fake: bool = False
+    authenticity_known: bool = False
 
 
 def album_quality(rows: list[dict]) -> AlbumQuality | None:
@@ -67,6 +74,13 @@ def album_quality(rows: list[dict]) -> AlbumQuality | None:
         )
         for r in measured
     )
+    # Spectral authenticity rolls up only over tracks that carry a spectral
+    # verdict. A release is "authentic-known" only when every measured track was
+    # spectrally measured; one fake track makes the release any_fake (§8b.1: the
+    # rollup is scoped to the album's own trackfiles, never a directory).
+    spectral = [r for r in measured if r.get("spectral_status") == "measured"]
+    any_fake = any(r.get("authentic") == 0 for r in spectral)
+    authenticity_known = len(spectral) == len(measured) and len(spectral) > 0
     return AlbumQuality(
         measured_count=len(measured),
         track_count=len(rows),
@@ -74,6 +88,8 @@ def album_quality(rows: list[dict]) -> AlbumQuality | None:
         any_invalid=any_invalid,
         min_tier=min_tier,
         all_lossless=all_lossless,
+        any_fake=any_fake,
+        authenticity_known=authenticity_known,
     )
 
 

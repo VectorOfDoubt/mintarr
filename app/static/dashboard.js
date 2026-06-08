@@ -498,10 +498,18 @@ function renderLibraryEvidence(lib) {
     if (t.lossless === true) flags.push('lossless');
     if (t.lossless === false) flags.push('lossy');
     if (t.integrity_ok === false) flags.push('integrity FAIL');
+    // F5.4 slice 4a: tri-state spectral authenticity (record-only).
+    if (t.authentic === false) flags.push('spectral FAKE');
+    else if (t.authentic === true) flags.push('spectral genuine');
+    else if (t.spectral_status === 'measured') flags.push('spectral unknown');
     return `<div class="kvrow"><span class="k">${esc(t.filename || '—')}</span><span class="v">${fmt}${flags.length ? ' · ' + flags.join(', ') : ''}</span></div>`;
   }).join('');
+  const auth = lib.any_fake
+    ? '<span class="v">contains spectral fake</span>'
+    : (lib.authenticity_known ? '<span class="v">all genuine</span>' : '<span class="v">authenticity unknown</span>');
   return `
     <div class="kvrow"><span class="k">Measured (Mintarr)</span><span class="v">${lib.measured_count}/${lib.track_count} tracks</span></div>
+    <div class="kvrow"><span class="k">Authenticity</span>${auth}</div>
     ${rows}
   `;
 }

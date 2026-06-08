@@ -3162,8 +3162,41 @@ def _record_existing_library_evidence(album_id, trackfiles) -> None:
                     "sensor_version": library_evidence.SENSOR_VERSION,
                 }
             )
+            _record_existing_spectral_evidence(album_id, trackfile_id, path)
     except Exception:
         log.exception("[library_evidence] recording existing evidence failed")
+
+
+def _record_existing_spectral_evidence(album_id, trackfile_id, lidarr_path) -> None:
+    """Spectrally measure one existing trackfile and store the verdict (F5.4 4a).
+
+    Heavier, separately opt-in tier (``MINTARR_LIBRARY_SPECTRAL``): record-only and
+    freshness-cached on its own sensor version so an unchanged album pays nothing
+    on re-import. Layers onto the cheap-tier row without touching it. Never raises.
+    """
+    try:
+        import library_evidence
+        import state_db
+
+        if not library_evidence.spectral_enabled():
+            return
+        prior = state_db.get_library_evidence(int(trackfile_id))
+        if prior and library_evidence.is_spectral_row_fresh(prior):
+            return  # path/size/mtime + spectral sensor version all fresh — skip
+        spectral = library_evidence.measure_trackfile_spectral(lidarr_path)
+        state_db.update_library_spectral(
+            {
+                "trackfile_id": trackfile_id,
+                "album_id": album_id,
+                "authentic": spectral.authentic,
+                "spectral_status": spectral.status,
+                "spectral_reason": spectral.reason,
+                "spectral_verdict": spectral.verdict,
+                "spectral_sensor_version": library_evidence.SPECTRAL_SENSOR_VERSION,
+            }
+        )
+    except Exception:
+        log.exception("[library_evidence] recording spectral evidence failed")
 
 
 def _ctdb_enabled() -> bool:

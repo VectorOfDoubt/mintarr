@@ -113,3 +113,55 @@ def test_never_raises_on_measure_error(monkeypatch):
 
     monkeypatch.setattr(library_evidence, "measure_trackfile", _boom)
     server._record_existing_library_evidence(1, [{"id": 606, "path": "/m/z.flac"}])
+
+
+# ---- F5.4 slice 4a: spectral record-only wiring ----
+
+
+def test_spectral_noop_when_disabled(monkeypatch):
+    _enable(monkeypatch, stat=("/lib/s.flac", 1, 1.0))
+    monkeypatch.setattr(library_evidence, "spectral_enabled", lambda: False)
+    calls = {"n": 0}
+    monkeypatch.setattr(
+        library_evidence,
+        "measure_trackfile_spectral",
+        lambda *a, **k: calls.__setitem__("n", calls["n"] + 1),
+    )
+    server._record_existing_library_evidence(1, [{"id": 700, "path": "/m/s.flac"}])
+    assert calls["n"] == 0  # spectral tier never invoked when opt-out
+
+
+def test_spectral_records_verdict(monkeypatch):
+    _enable(monkeypatch, stat=("/lib/s.flac", 1, 1.0))
+    monkeypatch.setattr(library_evidence, "spectral_enabled", lambda: True)
+    monkeypatch.setattr(library_evidence, "is_spectral_row_fresh", lambda row: False)
+    monkeypatch.setattr(
+        library_evidence,
+        "measure_trackfile_spectral",
+        lambda *a, **k: library_evidence.SpectralMeasurement(
+            status="measured", authentic=False, verdict="FAKE"
+        ),
+    )
+    server._record_existing_library_evidence(9, [{"id": 701, "path": "/m/s.flac"}])
+    row = state_db.get_library_evidence(701)
+    assert row["spectral_status"] == "measured"
+    assert row["authentic"] == 0
+    assert row["spectral_verdict"] == "FAKE"
+    assert row["spectral_sensor_version"] == library_evidence.SPECTRAL_SENSOR_VERSION
+    # The cheap-tier evidence is preserved (partial upsert did not clobber it).
+    assert row["status"] == "measured"
+    assert row["bit_depth"] == 24
+
+
+def test_spectral_skips_when_fresh(monkeypatch):
+    _enable(monkeypatch, stat=("/lib/s.flac", 1, 1.0))
+    monkeypatch.setattr(library_evidence, "spectral_enabled", lambda: True)
+    monkeypatch.setattr(library_evidence, "is_spectral_row_fresh", lambda row: True)
+    calls = {"n": 0}
+    monkeypatch.setattr(
+        library_evidence,
+        "measure_trackfile_spectral",
+        lambda *a, **k: calls.__setitem__("n", calls["n"] + 1),
+    )
+    server._record_existing_library_evidence(1, [{"id": 702, "path": "/m/s.flac"}])
+    assert calls["n"] == 0  # fresh spectral verdict → no re-measure

@@ -182,6 +182,7 @@ def init(db_path: Path | None = None) -> None:
         with _connect() as conn:
             conn.executescript(SCHEMA)
             _ensure_records_source_type_column(conn)
+            _ensure_library_spectral_columns(conn)
         _initialized = True
         log.info("state_db initialized at %s", _db_path)
 
@@ -199,6 +200,34 @@ def _ensure_records_source_type_column(conn: sqlite3.Connection) -> None:
     conn.execute("ALTER TABLE records ADD COLUMN source_type TEXT")
     conn.execute("UPDATE records SET source_type = 'tidal' WHERE source_type IS NULL")
     log.info("state_db: added records.source_type column (backfilled to 'tidal')")
+
+
+def _ensure_library_spectral_columns(conn: sqlite3.Connection) -> None:
+    """F5.4 slice 4a migration: add the spectral (FLAC Detective) columns.
+
+    The spectral tier is a separate sensor layered onto each library_evidence
+    row (§8b). Added on demand so existing rows keep their cheap-tier evidence and
+    simply read unknown authenticity until re-measured. Idempotent.
+    """
+    cols = {
+        row[1] for row in conn.execute("PRAGMA table_info(library_evidence)").fetchall()
+    }
+    additions = {
+        "authentic": "INTEGER",  # tri-state: 1 genuine, 0 fake, NULL unknown
+        "spectral_status": "TEXT",
+        "spectral_reason": "TEXT",
+        "spectral_verdict": "TEXT",
+        "spectral_sensor_version": "TEXT",
+        "spectral_evidence_json": "TEXT",
+        "spectral_measured_at": "REAL",
+    }
+    added = False
+    for name, decl in additions.items():
+        if name not in cols:
+            conn.execute(f"ALTER TABLE library_evidence ADD COLUMN {name} {decl}")
+            added = True
+    if added:
+        log.info("state_db: added library_evidence spectral columns (F5.4 slice 4a)")
 
 
 def _ensure_initialized() -> bool:
@@ -412,6 +441,56 @@ def upsert_library_evidence(row: dict) -> None:
     except Exception:
         log.exception(
             "state_db.upsert_library_evidence failed for trackfile_id=%s",
+            row.get("trackfile_id"),
+        )
+
+
+def update_library_spectral(row: dict) -> None:
+    """Store only the spectral (Detective) verdict for one trackfile (F5.4 4a).
+
+    Partial upsert: it never touches the cheap-tier ffprobe columns, so a spectral
+    update cannot clobber the integrity/codec evidence written by
+    ``upsert_library_evidence``. Creates a stub row if the cheap tier has not run
+    yet (identity + spectral columns only), so the two sensors are independent.
+    """
+    if not _ensure_initialized() or row.get("trackfile_id") is None:
+        return
+    try:
+        authentic = row.get("authentic")
+        payload = {
+            "trackfile_id": int(row["trackfile_id"]),
+            "album_id": row.get("album_id"),
+            "authentic": None if authentic is None else int(bool(authentic)),
+            "spectral_status": row.get("spectral_status"),
+            "spectral_reason": row.get("spectral_reason"),
+            "spectral_verdict": row.get("spectral_verdict"),
+            "spectral_sensor_version": row.get("spectral_sensor_version"),
+            "spectral_evidence_json": json.dumps(row.get("spectral_evidence") or {}),
+            "spectral_measured_at": row.get("spectral_measured_at") or time.time(),
+        }
+        with _lock, _connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO library_evidence (trackfile_id, album_id, authentic,
+                  spectral_status, spectral_reason, spectral_verdict,
+                  spectral_sensor_version, spectral_evidence_json, spectral_measured_at)
+                VALUES (:trackfile_id, :album_id, :authentic, :spectral_status,
+                  :spectral_reason, :spectral_verdict, :spectral_sensor_version,
+                  :spectral_evidence_json, :spectral_measured_at)
+                ON CONFLICT(trackfile_id) DO UPDATE SET
+                  authentic=excluded.authentic,
+                  spectral_status=excluded.spectral_status,
+                  spectral_reason=excluded.spectral_reason,
+                  spectral_verdict=excluded.spectral_verdict,
+                  spectral_sensor_version=excluded.spectral_sensor_version,
+                  spectral_evidence_json=excluded.spectral_evidence_json,
+                  spectral_measured_at=excluded.spectral_measured_at
+            """,
+                payload,
+            )
+    except Exception:
+        log.exception(
+            "state_db.update_library_spectral failed for trackfile_id=%s",
             row.get("trackfile_id"),
         )
 

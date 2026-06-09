@@ -1646,6 +1646,38 @@ _LIBRARY_QUALITY_BUCKETS = [
 _LIBRARY_QUALITY_BUCKET_ORDER = {
     bucket["key"]: index for index, bucket in enumerate(_LIBRARY_QUALITY_BUCKETS)
 }
+_LIBRARY_QUALITY_TIERS = [
+    {
+        "key": "lossy",
+        "label": "Lossy",
+        "description": "At least one existing track is not lossless.",
+    },
+    {
+        "key": "redbook",
+        "label": "CD quality (16/44)",
+        "description": "All measured tracks are lossless standard CD tier.",
+    },
+    {
+        "key": "lossless_24",
+        "label": "24-bit lossless",
+        "description": "All measured tracks are lossless 24-bit up to 48 kHz.",
+    },
+    {
+        "key": "hires",
+        "label": "Hi-res FLAC",
+        "description": "All measured tracks are lossless 24-bit above 48 kHz.",
+    },
+    {
+        "key": "mixed",
+        "label": "Mixed tier",
+        "description": "Measured tracks span more than one audio tier.",
+    },
+    {
+        "key": "unknown",
+        "label": "Tier unknown",
+        "description": "Mintarr has no usable measured tier for the album.",
+    },
+]
 
 
 def _library_quality_scan_status(state_db_mod) -> dict:
@@ -1830,9 +1862,23 @@ def _library_quality_album_summary(
     else:
         bucket = "ok"
 
+    tier_bucket = "unknown"
+    if rollup is not None:
+        if not rollup.all_lossless:
+            tier_bucket = "lossy"
+        elif len(tiers) > 1:
+            tier_bucket = "mixed"
+        elif rollup.min_tier <= 1:
+            tier_bucket = "redbook"
+        elif rollup.min_tier == 2:
+            tier_bucket = "lossless_24"
+        else:
+            tier_bucket = "hires"
+
     return {
         "album_id": album_id,
         "primary_bucket": bucket,
+        "tier_bucket": tier_bucket,
         "track_count": len(rows),
         "measured_count": len(fresh_rows),
         "stale_count": stale_count + spectral_stale_count,
@@ -1937,6 +1983,7 @@ def _build_library_quality_view(
         )
     )
     bucket_counts = Counter(a["primary_bucket"] for a in albums)
+    tier_counts = Counter(a["tier_bucket"] for a in albums)
     if bucket:
         albums = [a for a in albums if a["primary_bucket"] == bucket]
     returned = _enrich_library_quality_albums(albums[offset : offset + limit])
@@ -1946,6 +1993,10 @@ def _build_library_quality_view(
         "buckets": [
             {**b, "count": int(bucket_counts.get(b["key"], 0))}
             for b in _LIBRARY_QUALITY_BUCKETS
+        ],
+        "tiers": [
+            {**b, "count": int(tier_counts.get(b["key"], 0))}
+            for b in _LIBRARY_QUALITY_TIERS
         ],
         "albums": returned,
         "selected_bucket": bucket or "",

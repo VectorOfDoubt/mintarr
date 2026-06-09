@@ -282,6 +282,30 @@ button.library-bucket.selected {
 .library-bucket-ok { color: var(--status-success); background: var(--status-success-bg); }
 .library-bucket-warn { color: var(--status-warning); background: var(--status-warning-bg); }
 .library-bucket-bad { color: var(--status-danger); background: var(--status-danger-bg); }
+.library-tier-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 10px 0 4px;
+}
+.library-tier-title {
+  color: var(--text-secondary);
+  font-size: 11px;
+  text-transform: uppercase;
+  margin-right: 2px;
+}
+.library-tier-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: 2px 6px;
+  background: var(--bg-inset);
+  font-size: 11px;
+}
+.library-tier-chip strong { font-family: var(--font-mono); }
 .library-quality-list {
   display: grid;
   gap: 6px;
@@ -333,6 +357,37 @@ button.library-bucket.selected {
 .library-quality-files span {
   margin-left: 4px;
   color: var(--status-warning);
+}
+.library-quality-open {
+  width: 100%;
+  margin-top: 8px;
+}
+.library-quality-explainer {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 0.8fr);
+  gap: 14px;
+  margin: 12px 0;
+  padding: 12px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--bg-inset);
+}
+.library-quality-explainer p {
+  margin: 4px 0 0;
+  color: var(--text-secondary);
+}
+.library-quality-explainer dl {
+  margin: 0;
+  display: grid;
+  gap: 6px;
+}
+.library-quality-explainer dt {
+  color: var(--text-secondary);
+  font-size: 11px;
+  text-transform: uppercase;
+}
+.library-quality-explainer dd {
+  margin: 0 0 5px;
 }
 .library-quality-toolbar {
   display: flex;
@@ -442,6 +497,9 @@ button.library-bucket.selected {
 #records-search { min-width: 200px; }
 #topbar-search { flex: 1 1 280px; min-width: 160px; max-width: 380px; margin: 0 16px; }
 @media (max-width: 768px) { #topbar-search { display: none; } }
+@media (max-width: 980px) {
+  .library-quality-explainer { grid-template-columns: 1fr; }
+}
 [data-density="compact"] table.file-evidence td,
 [data-density="compact"] #records-table td,
 [data-density="compact"] #records-table th { padding-top: 2px; padding-bottom: 2px; }

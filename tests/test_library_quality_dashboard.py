@@ -185,11 +185,14 @@ def test_library_quality_partial_has_full_console_layout(monkeypatch):
     assert resp.status_code == 200
     body = resp.get_data(as_text=True)
     assert "library-quality-table" in body
+    assert "library-quality-explainer" in body
+    assert "Decision impact" in body
+    assert "Operator action" in body
     assert "Artist / album" in body
     assert "Clear bucket" not in body
 
 
-def test_library_quality_compact_partial_keeps_card_layout(monkeypatch):
+def test_library_quality_compact_partial_is_summary_only(monkeypatch):
     _fresh(monkeypatch)
     _seed(18, 118, bit_depth=16, sample_rate=44100)
 
@@ -199,7 +202,9 @@ def test_library_quality_compact_partial_keeps_card_layout(monkeypatch):
 
     assert resp.status_code == 200
     body = resp.get_data(as_text=True)
-    assert "library-quality-list" in body
+    assert "Open Quality" in body
+    assert "Use the Quality section for album-level inspection" in body
+    assert "library-quality-list" not in body
     assert "library-quality-table" not in body
 
 
@@ -282,6 +287,29 @@ def test_lossy_and_redbook_are_distinct_buckets(monkeypatch):
     assert counts["lossy"] == 1
     assert counts["redbook"] == 1
     assert "lossy_or_low_tier" not in counts
+
+
+def test_library_quality_reports_audio_tier_distribution(monkeypatch):
+    monkeypatch.setattr(library_evidence, "is_measured_row_fresh", lambda _r: True)
+    monkeypatch.setattr(library_evidence, "is_spectral_row_fresh", lambda _r: True)
+    monkeypatch.setattr(library_evidence, "spectral_enabled", lambda: False)
+    _seed(82, 982, codec="mp3", lossless=False, integrity_ok=None, bit_depth=None)
+    _seed(83, 983, bit_depth=16, sample_rate=44100)
+    _seed(84, 984, bit_depth=24, sample_rate=48000)
+    _seed(85, 985, bit_depth=24, sample_rate=96000)
+    _seed(86, 986, bit_depth=16, sample_rate=44100)
+    _seed(87, 986, bit_depth=24, sample_rate=96000)
+
+    view = dashboard._build_library_quality_view()
+    tiers = {b["key"]: b["count"] for b in view["tiers"]}
+    by_album = {a["album_id"]: a["tier_bucket"] for a in view["albums"]}
+
+    assert tiers["lossy"] == 1
+    assert tiers["redbook"] == 1
+    assert tiers["lossless_24"] == 1
+    assert tiers["hires"] == 1
+    assert tiers["mixed"] == 1
+    assert by_album[985] == "hires"
 
 
 def test_metadata_only_album_is_integrity_unknown_not_ok(monkeypatch):

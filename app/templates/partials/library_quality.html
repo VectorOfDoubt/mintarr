@@ -42,6 +42,51 @@
 </div>
 
 {% if not compact %}
+<div class="library-tier-summary" aria-label="Audio tier distribution">
+  <span class="library-tier-title">Audio tier</span>
+  {% for tier in quality.tiers %}
+  <span class="library-tier-chip" title="{{ tier.description }}">
+    <span>{{ tier.label }}</span>
+    <strong>{{ tier.count }}</strong>
+  </span>
+  {% endfor %}
+</div>
+{% endif %}
+
+{% if compact %}
+<button type="button" class="library-quality-open"
+        onclick="window.dispatchEvent(new CustomEvent('goto-section', { detail: 'quality' }))">
+  Open Quality
+</button>
+{% endif %}
+
+{% if not compact %}
+<div class="library-quality-explainer">
+  {% if quality.selected_bucket_info %}
+  <div>
+    <strong>{{ quality.selected_bucket_info.label }}</strong>
+    <p>{{ quality.selected_bucket_info.description }}</p>
+  </div>
+  <dl>
+    <dt>Decision impact</dt>
+    <dd>{{ quality.selected_bucket_info.impact }}</dd>
+    <dt>Operator action</dt>
+    <dd>{{ quality.selected_bucket_info.action }}</dd>
+  </dl>
+  {% else %}
+  <div>
+    <strong>Choose a quality bucket</strong>
+    <p>Start with the highest-severity buckets. Integrity failed means likely decode corruption; FLAC tag cleanup is advisory and should not trigger replacement by itself.</p>
+  </div>
+  <dl>
+    <dt>Decision impact</dt>
+    <dd>Measured evidence is read-only. Replacement decisions remain gated by policy flags.</dd>
+    <dt>Operator action</dt>
+    <dd>Filter by a bucket, inspect the listed tracks, then decide whether this is replacement, cleanup, or just inventory.</dd>
+  </dl>
+  {% endif %}
+</div>
+
 <div class="library-quality-toolbar">
   <div class="library-quality-result-meta">
     <strong>{{ quality.filtered_albums }}</strong> albums
@@ -62,44 +107,7 @@
 
 {% if quality.albums %}
 {% if compact %}
-<div class="library-quality-list" aria-label="Library quality findings">
-  {% for album in quality.albums %}
-  <div class="library-quality-item">
-    <div class="library-quality-main">
-      <span>
-        {% if album.artist or album.album %}
-        {{ album.artist or 'Unknown artist' }} — {{ album.album or ('Album ' ~ album.album_id) }}
-        {% else %}
-        Album {{ album.album_id if album.album_id is not none else 'unknown' }}
-        {% endif %}
-      </span>
-      <span class="library-quality-bucket">{{ album.primary_bucket.replace('_', ' ') }}</span>
-    </div>
-    <div class="library-quality-meta">
-      {% if album.lidarr_url %}
-      <a href="{{ album.lidarr_url }}" target="_blank" rel="noreferrer">Lidarr</a>
-      {% endif %}
-      <span>{{ album.measured_count }}/{{ album.track_count }} measured</span>
-      {% if album.invalid_count %}<span>{{ album.invalid_count }} invalid</span>{% endif %}
-      {% if album.nonstandard_flac_tags_count %}<span>{{ album.nonstandard_flac_tags_count }} tag cleanup</span>{% endif %}
-      {% if album.md5_mismatch_count %}<span>{{ album.md5_mismatch_count }} MD5 stale</span>{% endif %}
-      {% if album.min_tier is not none %}<span>tier {{ album.min_tier }}</span>{% endif %}
-    </div>
-    {% if album.sample_files %}
-    <div class="library-quality-files" title="{% for file in album.sample_files[:10] %}{{ file.filename or file.trackfile_id }}{% if file.integrity_issue %} ({{ file.integrity_issue }}){% elif file.integrity_ok is sameas false %} (decode corrupt){% elif file.checksum_ok is sameas false %} (MD5 stale){% endif %}{% if not loop.last %}, {% endif %}{% endfor %}">
-      {% for file in album.sample_files[:4] %}
-      <div>
-        {{ file.filename or file.trackfile_id }}
-        {% if file.integrity_issue %}<span>{{ file.integrity_issue.replace('_', ' ') }}</span>{% endif %}
-        {% if file.integrity_ok is sameas false %}<span>decode corrupt</span>{% endif %}
-        {% if file.checksum_ok is sameas false %}<span>MD5 stale</span>{% endif %}
-      </div>
-      {% endfor %}
-    </div>
-    {% endif %}
-  </div>
-  {% endfor %}
-</div>
+<p class="muted">Use the Quality section for album-level inspection.</p>
 {% else %}
 <div class="library-quality-table-wrap">
   <table class="library-quality-table">
@@ -132,6 +140,7 @@
         </td>
         <td class="library-quality-evidence-cell">
           <span>{{ album.measured_count }}/{{ album.track_count }} measured</span>
+          <span>{{ album.tier_bucket.replace('_', ' ') }}</span>
           {% if album.invalid_count %}<span class="danger">{{ album.invalid_count }} decode corrupt</span>{% endif %}
           {% if album.nonstandard_flac_tags_count %}<span class="warn">{{ album.nonstandard_flac_tags_count }} FLAC tag cleanup</span>{% endif %}
           {% if album.md5_mismatch_count %}<span class="warn">{{ album.md5_mismatch_count }} MD5 stale</span>{% endif %}

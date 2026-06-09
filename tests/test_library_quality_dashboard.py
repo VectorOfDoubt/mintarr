@@ -197,6 +197,34 @@ def test_checksum_mismatch_gets_own_bucket_not_invalid(monkeypatch):
     assert counts["invalid"] == 0
 
 
+def test_nonstandard_flac_tags_get_cleanup_bucket_not_invalid(monkeypatch):
+    # Dogfood case: ID3-contaminated FLAC trips strict flac -t but is an advisory
+    # cleanup finding, not a replacement-driving decode-corrupt signal.
+    monkeypatch.setattr(library_evidence, "is_measured_row_fresh", lambda _r: True)
+    monkeypatch.setattr(library_evidence, "is_spectral_row_fresh", lambda _r: True)
+    monkeypatch.setattr(library_evidence, "spectral_enabled", lambda: False)
+    _seed(
+        72,
+        972,
+        integrity_ok=None,
+        checksum_ok=None,
+        integrity_issue="nonstandard_flac_tags",
+    )
+    _seed(73, 973, integrity_ok=False, integrity_issue="decode_corrupt")
+
+    view = dashboard._build_library_quality_view()
+    by_album = {a["album_id"]: a for a in view["albums"]}
+    counts = {b["key"]: b["count"] for b in view["buckets"]}
+
+    assert by_album[972]["primary_bucket"] == "nonstandard_flac_tags"
+    assert by_album[972]["nonstandard_flac_tags_count"] == 1
+    assert by_album[972]["invalid_count"] == 0
+    assert by_album[972]["integrity_known"] is False
+    assert by_album[973]["primary_bucket"] == "invalid"
+    assert counts["nonstandard_flac_tags"] == 1
+    assert counts["invalid"] == 1
+
+
 def test_checksum_mismatch_ranks_below_invalid(monkeypatch):
     # invalid (genuine corruption) outranks checksum_mismatch within an album.
     monkeypatch.setattr(library_evidence, "is_measured_row_fresh", lambda _r: True)
@@ -258,3 +286,34 @@ def test_metadata_only_does_not_read_as_invalid(monkeypatch):
     a = view["albums"][0]
     assert a["primary_bucket"] == "integrity_unknown"  # not "invalid"
     assert a["invalid_count"] == 0
+
+
+def test_library_quality_rollup_counts_rows_beyond_first_10000(monkeypatch):
+    # Regression for dogfood undercount: _build_library_quality_view used to call
+    # list_library_evidence(limit=10000), so albums beyond that cap disappeared
+    # from bucket counts. The aggregate must use all evidence rows.
+    monkeypatch.setattr(library_evidence, "is_measured_row_fresh", lambda _r: True)
+    monkeypatch.setattr(library_evidence, "is_spectral_row_fresh", lambda _r: True)
+    monkeypatch.setattr(library_evidence, "spectral_enabled", lambda: False)
+    for i in range(10001):
+        _seed(
+            100000 + i,
+            200000 + i,
+            path=f"/library/Artist/Album/{i:05d}.flac",
+            bit_depth=16,
+            sample_rate=44100,
+        )
+    _seed(
+        300001,
+        400001,
+        path="/library/Artist/Late/01.flac",
+        integrity_ok=False,
+        integrity_issue="decode_corrupt",
+    )
+
+    view = dashboard._build_library_quality_view(bucket="invalid", limit=5)
+    counts = {b["key"]: b["count"] for b in view["buckets"]}
+
+    assert counts["invalid"] == 1
+    assert view["filtered_albums"] == 1
+    assert view["albums"][0]["album_id"] == 400001

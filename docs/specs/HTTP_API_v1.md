@@ -555,15 +555,17 @@ Authenticated. Read-only ranking view over Mintarr's measured existing-library
 quality evidence (F5.4 slice 5d). It groups `library_evidence` rows by album and
 assigns each album one primary worst-first bucket:
 
-`invalid` → `measured_fake` → `checksum_mismatch` → `stale` → `unmeasured` →
-`lossy` → `redbook` → `mixed_tier` → `integrity_unknown` → `unknown_authenticity` → `ok`.
+`invalid` → `nonstandard_flac_tags` → `measured_fake` → `checksum_mismatch`
+→ `stale` → `unmeasured` → `lossy` → `redbook` → `mixed_tier`
+→ `integrity_unknown` → `unknown_authenticity` → `ok`.
 
 The endpoint also includes the active background library-scan run, if any. It
 does not start scans, cancel scans, mutate Lidarr, or expose full library paths;
 file samples are basenames only. Because this is an informational dashboard
-view, it does not synchronously stat the library mount. `stale` means the stored
-row was produced by an older sensor version; size/mtime freshness is refreshed
-by the background scan.
+view, it does not synchronously stat the library mount. Bucket counts aggregate
+over the full `library_evidence` table; the returned album list is paginated.
+`stale` means the stored row was produced by an older sensor version; size/mtime
+freshness is refreshed by the background scan.
 
 ```http
 GET /dashboard/v1/library-quality?bucket=stale&limit=50&offset=0

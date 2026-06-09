@@ -3109,10 +3109,13 @@ def _decision_evidence_view(row: dict, library_evidence) -> dict:
         view["spectral_status"] = None
         view["authentic"] = None
     integrity_fresh = library_evidence.is_integrity_row_fresh(view)
-    view["integrity_known"] = integrity_fresh
+    view["integrity_known"] = (
+        integrity_fresh and view.get("integrity_issue") != "nonstandard_flac_tags"
+    )
     if not integrity_fresh:
         view["integrity_ok"] = None
         view["checksum_ok"] = None
+        view["integrity_issue"] = None
     return view
 
 
@@ -3214,6 +3217,7 @@ def _record_existing_library_evidence(album_id, trackfiles) -> None:
                     "lossless": measurement.lossless,
                     "integrity_ok": measurement.integrity_ok,
                     "checksum_ok": measurement.checksum_ok,
+                    "integrity_issue": measurement.integrity_issue,
                     "sensor_version": library_evidence.METADATA_SENSOR_VERSION,
                     "integrity_sensor_version": library_evidence.INTEGRITY_SENSOR_VERSION,
                 }

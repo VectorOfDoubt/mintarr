@@ -23,7 +23,7 @@ SENSOR_VERSION = "mintarr-library-evidence 2026-06-08b"
 # lossless-tier axis quickly; integrity is the heavy full-file decode. Unknown
 # integrity stays unknown — never read as OK.
 METADATA_SENSOR_VERSION = "mintarr-library-metadata 2026-06-08"
-INTEGRITY_SENSOR_VERSION = "mintarr-library-integrity 2026-06-08"
+INTEGRITY_SENSOR_VERSION = "mintarr-library-integrity 2026-06-09"
 # The spectral (FLAC Detective) tier is a *separate* sensor with its own version
 # and freshness, layered onto the same library_evidence row (F5.4 §8b). Bumping
 # this re-measures only the spectral verdict, not the cheap ffprobe tier.
@@ -46,6 +46,7 @@ class TrackMeasurement:
     lossless: bool | None = None
     integrity_ok: bool | None = None  # audio frames decode (genuine corruption ⇒ False)
     checksum_ok: bool | None = None  # FLAC MD5 verified; False ⇒ stale-MD5 (plays fine)
+    integrity_issue: str | None = None
 
 
 @dataclass(frozen=True)
@@ -77,6 +78,7 @@ class IntegrityMeasurement:
     reason: str | None = None
     integrity_ok: bool | None = None
     checksum_ok: bool | None = None
+    integrity_issue: str | None = None
 
 
 def configured_library_root() -> str | None:
@@ -230,6 +232,7 @@ def measure_trackfile(
         lossless=(codec in _LOSSLESS_CODECS) if codec else None,
         integrity_ok=probe.get("integrity_ok"),
         checksum_ok=probe.get("checksum_ok"),
+        integrity_issue=probe.get("integrity_issue"),
     )
 
 
@@ -285,6 +288,7 @@ def measure_trackfile_integrity(
         status="measured",
         integrity_ok=probe.get("integrity_ok"),
         checksum_ok=probe.get("checksum_ok"),
+        integrity_issue=probe.get("integrity_issue"),
     )
 
 
@@ -468,8 +472,8 @@ def _run_ffprobe_fields(path: Path) -> dict:
     }
 
 
-def _run_flac_test(path: Path) -> tuple[bool | None, bool | None]:
-    """``flac -t`` (full read + decode) → (integrity_ok, checksum_ok). See §2.1."""
+def _run_flac_test(path: Path) -> tuple[bool | None, bool | None, str | None]:
+    """``flac -t`` → (integrity_ok, checksum_ok, integrity_issue). See §2.1."""
     result = subprocess.run(
         ["flac", "-t", "-s", str(path)],
         capture_output=True,
@@ -482,7 +486,12 @@ def _run_flac_test(path: Path) -> tuple[bool | None, bool | None]:
 def _metadata_prober(path: Path) -> dict:
     """Metadata tier: ffprobe only. Integrity/checksum stay unknown (None)."""
     fields = _run_ffprobe_fields(path)
-    return {**fields, "integrity_ok": None, "checksum_ok": None}
+    return {
+        **fields,
+        "integrity_ok": None,
+        "checksum_ok": None,
+        "integrity_issue": None,
+    }
 
 
 def _integrity_prober(path: Path) -> dict:
@@ -493,9 +502,19 @@ def _integrity_prober(path: Path) -> dict:
     """
     codec = (_run_ffprobe_fields(path).get("codec") or "").lower()
     if codec != "flac":
-        return {"codec": codec or None, "integrity_ok": None, "checksum_ok": None}
-    integrity_ok, checksum_ok = _run_flac_test(path)
-    return {"codec": codec, "integrity_ok": integrity_ok, "checksum_ok": checksum_ok}
+        return {
+            "codec": codec or None,
+            "integrity_ok": None,
+            "checksum_ok": None,
+            "integrity_issue": None,
+        }
+    integrity_ok, checksum_ok, integrity_issue = _run_flac_test(path)
+    return {
+        "codec": codec,
+        "integrity_ok": integrity_ok,
+        "checksum_ok": checksum_ok,
+        "integrity_issue": integrity_issue,
+    }
 
 
 def _default_prober(path: Path) -> dict:
@@ -503,20 +522,30 @@ def _default_prober(path: Path) -> dict:
     fields = _run_ffprobe_fields(path)
     integrity_ok: bool | None = None
     checksum_ok: bool | None = None
+    integrity_issue: str | None = None
     if (fields.get("codec") or "") == "flac":
-        integrity_ok, checksum_ok = _run_flac_test(path)
-    return {**fields, "integrity_ok": integrity_ok, "checksum_ok": checksum_ok}
+        integrity_ok, checksum_ok, integrity_issue = _run_flac_test(path)
+    return {
+        **fields,
+        "integrity_ok": integrity_ok,
+        "checksum_ok": checksum_ok,
+        "integrity_issue": integrity_issue,
+    }
 
 
-def _classify_flac_test(returncode: int, stderr: str) -> tuple[bool, bool | None]:
-    """Map a ``flac -t`` result to (integrity_ok, checksum_ok) — see §2.1.
+def _classify_flac_test(
+    returncode: int, stderr: str
+) -> tuple[bool | None, bool | None, str | None]:
+    """Map a ``flac -t`` result to integrity fields — see §2.1.
 
     ``flac -t`` exits non-zero for both a stale-MD5 file and a genuinely corrupt
     one. We split them: a pure *MD5 signature mismatch* (the audio decodes, only
     the stored checksum is stale) is usable audio (``integrity_ok=True``) with a
-    failed checksum (``checksum_ok=False``); any other non-zero result is a hard
-    decode error (``integrity_ok=False``). An unrecognized failure is treated as
-    invalid — never softened. Success ⇒ both ok; an *unset* STREAMINFO MD5 also
+    failed checksum (``checksum_ok=False``). FLAC files contaminated with ID3 tags
+    are a repairable container/tag violation, not an automatic replacement
+    trigger, so they get ``integrity_issue=nonstandard_flac_tags`` and unknown
+    decode integrity. Any other non-zero result is hard decode corruption
+    (``integrity_ok=False``). Success ⇒ both ok; an *unset* STREAMINFO MD5 also
     exits 0 but verifies nothing, so ``checksum_ok`` is None.
     """
     if returncode == 0:
@@ -530,14 +559,19 @@ def _classify_flac_test(returncode: int, stderr: str) -> tuple[bool, bool | None
             or "cannot check md5" in lowered
             or "skipping md5" in lowered
         ):
-            return True, None
-        return True, True
+            return True, None, None
+        return True, True, None
     lowered = stderr.lower()
     if "md5 signature mismatch" in lowered and not _has_decode_error(lowered):
         # Frames decoded; only the whole-stream MD5 did not match → stale checksum.
-        return True, False
+        return True, False, "checksum_mismatch"
+    if _has_nonstandard_flac_tag_issue(lowered):
+        # ID3 tags in FLAC are a common legacy/tagger artifact. ``flac -t`` often
+        # reports LOST_SYNC near the tag boundary, but this is not the same signal
+        # as random frame corruption and must not drive a replacement decision.
+        return None, None, "nonstandard_flac_tags"
     # Genuine decode/frame failure, truncation, or any unrecognized error.
-    return False, None
+    return False, None, "decode_corrupt"
 
 
 def _has_decode_error(lowered_stderr: str) -> bool:
@@ -554,6 +588,26 @@ def _has_decode_error(lowered_stderr: str) -> bool:
         "got error code",
     )
     return any(m in lowered_stderr for m in markers)
+
+
+def _has_nonstandard_flac_tag_issue(lowered_stderr: str) -> bool:
+    has_id3 = (
+        "id3v1 tag" in lowered_stderr
+        or "id3v2 tag" in lowered_stderr
+        or "id3 tag" in lowered_stderr
+    )
+    if not has_id3:
+        return False
+    return any(
+        marker in lowered_stderr
+        for marker in (
+            "lost_sync",
+            "lost sync",
+            "invalid sync",
+            "end_of_stream",
+            "error during decoding",
+        )
+    )
 
 
 def _int(value: str | None) -> int | None:

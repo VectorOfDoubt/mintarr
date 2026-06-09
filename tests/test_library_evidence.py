@@ -414,46 +414,63 @@ def test_is_spectral_row_fresh(tmp_path, monkeypatch):
 
 
 def test_classify_flac_clean_pass():
-    assert le._classify_flac_test(0, "") == (True, True)
+    assert le._classify_flac_test(0, "") == (True, True, None)
 
 
 def test_classify_flac_unset_md5_is_unknown_checksum():
     # The real flac wording when STREAMINFO MD5 is unset (rc 0, nothing verified).
     real = "WARNING, cannot check MD5 signature since it was unset in the STREAMINFO"
-    assert le._classify_flac_test(0, real) == (True, None)
+    assert le._classify_flac_test(0, real) == (True, None, None)
     # older/alternate phrasings stay covered too
-    assert le._classify_flac_test(0, "skipping MD5 check") == (True, None)
+    assert le._classify_flac_test(0, "skipping MD5 check") == (True, None, None)
 
 
 def test_classify_flac_md5_mismatch_is_valid_but_checksum_failed():
     # The dogfood case: decodes fine, only the stored MD5 is stale.
-    ok, checksum = le._classify_flac_test(
+    ok, checksum, issue = le._classify_flac_test(
         1, "track.flac: ERROR, MD5 signature mismatch"
     )
     assert ok is True
     assert checksum is False
+    assert issue == "checksum_mismatch"
 
 
 def test_classify_flac_decode_error_is_invalid():
-    ok, checksum = le._classify_flac_test(
+    ok, checksum, issue = le._classify_flac_test(
         1, "track.flac: ERROR while decoding data\nlost sync"
     )
     assert ok is False
     assert checksum is None
+    assert issue == "decode_corrupt"
+
+
+def test_classify_flac_id3_lost_sync_is_nonstandard_tag_issue():
+    ok, checksum, issue = le._classify_flac_test(
+        1,
+        "track.flac: WARNING, ID3v2 tag found\n"
+        "track.flac: NOTE, found something that looks like an ID3v1 tag\n"
+        "track.flac: *** Got error code 0:FLAC__STREAM_DECODER_ERROR_STATUS_LOST_SYNC\n"
+        "track.flac: ERROR during decoding",
+    )
+    assert ok is None
+    assert checksum is None
+    assert issue == "nonstandard_flac_tags"
 
 
 def test_classify_flac_md5_mismatch_with_decode_error_is_invalid():
     # If real frame errors are present too, the conservative result is invalid.
-    ok, checksum = le._classify_flac_test(
+    ok, checksum, issue = le._classify_flac_test(
         1, "MD5 signature mismatch\nERROR: lost sync while decoding"
     )
     assert ok is False
+    assert issue == "decode_corrupt"
 
 
 def test_classify_flac_unrecognized_failure_is_invalid():
     # Unknown non-zero failure is never softened.
-    ok, checksum = le._classify_flac_test(2, "some unexpected failure")
+    ok, checksum, issue = le._classify_flac_test(2, "some unexpected failure")
     assert ok is False
+    assert issue == "decode_corrupt"
 
 
 def test_measure_trackfile_passes_checksum_through(tmp_path):
@@ -467,6 +484,7 @@ def test_measure_trackfile_passes_checksum_through(tmp_path):
             "channels": 2,
             "integrity_ok": True,
             "checksum_ok": False,
+            "integrity_issue": "checksum_mismatch",
         }
 
     m = le.measure_trackfile(
@@ -478,6 +496,7 @@ def test_measure_trackfile_passes_checksum_through(tmp_path):
     assert m.status == "measured"
     assert m.integrity_ok is True
     assert m.checksum_ok is False
+    assert m.integrity_issue == "checksum_mismatch"
 
 
 def test_library_evidence_checksum_round_trip():
@@ -488,12 +507,14 @@ def test_library_evidence_checksum_round_trip():
             "status": "measured",
             "integrity_ok": True,
             "checksum_ok": False,
+            "integrity_issue": "checksum_mismatch",
             "sensor_version": le.METADATA_SENSOR_VERSION,
         }
     )
     row = state_db.get_library_evidence(555)
     assert row["integrity_ok"] == 1
     assert row["checksum_ok"] == 0
+    assert row["integrity_issue"] == "checksum_mismatch"
 
 
 # ---- F5.4 scan tiers (slice 1a): metadata vs integrity measurement ----
@@ -615,6 +636,7 @@ def test_integrity_sensor_column_exists_on_fresh_db():
     with state_db._connect() as conn:
         cols = {r[1] for r in conn.execute("PRAGMA table_info(library_evidence)")}
     assert "integrity_sensor_version" in cols
+    assert "integrity_issue" in cols
 
 
 def test_upsert_library_evidence_round_trips_integrity_sensor():
@@ -655,6 +677,7 @@ def test_update_library_integrity_layers_without_clobbering_metadata():
             "album_id": 5,
             "integrity_ok": True,
             "checksum_ok": False,
+            "integrity_issue": "checksum_mismatch",
             "integrity_sensor_version": le.INTEGRITY_SENSOR_VERSION,
         }
     )
@@ -662,6 +685,7 @@ def test_update_library_integrity_layers_without_clobbering_metadata():
     # integrity dims set…
     assert row["integrity_ok"] == 1
     assert row["checksum_ok"] == 0
+    assert row["integrity_issue"] == "checksum_mismatch"
     assert row["integrity_sensor_version"] == le.INTEGRITY_SENSOR_VERSION
     # …metadata preserved (not clobbered).
     assert row["bit_depth"] == 24
@@ -694,6 +718,7 @@ def test_metadata_upsert_after_integrity_preserves_integrity():
             "album_id": 7,
             "integrity_ok": True,
             "checksum_ok": False,
+            "integrity_issue": "checksum_mismatch",
             "integrity_sensor_version": le.INTEGRITY_SENSOR_VERSION,
         }
     )
@@ -716,6 +741,7 @@ def test_metadata_upsert_after_integrity_preserves_integrity():
     # …integrity preserved, not clobbered to NULL.
     assert row["integrity_ok"] == 1
     assert row["checksum_ok"] == 0
+    assert row["integrity_issue"] == "checksum_mismatch"
     assert row["integrity_sensor_version"] == le.INTEGRITY_SENSOR_VERSION
 
 

@@ -21,7 +21,7 @@
 
 <div class="library-buckets">
   {% for bucket in quality.buckets %}
-  <span class="library-bucket library-bucket-{{ 'bad' if bucket.key in ['invalid', 'measured_fake'] else 'warn' if bucket.key in ['checksum_mismatch', 'stale', 'unmeasured', 'lossy', 'mixed_tier', 'integrity_unknown', 'unknown_authenticity'] else 'ok' }}"
+  <span class="library-bucket library-bucket-{{ 'bad' if bucket.key in ['invalid', 'measured_fake'] else 'warn' if bucket.key in ['nonstandard_flac_tags', 'checksum_mismatch', 'stale', 'unmeasured', 'lossy', 'mixed_tier', 'integrity_unknown', 'unknown_authenticity'] else 'ok' }}"
         title="{{ bucket.description }}">
     <span>{{ bucket.label }}</span>
     <strong>{{ bucket.count }}</strong>
@@ -34,18 +34,34 @@
   {% for album in quality.albums %}
   <div class="library-quality-item">
     <div class="library-quality-main">
-      <span class="mono">Album {{ album.album_id if album.album_id is not none else 'unknown' }}</span>
+      <span>
+        {% if album.artist or album.album %}
+        {{ album.artist or 'Unknown artist' }} — {{ album.album or ('Album ' ~ album.album_id) }}
+        {% else %}
+        Album {{ album.album_id if album.album_id is not none else 'unknown' }}
+        {% endif %}
+      </span>
       <span class="library-quality-bucket">{{ album.primary_bucket.replace('_', ' ') }}</span>
     </div>
     <div class="library-quality-meta">
+      {% if album.lidarr_url %}
+      <a href="{{ album.lidarr_url }}" target="_blank" rel="noreferrer">Lidarr</a>
+      {% endif %}
       <span>{{ album.measured_count }}/{{ album.track_count }} measured</span>
       {% if album.invalid_count %}<span>{{ album.invalid_count }} invalid</span>{% endif %}
+      {% if album.nonstandard_flac_tags_count %}<span>{{ album.nonstandard_flac_tags_count }} tag cleanup</span>{% endif %}
+      {% if album.md5_mismatch_count %}<span>{{ album.md5_mismatch_count }} MD5 stale</span>{% endif %}
       {% if album.min_tier is not none %}<span>tier {{ album.min_tier }}</span>{% endif %}
     </div>
     {% if album.sample_files %}
-    <div class="library-quality-files" title="{% for file in album.sample_files[:3] %}{{ file.filename or file.trackfile_id }}{% if not loop.last %}, {% endif %}{% endfor %}">
-      {% for file in album.sample_files[:1] %}
-      {{ file.filename or file.trackfile_id }}
+    <div class="library-quality-files" title="{% for file in album.sample_files[:10] %}{{ file.filename or file.trackfile_id }}{% if file.integrity_issue %} ({{ file.integrity_issue }}){% elif file.integrity_ok is sameas false %} (decode corrupt){% elif file.checksum_ok is sameas false %} (MD5 stale){% endif %}{% if not loop.last %}, {% endif %}{% endfor %}">
+      {% for file in album.sample_files[:4] %}
+      <div>
+        {{ file.filename or file.trackfile_id }}
+        {% if file.integrity_issue %}<span>{{ file.integrity_issue.replace('_', ' ') }}</span>{% endif %}
+        {% if file.integrity_ok is sameas false %}<span>decode corrupt</span>{% endif %}
+        {% if file.checksum_ok is sameas false %}<span>MD5 stale</span>{% endif %}
+      </div>
       {% endfor %}
     </div>
     {% endif %}

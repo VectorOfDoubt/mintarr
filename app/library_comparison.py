@@ -57,6 +57,9 @@ class AlbumQuality:
     # drive compare() — advisory only, surfaced in the ranking. ``any_invalid``
     # above stays strictly decode-invalid.
     any_md5_mismatch: bool = False
+    # Advisory cleanup: FLAC files carrying non-standard ID3 tags. These are
+    # surfaced to operators but must never be treated as decode corruption.
+    any_nonstandard_flac_tags: bool = False
 
 
 def album_quality(rows: list[dict]) -> AlbumQuality | None:
@@ -92,6 +95,9 @@ def album_quality(rows: list[dict]) -> AlbumQuality | None:
     authenticity_known = len(spectral) == len(measured) and len(spectral) > 0
     # Stale-MD5 (decodes, checksum failed) is advisory: never feeds compare().
     any_md5_mismatch = any(r.get("checksum_ok") == 0 for r in measured)
+    any_nonstandard_flac_tags = any(
+        r.get("integrity_issue") == "nonstandard_flac_tags" for r in measured
+    )
     # Integrity is "known" only when the integrity tier ran fresh for every
     # measured track (caller sets per-row ``integrity_known``). A non-FLAC track
     # that the integrity tier measured as not-applicable still counts as known.
@@ -107,6 +113,7 @@ def album_quality(rows: list[dict]) -> AlbumQuality | None:
         authenticity_known=authenticity_known,
         integrity_known=integrity_known,
         any_md5_mismatch=any_md5_mismatch,
+        any_nonstandard_flac_tags=any_nonstandard_flac_tags,
     )
 
 

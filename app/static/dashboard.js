@@ -497,6 +497,8 @@ function renderLibraryEvidence(lib) {
     const flags = [];
     if (t.lossless === true) flags.push('lossless');
     if (t.lossless === false) flags.push('lossy');
+    if (t.integrity_issue === 'nonstandard_flac_tags') flags.push('FLAC tag cleanup');
+    else if (t.integrity_issue) flags.push(esc(String(t.integrity_issue).replaceAll('_', ' ')));
     if (t.integrity_ok === false) flags.push('integrity FAIL');
     else if (t.checksum_ok === false) flags.push('MD5 stale');
     // F5.4 slice 4a: tri-state spectral authenticity (record-only).

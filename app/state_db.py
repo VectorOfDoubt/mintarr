@@ -96,6 +96,7 @@ CREATE TABLE IF NOT EXISTS library_evidence (
     lossless INTEGER,
     integrity_ok INTEGER,
     checksum_ok INTEGER,
+    integrity_issue TEXT,
     sensor_version TEXT,
     integrity_sensor_version TEXT,
     evidence_json TEXT,
@@ -229,6 +230,7 @@ def init(db_path: Path | None = None) -> None:
             _ensure_library_spectral_columns(conn)
             _ensure_library_checksum_column(conn)
             _ensure_library_integrity_sensor_column(conn)
+            _ensure_library_integrity_issue_column(conn)
         _initialized = True
         log.info("state_db initialized at %s", _db_path)
 
@@ -309,6 +311,20 @@ def _ensure_library_integrity_sensor_column(conn: sqlite3.Connection) -> None:
         log.info(
             "state_db: added library_evidence.integrity_sensor_version column (F5.4)"
         )
+
+
+def _ensure_library_integrity_issue_column(conn: sqlite3.Connection) -> None:
+    """Add the advisory integrity_issue classifier.
+
+    This separates replacement-driving decode corruption from advisory cleanup
+    findings such as ID3-contaminated FLAC files.
+    """
+    cols = {
+        row[1] for row in conn.execute("PRAGMA table_info(library_evidence)").fetchall()
+    }
+    if "integrity_issue" not in cols:
+        conn.execute("ALTER TABLE library_evidence ADD COLUMN integrity_issue TEXT")
+        log.info("state_db: added library_evidence.integrity_issue column (F5.4)")
 
 
 def _ensure_initialized() -> bool:
@@ -498,6 +514,7 @@ def upsert_library_evidence(row: dict) -> None:
             "checksum_ok": None
             if row.get("checksum_ok") is None
             else int(bool(row.get("checksum_ok"))),
+            "integrity_issue": row.get("integrity_issue"),
             "sensor_version": row.get("sensor_version"),
             "integrity_sensor_version": row.get("integrity_sensor_version"),
             "evidence_json": json.dumps(row.get("evidence") or {}),
@@ -508,11 +525,11 @@ def upsert_library_evidence(row: dict) -> None:
                 """
                 INSERT INTO library_evidence (trackfile_id, album_id, path, size, mtime,
                   status, reason, codec, sample_rate, bit_depth, channels, lossless,
-                  integrity_ok, checksum_ok, sensor_version, integrity_sensor_version,
-                  evidence_json, measured_at)
+                  integrity_ok, checksum_ok, integrity_issue, sensor_version,
+                  integrity_sensor_version, evidence_json, measured_at)
                 VALUES (:trackfile_id, :album_id, :path, :size, :mtime, :status, :reason,
                   :codec, :sample_rate, :bit_depth, :channels, :lossless, :integrity_ok,
-                  :checksum_ok, :sensor_version, :integrity_sensor_version,
+                  :checksum_ok, :integrity_issue, :sensor_version, :integrity_sensor_version,
                   :evidence_json, :measured_at)
                 ON CONFLICT(trackfile_id) DO UPDATE SET
                   album_id=excluded.album_id, path=excluded.path, size=excluded.size,
@@ -521,6 +538,7 @@ def upsert_library_evidence(row: dict) -> None:
                   bit_depth=excluded.bit_depth, channels=excluded.channels,
                   lossless=excluded.lossless, integrity_ok=excluded.integrity_ok,
                   checksum_ok=excluded.checksum_ok,
+                  integrity_issue=excluded.integrity_issue,
                   sensor_version=excluded.sensor_version,
                   integrity_sensor_version=excluded.integrity_sensor_version,
                   evidence_json=excluded.evidence_json,
@@ -612,19 +630,21 @@ def update_library_integrity(row: dict) -> None:
             "album_id": row.get("album_id"),
             "integrity_ok": None if integrity_ok is None else int(bool(integrity_ok)),
             "checksum_ok": None if checksum_ok is None else int(bool(checksum_ok)),
+            "integrity_issue": row.get("integrity_issue"),
             "integrity_sensor_version": row.get("integrity_sensor_version"),
         }
         with _lock, _connect() as conn:
             conn.execute(
                 """
                 INSERT INTO library_evidence (trackfile_id, album_id, integrity_ok,
-                  checksum_ok, integrity_sensor_version)
+                  checksum_ok, integrity_issue, integrity_sensor_version)
                 VALUES (:trackfile_id, :album_id, :integrity_ok, :checksum_ok,
-                  :integrity_sensor_version)
+                  :integrity_issue, :integrity_sensor_version)
                 ON CONFLICT(trackfile_id) DO UPDATE SET
                   album_id=excluded.album_id,
                   integrity_ok=excluded.integrity_ok,
                   checksum_ok=excluded.checksum_ok,
+                  integrity_issue=excluded.integrity_issue,
                   integrity_sensor_version=excluded.integrity_sensor_version
             """,
                 payload,
@@ -740,6 +760,29 @@ def list_library_evidence(
             return (int(total), [dict(r) for r in rows])
     except Exception:
         log.exception("state_db.list_library_evidence failed")
+        return (0, [])
+
+
+def list_all_library_evidence() -> tuple[int, list[dict]]:
+    """List all stored library quality evidence for aggregate dashboard rollups.
+
+    The Library Quality view must count every album in the library, not only the
+    first page of rows. This remains a read-only DB query; it deliberately does
+    not stat the mounted library.
+    """
+    if not _ensure_initialized():
+        return (0, [])
+    try:
+        with _lock, _connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT * FROM library_evidence
+                ORDER BY album_id IS NULL, album_id ASC, path ASC, trackfile_id ASC
+                """
+            ).fetchall()
+            return (len(rows), [dict(r) for r in rows])
+    except Exception:
+        log.exception("state_db.list_all_library_evidence failed")
         return (0, [])
 
 

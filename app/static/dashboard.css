@@ -314,8 +314,16 @@ main { flex: 1 1 auto; min-width: 0; padding: 16px 24px; }
   font-size: 11px;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
   margin-top: 3px;
+}
+.library-quality-files div {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.library-quality-files span {
+  margin-left: 4px;
+  color: var(--status-warning);
 }
 .event-list { list-style: none; margin: 0; padding: 0; }
 .event-list li { padding: 5px 0; border-bottom: 1px solid var(--border-subtle); }

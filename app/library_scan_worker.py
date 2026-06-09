@@ -341,6 +341,7 @@ def _measure_trackfile_item(run_id: int, tf: dict) -> str:
             "lossless": measurement.lossless,
             "integrity_ok": measurement.integrity_ok,
             "checksum_ok": measurement.checksum_ok,
+            "integrity_issue": measurement.integrity_issue,
             "sensor_version": library_evidence.METADATA_SENSOR_VERSION,
             "integrity_sensor_version": library_evidence.INTEGRITY_SENSOR_VERSION,
         }
@@ -439,6 +440,7 @@ def _measure_integrity_item(run_id: int, tf: dict) -> str:
             "album_id": album_id,
             "integrity_ok": measurement.integrity_ok,
             "checksum_ok": measurement.checksum_ok,
+            "integrity_issue": measurement.integrity_issue,
             "integrity_sensor_version": library_evidence.INTEGRITY_SENSOR_VERSION,
         }
     )

@@ -1523,6 +1523,7 @@ def _library_evidence_detail(sidecar: dict) -> dict:
                     "checksum_ok": None
                     if r.get("checksum_ok") is None
                     else bool(r.get("checksum_ok")),
+                    "integrity_issue": r.get("integrity_issue"),
                     # F5.4 slice 4a: tri-state spectral authenticity (record-only).
                     "authentic": None
                     if r.get("authentic") is None
@@ -1554,7 +1555,13 @@ _LIBRARY_QUALITY_BUCKETS = [
     {
         "key": "invalid",
         "label": "Integrity failed",
-        "description": "One or more fresh measured tracks failed integrity.",
+        "description": "One or more fresh measured tracks have hard decode corruption.",
+    },
+    {
+        "key": "nonstandard_flac_tags",
+        "label": "FLAC tag cleanup",
+        "description": "FLAC audio carries non-standard ID3 tags. Cleanup candidate; "
+        "not a replacement trigger.",
     },
     {
         "key": "measured_fake",
@@ -1688,14 +1695,32 @@ def _library_quality_album_summary(
     first, stale/unusable evidence next, upgrade opportunities after that, then
     measured OK. This is an operator ranking view only; it never feeds decisions.
     """
+
+    def _track_priority(row: dict) -> tuple[int, str]:
+        if row.get("integrity_ok") is False:
+            return (0, str(row.get("path") or ""))
+        if row.get("integrity_issue"):
+            return (1, str(row.get("path") or ""))
+        if row.get("checksum_ok") is False:
+            return (2, str(row.get("path") or ""))
+        return (3, str(row.get("path") or ""))
+
+    display_rows = sorted(rows, key=_track_priority)
     tracks = [
         {
             "trackfile_id": r.get("trackfile_id"),
             "filename": _basename_any(r.get("path")),
             "status": r.get("status"),
             "reason": r.get("reason"),
+            "integrity_issue": r.get("integrity_issue"),
+            "integrity_ok": None
+            if r.get("integrity_ok") is None
+            else bool(r.get("integrity_ok")),
+            "checksum_ok": None
+            if r.get("checksum_ok") is None
+            else bool(r.get("checksum_ok")),
         }
-        for r in rows[:12]
+        for r in display_rows[:60]
     ]
     measured = [r for r in rows if r.get("status") == "measured"]
     fresh_rows: list[dict] = []
@@ -1711,10 +1736,13 @@ def _library_quality_album_summary(
         # Integrity is gated on its own tier freshness: a metadata-only or
         # stale-integrity row reads as *unknown* (None), never trusted as OK.
         integrity_fresh = _dashboard_integrity_row_current(row, library_evidence_mod)
-        view["integrity_known"] = integrity_fresh
+        view["integrity_known"] = (
+            integrity_fresh and view.get("integrity_issue") != "nonstandard_flac_tags"
+        )
         if not integrity_fresh:
             view["integrity_ok"] = None
             view["checksum_ok"] = None
+            view["integrity_issue"] = None
         else:
             if view.get("integrity_ok") is not None:
                 view["integrity_ok"] = bool(view.get("integrity_ok"))
@@ -1733,6 +1761,9 @@ def _library_quality_album_summary(
 
     rollup = library_comparison_mod.album_quality(fresh_rows)
     invalid_count = sum(1 for r in fresh_rows if r.get("integrity_ok") is False)
+    nonstandard_flac_tags_count = sum(
+        1 for r in fresh_rows if r.get("integrity_issue") == "nonstandard_flac_tags"
+    )
     tiers = {
         library_comparison_mod.tier_rank(
             lossless=bool(r.get("lossless")),
@@ -1744,6 +1775,8 @@ def _library_quality_album_summary(
     }
     if invalid_count:
         bucket = "invalid"
+    elif nonstandard_flac_tags_count:
+        bucket = "nonstandard_flac_tags"
     elif rollup is not None and rollup.any_fake:
         bucket = "measured_fake"
     elif rollup is not None and rollup.any_md5_mismatch:
@@ -1780,6 +1813,7 @@ def _library_quality_album_summary(
         "measured_count": len(fresh_rows),
         "stale_count": stale_count + spectral_stale_count,
         "invalid_count": invalid_count,
+        "nonstandard_flac_tags_count": nonstandard_flac_tags_count,
         "md5_mismatch_count": sum(
             1 for r in fresh_rows if r.get("checksum_ok") is False
         ),
@@ -1792,6 +1826,61 @@ def _library_quality_album_summary(
     }
 
 
+def _library_quality_lidarr_labels(album_ids: list[int]) -> dict[int, dict]:
+    if not album_ids:
+        return {}
+    try:
+        import os
+        import sqlite3
+
+        configured = os.environ.get("MINTARR_LIDARR_DB_PATH")
+        if configured:
+            db_path = Path(configured)
+        else:
+            config_xml = os.environ.get("LIDARR_CONFIG_XML")
+            if not config_xml:
+                return {}
+            db_path = Path(config_xml).with_name("lidarr.db")
+        if not db_path.exists():
+            return {}
+        placeholders = ",".join("?" for _ in album_ids)
+        query = f"""
+            SELECT Albums.Id AS album_id, Albums.Title AS album_title,
+                   ArtistMetadata.Name AS artist_name
+            FROM Albums
+            LEFT JOIN ArtistMetadata
+              ON ArtistMetadata.Id = Albums.ArtistMetadataId
+            WHERE Albums.Id IN ({placeholders})
+        """
+        out: dict[int, dict] = {}
+        with sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=5) as conn:
+            conn.row_factory = sqlite3.Row
+            for row in conn.execute(query, album_ids):
+                aid = int(row["album_id"])
+                out[aid] = {
+                    "artist": row["artist_name"],
+                    "album": row["album_title"],
+                    "lidarr_url": f"{_lidarr_web_base()}/album/{aid}",
+                }
+        return out
+    except Exception:
+        return {}
+
+
+def _enrich_library_quality_albums(albums: list[dict]) -> list[dict]:
+    labels = _library_quality_lidarr_labels(
+        [int(a["album_id"]) for a in albums if a.get("album_id") is not None]
+    )
+    for album in albums:
+        aid = album.get("album_id")
+        if aid is None:
+            continue
+        label = labels.get(int(aid))
+        if label:
+            album.update(label)
+    return albums
+
+
 def _build_library_quality_view(
     *, bucket: str | None = None, limit: int = 50, offset: int = 0
 ) -> dict:
@@ -1801,7 +1890,7 @@ def _build_library_quality_view(
 
     limit = max(1, min(int(limit or 50), 200))
     offset = max(0, int(offset or 0))
-    total_rows, rows = state_db.list_library_evidence(limit=10000, offset=0)
+    total_rows, rows = state_db.list_all_library_evidence()
     grouped: dict[int | None, list[dict]] = {}
     for row in rows:
         aid = row.get("album_id")
@@ -1826,7 +1915,7 @@ def _build_library_quality_view(
     bucket_counts = Counter(a["primary_bucket"] for a in albums)
     if bucket:
         albums = [a for a in albums if a["primary_bucket"] == bucket]
-    returned = albums[offset : offset + limit]
+    returned = _enrich_library_quality_albums(albums[offset : offset + limit])
     return {
         "buckets": [
             {**b, "count": int(bucket_counts.get(b["key"], 0))}

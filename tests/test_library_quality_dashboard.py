@@ -185,11 +185,14 @@ def test_library_quality_partial_has_full_console_layout(monkeypatch):
     assert resp.status_code == 200
     body = resp.get_data(as_text=True)
     assert "library-quality-table" in body
+    assert "library-quality-explainer" in body
+    assert "Decision impact" in body
+    assert "Operator action" in body
     assert "Artist / album" in body
     assert "Clear bucket" not in body
 
 
-def test_library_quality_compact_partial_keeps_card_layout(monkeypatch):
+def test_library_quality_compact_partial_is_summary_only(monkeypatch):
     _fresh(monkeypatch)
     _seed(18, 118, bit_depth=16, sample_rate=44100)
 
@@ -199,7 +202,9 @@ def test_library_quality_compact_partial_keeps_card_layout(monkeypatch):
 
     assert resp.status_code == 200
     body = resp.get_data(as_text=True)
-    assert "library-quality-list" in body
+    assert "Open Quality" in body
+    assert "Use the Quality section for album-level inspection" in body
+    assert "library-quality-list" not in body
     assert "library-quality-table" not in body
 
 

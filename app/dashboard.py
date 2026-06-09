@@ -1556,50 +1556,68 @@ _LIBRARY_QUALITY_BUCKETS = [
         "key": "invalid",
         "label": "Integrity failed",
         "description": "One or more fresh measured tracks have hard decode corruption.",
+        "impact": "Audio did not decode cleanly during integrity verification.",
+        "action": "Treat as a real replacement candidate. Inspect the listed tracks before changing the library.",
     },
     {
         "key": "nonstandard_flac_tags",
         "label": "FLAC tag cleanup",
         "description": "FLAC audio carries non-standard ID3 tags. Cleanup candidate; "
         "not a replacement trigger.",
+        "impact": "The FLAC file has ID3 tags where strict FLAC tooling expects native FLAC metadata.",
+        "action": "Cleanup candidate, not a re-download trigger. Do not replace the album for this alone.",
     },
     {
         "key": "measured_fake",
         "label": "Measured fake",
         "description": "Fresh spectral evidence says at least one track is fake/suspicious.",
+        "impact": "Spectral verification suggests the file may be lossy audio stored as lossless.",
+        "action": "Inspect before replacing. This is quality evidence, not a tag-cleanup issue.",
     },
     {
         "key": "checksum_mismatch",
         "label": "Checksum mismatch",
         "description": "Plays fine; the stored FLAC MD5 no longer matches the audio "
         "(re-tagged/re-encoded after ripping). Not corruption.",
+        "impact": "Audio decoded, but the embedded FLAC MD5 no longer matches.",
+        "action": "Usually advisory. Prefer cleanup or re-verification over replacement.",
     },
     {
         "key": "stale",
         "label": "Stale evidence",
         "description": "Stored evidence was produced by an older sensor version.",
+        "impact": "Mintarr has evidence, but it came from an older scanner contract.",
+        "action": "Run the relevant scan tier again before making decisions from this row.",
     },
     {
         "key": "unmeasured",
         "label": "Unmeasured",
         "description": "No usable measured quality evidence exists for the album.",
+        "impact": "Mintarr cannot yet compare this album from real file evidence.",
+        "action": "Run metadata first, then integrity if you need decode verification.",
     },
     {
         "key": "lossy",
         "label": "Lossy",
         "description": "At least one track is lossy (not lossless) — a real lossless "
         "upgrade candidate.",
+        "impact": "At least one existing file is MP3, OGG, Opus, AAC, or otherwise not lossless.",
+        "action": "Good upgrade target if a verified lossless candidate appears.",
     },
     {
         "key": "redbook",
         "label": "CD quality (16/44)",
         "description": "All lossless but only standard CD tier (16-bit/44.1kHz). Fine "
         "— a hi-res upgrade is optional, not a defect.",
+        "impact": "Existing files are lossless CD quality.",
+        "action": "Healthy baseline. Replace only for a clearly better verified edition.",
     },
     {
         "key": "mixed_tier",
         "label": "Mixed tier",
         "description": "Tracks in the album roll up to different lossless tiers.",
+        "impact": "The album contains tracks with different quality tiers.",
+        "action": "Inspect edition/source consistency before replacing anything.",
     },
     {
         "key": "integrity_unknown",
@@ -1607,16 +1625,22 @@ _LIBRARY_QUALITY_BUCKETS = [
         "description": "Metadata measured (tier known) but the integrity tier "
         "(flac -t) has not verified the audio yet. Not a defect — run an integrity "
         "scan to confirm.",
+        "impact": "Mintarr knows the file tier, but has not verified decode integrity.",
+        "action": "Run integrity scan when you need stronger evidence.",
     },
     {
         "key": "unknown_authenticity",
         "label": "Unknown authenticity",
         "description": "Spectral mode is enabled, but authenticity is not known for every measured track.",
+        "impact": "Spectral authenticity is incomplete for this album.",
+        "action": "Run spectral scan only if you need fake-hi-res evidence.",
     },
     {
         "key": "ok",
         "label": "Measured OK",
         "description": "Fresh measured + integrity-verified evidence with no known quality warnings.",
+        "impact": "No known quality warning from the enabled evidence tiers.",
+        "action": "No operator action needed.",
     },
 ]
 _LIBRARY_QUALITY_BUCKET_ORDER = {
@@ -1925,6 +1949,9 @@ def _build_library_quality_view(
         ],
         "albums": returned,
         "selected_bucket": bucket or "",
+        "selected_bucket_info": next(
+            (b for b in _LIBRARY_QUALITY_BUCKETS if b["key"] == bucket), None
+        ),
         "total_albums": len(grouped),
         "filtered_albums": len(albums),
         "total_rows": total_rows,

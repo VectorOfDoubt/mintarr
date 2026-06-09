@@ -1916,17 +1916,22 @@ def _build_library_quality_view(
     if bucket:
         albums = [a for a in albums if a["primary_bucket"] == bucket]
     returned = _enrich_library_quality_albums(albums[offset : offset + limit])
+    prev_offset = max(0, offset - limit)
+    next_offset = offset + limit if offset + limit < len(albums) else None
     return {
         "buckets": [
             {**b, "count": int(bucket_counts.get(b["key"], 0))}
             for b in _LIBRARY_QUALITY_BUCKETS
         ],
         "albums": returned,
+        "selected_bucket": bucket or "",
         "total_albums": len(grouped),
         "filtered_albums": len(albums),
         "total_rows": total_rows,
         "limit": limit,
         "offset": offset,
+        "prev_offset": prev_offset if offset > 0 else None,
+        "next_offset": next_offset,
         "scan": _library_quality_scan_status(state_db),
     }
 
@@ -1967,10 +1972,11 @@ def library_quality_partial():
     auth_resp = require_apikey_check()
     if auth_resp:
         return auth_resp
+    compact = str(request.args.get("compact") or "").lower() in {"1", "true", "yes"}
     try:
         quality = _build_library_quality_view(
             bucket=request.args.get("bucket") or None,
-            limit=int(request.args.get("limit", "12")),
+            limit=int(request.args.get("limit", "12" if compact else "50")),
             offset=int(request.args.get("offset", "0")),
         )
     except Exception:
@@ -1980,11 +1986,16 @@ def library_quality_partial():
             "total_albums": 0,
             "filtered_albums": 0,
             "total_rows": 0,
-            "limit": 12,
+            "selected_bucket": request.args.get("bucket") or "",
+            "limit": 12 if compact else 50,
             "offset": 0,
+            "prev_offset": None,
+            "next_offset": None,
             "scan": {"active": None, "recent": []},
         }
-    return render_template("partials/library_quality.html", quality=quality)
+    return render_template(
+        "partials/library_quality.html", quality=quality, compact=compact
+    )
 
 
 def _build_record_detail(server_mod, jid: str) -> dict | None:

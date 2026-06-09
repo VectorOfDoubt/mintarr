@@ -75,6 +75,7 @@
       <li><button type="button" class="nav-item" :class="{ active: section==='queue' }" @click="go('queue')">Queue</button></li>
       <li><button type="button" class="nav-item" :class="{ active: section==='history' }" @click="go('history')">History</button></li>
       <li><button type="button" class="nav-item" :class="{ active: section==='review' }" @click="go('review')">Review</button></li>
+      <li><button type="button" class="nav-item" :class="{ active: section==='quality' }" @click="go('quality')">Quality</button></li>
       <li><button type="button" class="nav-item" :class="{ active: section==='connectors' }" @click="go('connectors')">Connectors</button></li>
       <li><button type="button" class="nav-item" :class="{ active: section==='settings' }" @click="go('settings')">Settings</button></li>
       <li><button type="button" class="nav-item" :class="{ active: section==='system' }" @click="go('system')">System</button></li>
@@ -157,6 +158,15 @@
           <tr><td colspan="9" class="muted">Loading...</td></tr>
         </tbody>
       </table>
+    </section>
+
+    <section class="dashboard-section" x-show="section==='quality'" x-cloak>
+      <div id="quality-live"
+           hx-get="/dashboard/v1/library-quality/partial?limit=50"
+           hx-trigger="load"
+           hx-swap="innerHTML">
+        <p class="muted">Loading library quality…</p>
+      </div>
     </section>
 
     <section class="dashboard-section" x-show="section==='connectors'" x-cloak>

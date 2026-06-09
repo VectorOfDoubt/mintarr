@@ -174,6 +174,35 @@ def test_library_quality_partial_renders(monkeypatch):
     assert "07.flac" in body
 
 
+def test_library_quality_partial_has_full_console_layout(monkeypatch):
+    _fresh(monkeypatch)
+    _seed(17, 117, bit_depth=16, sample_rate=44100)
+
+    resp = server.app.test_client().get(
+        f"/dashboard/v1/library-quality/partial?apikey={VALID_KEY}&limit=50"
+    )
+
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert "library-quality-table" in body
+    assert "Artist / album" in body
+    assert "Clear bucket" not in body
+
+
+def test_library_quality_compact_partial_keeps_card_layout(monkeypatch):
+    _fresh(monkeypatch)
+    _seed(18, 118, bit_depth=16, sample_rate=44100)
+
+    resp = server.app.test_client().get(
+        f"/dashboard/v1/library-quality/partial?apikey={VALID_KEY}&compact=1"
+    )
+
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert "library-quality-list" in body
+    assert "library-quality-table" not in body
+
+
 def test_checksum_mismatch_gets_own_bucket_not_invalid(monkeypatch):
     # The dogfood case: a stale-MD5 album (decodes, checksum failed) must land in
     # checksum_mismatch, never invalid and never ok.

@@ -21,15 +21,47 @@
 
 <div class="library-buckets">
   {% for bucket in quality.buckets %}
+  {% if compact %}
   <span class="library-bucket library-bucket-{{ 'bad' if bucket.key in ['invalid', 'measured_fake'] else 'warn' if bucket.key in ['nonstandard_flac_tags', 'checksum_mismatch', 'stale', 'unmeasured', 'lossy', 'mixed_tier', 'integrity_unknown', 'unknown_authenticity'] else 'ok' }}"
         title="{{ bucket.description }}">
     <span>{{ bucket.label }}</span>
     <strong>{{ bucket.count }}</strong>
   </span>
+  {% else %}
+  <button class="library-bucket library-bucket-{{ 'bad' if bucket.key in ['invalid', 'measured_fake'] else 'warn' if bucket.key in ['nonstandard_flac_tags', 'checksum_mismatch', 'stale', 'unmeasured', 'lossy', 'mixed_tier', 'integrity_unknown', 'unknown_authenticity'] else 'ok' }}{% if quality.selected_bucket == bucket.key %} selected{% endif %}"
+          type="button"
+          title="{{ bucket.description }}"
+          hx-get="/dashboard/v1/library-quality/partial?bucket={{ bucket.key }}&limit={{ quality.limit }}"
+          hx-target="#quality-live"
+          hx-swap="innerHTML">
+    <span>{{ bucket.label }}</span>
+    <strong>{{ bucket.count }}</strong>
+  </button>
+  {% endif %}
   {% endfor %}
 </div>
 
+{% if not compact %}
+<div class="library-quality-toolbar">
+  <div class="library-quality-result-meta">
+    <strong>{{ quality.filtered_albums }}</strong> albums
+    <span class="muted">from {{ quality.total_rows }} measured trackfiles</span>
+  </div>
+  <button type="button"
+          hx-get="/dashboard/v1/library-quality/partial?bucket={{ quality.selected_bucket }}&limit={{ quality.limit }}&offset={{ quality.offset }}"
+          hx-target="#quality-live"
+          hx-swap="innerHTML">Refresh</button>
+  {% if quality.selected_bucket %}
+  <button type="button"
+          hx-get="/dashboard/v1/library-quality/partial?limit={{ quality.limit }}"
+          hx-target="#quality-live"
+          hx-swap="innerHTML">Clear bucket</button>
+  {% endif %}
+</div>
+{% endif %}
+
 {% if quality.albums %}
+{% if compact %}
 <div class="library-quality-list" aria-label="Library quality findings">
   {% for album in quality.albums %}
   <div class="library-quality-item">
@@ -68,6 +100,83 @@
   </div>
   {% endfor %}
 </div>
+{% else %}
+<div class="library-quality-table-wrap">
+  <table class="library-quality-table">
+    <thead>
+      <tr>
+        <th>Problem</th>
+        <th>Artist / album</th>
+        <th>Evidence</th>
+        <th>Tracks</th>
+        <th>Open</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for album in quality.albums %}
+      <tr>
+        <td>
+          <span class="library-quality-bucket library-bucket-{{ 'bad' if album.primary_bucket in ['invalid', 'measured_fake'] else 'warn' if album.primary_bucket in ['nonstandard_flac_tags', 'checksum_mismatch', 'stale', 'unmeasured', 'lossy', 'mixed_tier', 'integrity_unknown', 'unknown_authenticity'] else 'ok' }}">
+            {{ album.primary_bucket.replace('_', ' ') }}
+          </span>
+        </td>
+        <td class="library-quality-album-cell">
+          <strong>
+            {% if album.artist or album.album %}
+            {{ album.artist or 'Unknown artist' }} — {{ album.album or ('Album ' ~ album.album_id) }}
+            {% else %}
+            Album {{ album.album_id if album.album_id is not none else 'unknown' }}
+            {% endif %}
+          </strong>
+          <span class="muted">Album {{ album.album_id if album.album_id is not none else 'unknown' }}</span>
+        </td>
+        <td class="library-quality-evidence-cell">
+          <span>{{ album.measured_count }}/{{ album.track_count }} measured</span>
+          {% if album.invalid_count %}<span class="danger">{{ album.invalid_count }} decode corrupt</span>{% endif %}
+          {% if album.nonstandard_flac_tags_count %}<span class="warn">{{ album.nonstandard_flac_tags_count }} FLAC tag cleanup</span>{% endif %}
+          {% if album.md5_mismatch_count %}<span class="warn">{{ album.md5_mismatch_count }} MD5 stale</span>{% endif %}
+          {% if album.min_tier is not none %}<span>tier {{ album.min_tier }}</span>{% endif %}
+        </td>
+        <td class="library-quality-track-cell">
+          {% for file in album.sample_files[:6] %}
+          <div>
+            <span>{{ file.filename or file.trackfile_id }}</span>
+            {% if file.integrity_issue %}<em>{{ file.integrity_issue.replace('_', ' ') }}</em>{% endif %}
+            {% if file.integrity_ok is sameas false %}<em>decode corrupt</em>{% endif %}
+            {% if file.checksum_ok is sameas false %}<em>MD5 stale</em>{% endif %}
+          </div>
+          {% endfor %}
+        </td>
+        <td>
+          {% if album.lidarr_url %}
+          <a href="{{ album.lidarr_url }}" target="_blank" rel="noreferrer">Lidarr</a>
+          {% else %}
+          <span class="muted">—</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% if quality.prev_offset is not none or quality.next_offset is not none %}
+<div class="library-quality-pager">
+  {% if quality.prev_offset is not none %}
+  <button type="button"
+          hx-get="/dashboard/v1/library-quality/partial?bucket={{ quality.selected_bucket }}&limit={{ quality.limit }}&offset={{ quality.prev_offset }}"
+          hx-target="#quality-live"
+          hx-swap="innerHTML">Previous</button>
+  {% endif %}
+  <span class="muted">{{ quality.offset + 1 }}–{{ quality.offset + quality.albums|length }} of {{ quality.filtered_albums }}</span>
+  {% if quality.next_offset is not none %}
+  <button type="button"
+          hx-get="/dashboard/v1/library-quality/partial?bucket={{ quality.selected_bucket }}&limit={{ quality.limit }}&offset={{ quality.next_offset }}"
+          hx-target="#quality-live"
+          hx-swap="innerHTML">Next</button>
+  {% endif %}
+</div>
+{% endif %}
+{% endif %}
 {% else %}
 <p class="muted">No measured library evidence yet.</p>
 {% endif %}

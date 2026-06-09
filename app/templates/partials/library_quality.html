@@ -51,6 +51,17 @@
   </span>
   {% endfor %}
 </div>
+{% if quality.lossy_breakdown %}
+<div class="library-tier-summary" aria-label="Lossy codec breakdown">
+  <span class="library-tier-title">Lossy breakdown</span>
+  {% for item in quality.lossy_breakdown %}
+  <span class="library-tier-chip">
+    <span>{{ item.label }}</span>
+    <strong>{{ item.count }}</strong>
+  </span>
+  {% endfor %}
+</div>
+{% endif %}
 {% endif %}
 
 {% if compact %}
@@ -141,6 +152,7 @@
         <td class="library-quality-evidence-cell">
           <span>{{ album.measured_count }}/{{ album.track_count }} measured</span>
           <span>{{ album.tier_bucket.replace('_', ' ') }}</span>
+          {% for label in album.lossy_labels %}<span class="warn">{{ label }}</span>{% endfor %}
           {% if album.invalid_count %}<span class="danger">{{ album.invalid_count }} decode corrupt</span>{% endif %}
           {% if album.nonstandard_flac_tags_count %}<span class="warn">{{ album.nonstandard_flac_tags_count }} FLAC tag cleanup</span>{% endif %}
           {% if album.md5_mismatch_count %}<span class="warn">{{ album.md5_mismatch_count }} MD5 stale</span>{% endif %}
@@ -150,6 +162,7 @@
           {% for file in album.sample_files[:6] %}
           <div>
             <span>{{ file.filename or file.trackfile_id }}</span>
+            {% if file.lossless is sameas false %}<em>{{ file.codec or 'lossy' }}{% if file.bitrate_kbps %} {{ file.bitrate_kbps }} kbps{% endif %}</em>{% endif %}
             {% if file.integrity_issue %}<em>{{ file.integrity_issue.replace('_', ' ') }}</em>{% endif %}
             {% if file.integrity_ok is sameas false %}<em>decode corrupt</em>{% endif %}
             {% if file.checksum_ok is sameas false %}<em>MD5 stale</em>{% endif %}

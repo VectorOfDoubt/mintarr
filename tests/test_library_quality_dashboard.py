@@ -312,6 +312,38 @@ def test_library_quality_reports_audio_tier_distribution(monkeypatch):
     assert by_album[985] == "hires"
 
 
+def test_library_quality_reports_lossy_codec_bitrate_breakdown(monkeypatch):
+    monkeypatch.setattr(library_evidence, "is_measured_row_fresh", lambda _r: True)
+    monkeypatch.setattr(library_evidence, "is_spectral_row_fresh", lambda _r: True)
+    monkeypatch.setattr(library_evidence, "spectral_enabled", lambda: False)
+    _seed(
+        88,
+        988,
+        codec="mp3",
+        lossless=False,
+        integrity_ok=None,
+        bit_depth=None,
+        bitrate_kbps=320,
+    )
+    _seed(
+        89,
+        989,
+        codec="vorbis",
+        lossless=False,
+        integrity_ok=None,
+        bit_depth=None,
+        bitrate_kbps=None,
+    )
+
+    view = dashboard._build_library_quality_view()
+    lossy = {b["label"]: b["count"] for b in view["lossy_breakdown"]}
+    by_album = {a["album_id"]: a for a in view["albums"]}
+
+    assert lossy["MP3 320 kbps"] == 1
+    assert lossy["OGG/Vorbis bitrate unknown"] == 1
+    assert by_album[988]["lossy_labels"] == ["MP3 320 kbps"]
+
+
 def test_metadata_only_album_is_integrity_unknown_not_ok(monkeypatch):
     # Guardrail §7: metadata measured (tier known) but integrity not verified must
     # NOT render as the fully-verified `ok` bucket.

@@ -1775,6 +1775,9 @@ def _library_quality_album_summary(
             "checksum_ok": None
             if r.get("checksum_ok") is None
             else bool(r.get("checksum_ok")),
+            "codec": r.get("codec"),
+            "bitrate_kbps": r.get("bitrate_kbps"),
+            "lossless": None if r.get("lossless") is None else bool(r.get("lossless")),
         }
         for r in display_rows[:60]
     ]
@@ -1874,11 +1877,19 @@ def _library_quality_album_summary(
             tier_bucket = "lossless_24"
         else:
             tier_bucket = "hires"
+    lossy_labels = sorted(
+        {
+            _lossy_codec_label(r.get("codec"), r.get("bitrate_kbps"))
+            for r in fresh_rows
+            if r.get("status") == "measured" and r.get("lossless") is False
+        }
+    )
 
     return {
         "album_id": album_id,
         "primary_bucket": bucket,
         "tier_bucket": tier_bucket,
+        "lossy_labels": lossy_labels,
         "track_count": len(rows),
         "measured_count": len(fresh_rows),
         "stale_count": stale_count + spectral_stale_count,
@@ -1937,6 +1948,21 @@ def _library_quality_lidarr_labels(album_ids: list[int]) -> dict[int, dict]:
         return {}
 
 
+def _lossy_codec_label(codec: object, bitrate_kbps: object) -> str:
+    codec_name = str(codec or "unknown").strip().lower() or "unknown"
+    display = {
+        "aac": "AAC",
+        "mp3": "MP3",
+        "opus": "Opus",
+        "vorbis": "OGG/Vorbis",
+        "ogg": "OGG",
+    }.get(codec_name, codec_name.upper() if codec_name != "unknown" else "Unknown")
+    bitrate = bitrate_kbps if isinstance(bitrate_kbps, int) else None
+    if bitrate and bitrate > 0:
+        return f"{display} {bitrate} kbps"
+    return f"{display} bitrate unknown"
+
+
 def _enrich_library_quality_albums(albums: list[dict]) -> list[dict]:
     labels = _library_quality_lidarr_labels(
         [int(a["album_id"]) for a in albums if a.get("album_id") is not None]
@@ -1984,6 +2010,10 @@ def _build_library_quality_view(
     )
     bucket_counts = Counter(a["primary_bucket"] for a in albums)
     tier_counts = Counter(a["tier_bucket"] for a in albums)
+    lossy_counts: Counter[str] = Counter()
+    for album in albums:
+        for label in album.get("lossy_labels") or []:
+            lossy_counts[label] += 1
     if bucket:
         albums = [a for a in albums if a["primary_bucket"] == bucket]
     returned = _enrich_library_quality_albums(albums[offset : offset + limit])
@@ -1998,6 +2028,12 @@ def _build_library_quality_view(
             {**b, "count": int(tier_counts.get(b["key"], 0))}
             for b in _LIBRARY_QUALITY_TIERS
         ],
+        "lossy_breakdown": [
+            {"label": label, "count": int(count)}
+            for label, count in sorted(
+                lossy_counts.items(), key=lambda item: (-item[1], item[0])
+            )
+        ][:12],
         "albums": returned,
         "selected_bucket": bucket or "",
         "selected_bucket_info": next(

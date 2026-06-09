@@ -14,6 +14,7 @@ def _fake_prober(**probe):
             "codec": probe.get("codec", "flac"),
             "sample_rate": probe.get("sample_rate", 44100),
             "bit_depth": probe.get("bit_depth", 16),
+            "bitrate_kbps": probe.get("bitrate_kbps"),
             "channels": probe.get("channels", 2),
             "integrity_ok": probe.get("integrity_ok", True),
         }
@@ -113,6 +114,7 @@ def test_measure_flac_records_quality_vector(tmp_path):
     assert m.codec == "flac"
     assert m.sample_rate == 96000
     assert m.bit_depth == 24
+    assert m.bitrate_kbps is None
     assert m.lossless is True
     assert m.integrity_ok is True
 
@@ -189,6 +191,7 @@ def test_library_evidence_storage_round_trip():
             "codec": "flac",
             "sample_rate": 96000,
             "bit_depth": 24,
+            "bitrate_kbps": 921,
             "channels": 2,
             "lossless": True,
             "integrity_ok": True,
@@ -200,6 +203,7 @@ def test_library_evidence_storage_round_trip():
     assert row["album_id"] == 7
     assert row["lossless"] == 1
     assert row["codec"] == "flac"
+    assert row["bitrate_kbps"] == 921
     assert state_db.get_album_library_evidence(7)[0]["trackfile_id"] == 42
 
 
@@ -602,6 +606,28 @@ def test_metadata_prober_runs_no_flac_test(monkeypatch, tmp_path):
     assert probe["checksum_ok"] is None
 
 
+def test_ffprobe_fields_include_bitrate(monkeypatch):
+    class _Result:
+        returncode = 0
+        stderr = ""
+        stdout = "\n".join(
+            [
+                "codec_name=mp3",
+                "sample_rate=44100",
+                "bits_per_raw_sample=N/A",
+                "bit_rate=320000",
+                "channels=2",
+            ]
+        )
+
+    monkeypatch.setattr(le.subprocess, "run", lambda *a, **k: _Result())
+
+    fields = le._run_ffprobe_fields(le.Path("/library/song.mp3"))
+
+    assert fields["codec"] == "mp3"
+    assert fields["bitrate_kbps"] == 320
+
+
 def test_integrity_prober_skips_flac_test_for_non_flac(monkeypatch):
     monkeypatch.setattr(le, "_run_ffprobe_fields", lambda p: {"codec": "mp3"})
     monkeypatch.setattr(
@@ -637,6 +663,7 @@ def test_integrity_sensor_column_exists_on_fresh_db():
         cols = {r[1] for r in conn.execute("PRAGMA table_info(library_evidence)")}
     assert "integrity_sensor_version" in cols
     assert "integrity_issue" in cols
+    assert "bitrate_kbps" in cols
 
 
 def test_upsert_library_evidence_round_trips_integrity_sensor():
@@ -666,6 +693,7 @@ def test_update_library_integrity_layers_without_clobbering_metadata():
             "codec": "flac",
             "sample_rate": 96000,
             "bit_depth": 24,
+            "bitrate_kbps": 861,
             "lossless": True,
             "sensor_version": le.METADATA_SENSOR_VERSION,
         }
@@ -689,6 +717,7 @@ def test_update_library_integrity_layers_without_clobbering_metadata():
     assert row["integrity_sensor_version"] == le.INTEGRITY_SENSOR_VERSION
     # …metadata preserved (not clobbered).
     assert row["bit_depth"] == 24
+    assert row["bitrate_kbps"] == 861
     assert row["sample_rate"] == 96000
     assert row["sensor_version"] == le.METADATA_SENSOR_VERSION
 
@@ -730,6 +759,7 @@ def test_metadata_upsert_after_integrity_preserves_integrity():
             "codec": "flac",
             "sample_rate": 44100,
             "bit_depth": 16,
+            "bitrate_kbps": 711,
             "lossless": True,
             "sensor_version": le.METADATA_SENSOR_VERSION,
         }
@@ -737,6 +767,7 @@ def test_metadata_upsert_after_integrity_preserves_integrity():
     row = state_db.get_library_evidence(610)
     # metadata written…
     assert row["bit_depth"] == 16
+    assert row["bitrate_kbps"] == 711
     assert row["sensor_version"] == le.METADATA_SENSOR_VERSION
     # …integrity preserved, not clobbered to NULL.
     assert row["integrity_ok"] == 1

@@ -3213,6 +3213,7 @@ def _record_existing_library_evidence(album_id, trackfiles) -> None:
                     "codec": measurement.codec,
                     "sample_rate": measurement.sample_rate,
                     "bit_depth": measurement.bit_depth,
+                    "bitrate_kbps": measurement.bitrate_kbps,
                     "channels": measurement.channels,
                     "lossless": measurement.lossless,
                     "integrity_ok": measurement.integrity_ok,

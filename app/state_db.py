@@ -92,6 +92,7 @@ CREATE TABLE IF NOT EXISTS library_evidence (
     codec TEXT,
     sample_rate INTEGER,
     bit_depth INTEGER,
+    bitrate_kbps INTEGER,
     channels INTEGER,
     lossless INTEGER,
     integrity_ok INTEGER,
@@ -231,6 +232,7 @@ def init(db_path: Path | None = None) -> None:
             _ensure_library_checksum_column(conn)
             _ensure_library_integrity_sensor_column(conn)
             _ensure_library_integrity_issue_column(conn)
+            _ensure_library_bitrate_column(conn)
         _initialized = True
         log.info("state_db initialized at %s", _db_path)
 
@@ -325,6 +327,16 @@ def _ensure_library_integrity_issue_column(conn: sqlite3.Connection) -> None:
     if "integrity_issue" not in cols:
         conn.execute("ALTER TABLE library_evidence ADD COLUMN integrity_issue TEXT")
         log.info("state_db: added library_evidence.integrity_issue column (F5.4)")
+
+
+def _ensure_library_bitrate_column(conn: sqlite3.Connection) -> None:
+    """Add metadata-tier bitrate evidence for lossy/library-quality breakdown."""
+    cols = {
+        row[1] for row in conn.execute("PRAGMA table_info(library_evidence)").fetchall()
+    }
+    if "bitrate_kbps" not in cols:
+        conn.execute("ALTER TABLE library_evidence ADD COLUMN bitrate_kbps INTEGER")
+        log.info("state_db: added library_evidence.bitrate_kbps column (F5.4)")
 
 
 def _ensure_initialized() -> bool:
@@ -504,6 +516,7 @@ def upsert_library_evidence(row: dict) -> None:
             "codec": row.get("codec"),
             "sample_rate": row.get("sample_rate"),
             "bit_depth": row.get("bit_depth"),
+            "bitrate_kbps": row.get("bitrate_kbps"),
             "channels": row.get("channels"),
             "lossless": None
             if row.get("lossless") is None
@@ -524,18 +537,19 @@ def upsert_library_evidence(row: dict) -> None:
             conn.execute(
                 """
                 INSERT INTO library_evidence (trackfile_id, album_id, path, size, mtime,
-                  status, reason, codec, sample_rate, bit_depth, channels, lossless,
+                  status, reason, codec, sample_rate, bit_depth, bitrate_kbps, channels, lossless,
                   integrity_ok, checksum_ok, integrity_issue, sensor_version,
                   integrity_sensor_version, evidence_json, measured_at)
                 VALUES (:trackfile_id, :album_id, :path, :size, :mtime, :status, :reason,
-                  :codec, :sample_rate, :bit_depth, :channels, :lossless, :integrity_ok,
+                  :codec, :sample_rate, :bit_depth, :bitrate_kbps, :channels, :lossless, :integrity_ok,
                   :checksum_ok, :integrity_issue, :sensor_version, :integrity_sensor_version,
                   :evidence_json, :measured_at)
                 ON CONFLICT(trackfile_id) DO UPDATE SET
                   album_id=excluded.album_id, path=excluded.path, size=excluded.size,
                   mtime=excluded.mtime, status=excluded.status, reason=excluded.reason,
                   codec=excluded.codec, sample_rate=excluded.sample_rate,
-                  bit_depth=excluded.bit_depth, channels=excluded.channels,
+                  bit_depth=excluded.bit_depth, bitrate_kbps=excluded.bitrate_kbps,
+                  channels=excluded.channels,
                   lossless=excluded.lossless, integrity_ok=excluded.integrity_ok,
                   checksum_ok=excluded.checksum_ok,
                   integrity_issue=excluded.integrity_issue,
@@ -578,6 +592,7 @@ def upsert_library_metadata(row: dict) -> None:
             "codec": row.get("codec"),
             "sample_rate": row.get("sample_rate"),
             "bit_depth": row.get("bit_depth"),
+            "bitrate_kbps": row.get("bitrate_kbps"),
             "channels": row.get("channels"),
             "lossless": None
             if row.get("lossless") is None
@@ -590,16 +605,17 @@ def upsert_library_metadata(row: dict) -> None:
             conn.execute(
                 """
                 INSERT INTO library_evidence (trackfile_id, album_id, path, size, mtime,
-                  status, reason, codec, sample_rate, bit_depth, channels, lossless,
+                  status, reason, codec, sample_rate, bit_depth, bitrate_kbps, channels, lossless,
                   sensor_version, evidence_json, measured_at)
                 VALUES (:trackfile_id, :album_id, :path, :size, :mtime, :status, :reason,
-                  :codec, :sample_rate, :bit_depth, :channels, :lossless,
+                  :codec, :sample_rate, :bit_depth, :bitrate_kbps, :channels, :lossless,
                   :sensor_version, :evidence_json, :measured_at)
                 ON CONFLICT(trackfile_id) DO UPDATE SET
                   album_id=excluded.album_id, path=excluded.path, size=excluded.size,
                   mtime=excluded.mtime, status=excluded.status, reason=excluded.reason,
                   codec=excluded.codec, sample_rate=excluded.sample_rate,
-                  bit_depth=excluded.bit_depth, channels=excluded.channels,
+                  bit_depth=excluded.bit_depth, bitrate_kbps=excluded.bitrate_kbps,
+                  channels=excluded.channels,
                   lossless=excluded.lossless, sensor_version=excluded.sensor_version,
                   evidence_json=excluded.evidence_json, measured_at=excluded.measured_at
             """,

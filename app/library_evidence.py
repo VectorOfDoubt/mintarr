@@ -22,7 +22,7 @@ SENSOR_VERSION = "mintarr-library-evidence 2026-06-08b"
 # same library_evidence row (see F5.4_SCAN_TIERS.md). Metadata tells us the
 # lossless-tier axis quickly; integrity is the heavy full-file decode. Unknown
 # integrity stays unknown — never read as OK.
-METADATA_SENSOR_VERSION = "mintarr-library-metadata 2026-06-08"
+METADATA_SENSOR_VERSION = "mintarr-library-metadata 2026-06-09"
 INTEGRITY_SENSOR_VERSION = "mintarr-library-integrity 2026-06-09"
 # The spectral (FLAC Detective) tier is a *separate* sensor with its own version
 # and freshness, layered onto the same library_evidence row (F5.4 §8b). Bumping
@@ -42,6 +42,7 @@ class TrackMeasurement:
     codec: str | None = None
     sample_rate: int | None = None
     bit_depth: int | None = None
+    bitrate_kbps: int | None = None
     channels: int | None = None
     lossless: bool | None = None
     integrity_ok: bool | None = None  # audio frames decode (genuine corruption ⇒ False)
@@ -228,6 +229,7 @@ def measure_trackfile(
         codec=codec,
         sample_rate=probe.get("sample_rate"),
         bit_depth=probe.get("bit_depth"),
+        bitrate_kbps=probe.get("bitrate_kbps"),
         channels=probe.get("channels"),
         lossless=(codec in _LOSSLESS_CODECS) if codec else None,
         integrity_ok=probe.get("integrity_ok"),
@@ -436,7 +438,7 @@ def _default_spectral_client(path: Path) -> dict:
 
 
 def _run_ffprobe_fields(path: Path) -> dict:
-    """ffprobe the first audio stream → codec/sample_rate/bit_depth/channels.
+    """ffprobe the first audio stream → codec/sample_rate/bit_depth/bitrate/channels.
 
     Header reads only — the cheap metadata tier. Raises on ffprobe failure.
     """
@@ -448,7 +450,7 @@ def _run_ffprobe_fields(path: Path) -> dict:
             "-select_streams",
             "a:0",
             "-show_entries",
-            "stream=codec_name,sample_rate,bits_per_raw_sample,channels",
+            "stream=codec_name,sample_rate,bits_per_raw_sample,bit_rate,channels",
             "-of",
             "default=nw=1",
             str(path),
@@ -468,6 +470,7 @@ def _run_ffprobe_fields(path: Path) -> dict:
         "codec": fields.get("codec_name", ""),
         "sample_rate": _int(fields.get("sample_rate")),
         "bit_depth": _int(fields.get("bits_per_raw_sample")),
+        "bitrate_kbps": _bitrate_kbps(fields.get("bit_rate")),
         "channels": _int(fields.get("channels")),
     }
 
@@ -617,6 +620,13 @@ def _int(value: str | None) -> int | None:
         return int(value)
     except (TypeError, ValueError):
         return None
+
+
+def _bitrate_kbps(value: str | None) -> int | None:
+    bits_per_second = _int(value)
+    if not bits_per_second or bits_per_second <= 0:
+        return None
+    return max(1, round(bits_per_second / 1000))
 
 
 def _is_relative_to(path: Path, root: Path) -> bool:

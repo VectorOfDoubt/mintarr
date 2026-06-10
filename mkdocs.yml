@@ -152,6 +152,7 @@ nav:
       - Setup: development/DEVELOPMENT.md
       - Testing: development/TESTING.md
       - Frontend assets: development/FRONTEND_ASSETS.md
+      - Lidarr dogfood validation: development/LIDARR_DOGFOOD_VALIDATION.md
       - Style guide: development/STYLE_GUIDE.md
       - Commit convention: development/COMMIT_CONVENTION.md
       - Review checklist: development/REVIEW_CHECKLIST.md
@@ -181,6 +182,8 @@ nav:
       - "F5.3 CD-rip evidence lane": design/F5.3_CD_RIP_EVIDENCE_LANE.md
       - "F5.3B CTDB network verifier": design/F5.3B_CTDB_NETWORK_VERIFIER.md
       - "F5.4 Library evidence index": design/F5.4_LIBRARY_EVIDENCE_INDEX.md
+      - "F5.4 Scan tiers": design/F5.4_SCAN_TIERS.md
+      - "F5.4 Integrity classification": design/F5.4_INTEGRITY_CLASSIFICATION.md
       - "Quality stack roadmap": design/QUALITY_STACK_ROADMAP.md
 
   - Documentation Index: MINTARR_DOCUMENTATION_INDEX.md

@@ -159,3 +159,42 @@ Keep `MINTARR_MEASURED_EXISTING=false` until at least one dogfood pass covers:
 Only after that should measured-existing decision use be tested, and then as a
 separate opt-in dogfood run with `MINTARR_REQUIRE_INTEGRITY=true` considered for
 stricter evidence semantics.
+
+## Dogfood log
+
+### 2026-06-10 — TIDAL via Lidarr, Mintarr-only mode
+
+Setup:
+
+- Lidarr non-Mintarr indexers and native download clients were disabled for the
+  test window.
+- Lidarr's Mintarr/TidalHires indexer remained enabled for automatic and
+  interactive search.
+- Lidarr's Mintarr/TidalHires download client remained enabled.
+- `MINTARR_MEASURED_EXISTING=false`; this was evidence-only for measured
+  library quality.
+
+Results:
+
+- **Happy path passed:** Lidarr grabbed `ERA - ERA VIII (2026) [TIDAL] [FLAC
+  24bit]` through Mintarr. Mintarr created JID `3b3b9b09fa98`, downloaded 10
+  FLAC files, FLAC Detective returned `AUTHENTIC`, Lidarr ManualImport found 10
+  candidates, and Mintarr recorded `ACCEPT` + `MANUAL_IMPORTED`. Lidarr showed
+  10 imported trackfiles and no remaining queue row for the item.
+- **Review/discard path passed after fix:** A `REVIEW_REQUIRED` Don Williams
+  candidate was discarded. Dogfood exposed a stale dashboard-index bug where the
+  sidecar lifecycle moved to discarded but the SQLite `records` index still
+  listed the item under `needs_review`. Fixed in `7f6da83` by syncing discarded
+  sidecars back into `state_db` and invalidating dashboard caches. A backfill
+  repaired the live index; summary and records now agree (`needs_review=0`).
+- **Bypass audit passed for the test window:** Lidarr queue was empty after the
+  happy-path import, and the active Lidarr source/download path for the test was
+  Mintarr-only.
+
+Remaining before enabling measured-existing decisions:
+
+- Dogfood one completed-folder source path if SAB/qBit/LocalFolder/Soulseek
+  remains in scope for the first measured-existing rollout.
+- Confirm a hard-block candidate still never reaches Lidarr ManualImport in the
+  current runtime. Existing blocked records demonstrate the path historically,
+  but a fresh post-cutover block run is still the stronger proof.

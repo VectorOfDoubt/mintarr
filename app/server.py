@@ -6523,6 +6523,16 @@ def verification_discard(jid: str):
     _atomic_write_json(target, record)
     if path.exists() and path != target:
         path.unlink()
+    try:
+        from dashboard import derive_status
+        from dashboard_cache import invalidate_prefix
+        import state_db
+
+        state_db.upsert_from_sidecar(record, derived_status=derive_status(record))
+        invalidate_prefix("summary")
+        invalidate_prefix("records")
+    except Exception:
+        log.exception("[%s] Failed to sync discarded verification record", jid)
     _mark_import_failed(jid, "discarded by user")
     return jsonify({"jid": jid, "message": "discarded"})
 

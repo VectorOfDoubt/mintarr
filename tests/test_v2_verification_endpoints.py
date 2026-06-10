@@ -858,6 +858,29 @@ def test_discard_deletes_output_and_archives_sidecar(tmp_path, monkeypatch, mock
     assert record["lifecycle"]["blocklist_status"] == "done"
 
 
+def test_discard_updates_db_record_status(tmp_path, monkeypatch, mocker):
+    output_base = _patch_paths(monkeypatch, tmp_path)
+    output_dir = output_base / "abc12345"
+    output_dir.mkdir(parents=True)
+    (output_dir / "01.flac").write_bytes(b"flac")
+    sidecar_path = server._write_verification_sidecar("abc12345", _result(), output_dir)
+    sidecar = json.loads(sidecar_path.read_text())
+    state_db.upsert_from_sidecar(sidecar, derived_status="needs_review")
+    server._jobs["abc12345"] = {"id": "abc12345", "output_dir": str(output_dir)}
+    mocker.patch.object(server, "_get_lidarr_key", return_value="lidarr-key")
+    mocker.patch.object(server, "_blocklist_grab", return_value=True)
+    mocker.patch.object(server, "_save_jobs")
+
+    client = server.app.test_client()
+    response = client.post(f"/verification/abc12345/discard?apikey={VALID_KEY}")
+
+    assert response.status_code == 200
+    record = state_db.get_record("abc12345")
+    assert record["derived_status"] == "discarded"
+    assert record["lifecycle_state"] == "discarded"
+    assert record["actor"] == "user_discard"
+
+
 def test_discard_accepts_failed_or_pending_manual_promote(
     tmp_path, monkeypatch, mocker
 ):

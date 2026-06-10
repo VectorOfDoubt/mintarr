@@ -376,6 +376,14 @@ def import_to_lidarr(
             message="Finalizing pipeline result",
         )
     except Exception as exc:
+        import worker
+
+        # A late cancel raised inside _trigger_lidarr_import (e.g. before the
+        # ManualImport POST or rescue) must terminalize the job as *cancelled*, not
+        # as an import failure — otherwise the worker contract is broken and the
+        # operator's cancel looks like a Lidarr error. Re-raise so worker handles it.
+        if isinstance(exc, worker.JobCancelled):
+            raise
         log.exception(
             "[%s] Lidarr import failed (manual import via Lidarr UI possible)",
             ctx.jid,

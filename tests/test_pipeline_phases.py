@@ -291,6 +291,31 @@ def test_pipeline_success_sets_download_exit_code(pipeline_env):
     assert server._jobs[jid].get("download_exit_code") == 0
 
 
+def test_import_to_lidarr_reraises_job_cancelled(pipeline_env, tmp_path, monkeypatch):
+    """A late cancel raised inside _trigger_lidarr_import must propagate as
+    JobCancelled — not be swallowed by the broad except and marked import-failed."""
+    server, pipeline = pipeline_env
+    import worker
+
+    def _raise_cancel(*a, **kw):
+        raise worker.JobCancelled("cancel requested for jid=cancel-late")
+
+    monkeypatch.setattr(server, "_trigger_lidarr_import", _raise_cancel)
+    failed_calls: list[tuple] = []
+    monkeypatch.setattr(
+        server, "_mark_import_failed", lambda *a, **kw: failed_calls.append((a, kw))
+    )
+
+    out = tmp_path / "out"
+    out.mkdir()
+    ctx = _FakeContext(jid="cancel-late", raw_dir=tmp_path / "raw", output_dir=out)
+
+    with pytest.raises(worker.JobCancelled):
+        pipeline.import_to_lidarr(out, ctx, source_type="tidal")
+
+    assert failed_calls == [], "JobCancelled must not be terminalized as import-failed"
+
+
 def test_trigger_lidarr_import_has_no_direct_sidecar_writes():
     """Regression guard: every sidecar write inside _trigger_lidarr_import
     must go through the closure helpers (_write_sidecar_maybe /

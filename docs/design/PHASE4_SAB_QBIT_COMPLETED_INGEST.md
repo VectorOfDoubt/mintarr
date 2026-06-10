@@ -3,7 +3,7 @@
 > **Type:** Design document
 > **Version:** 1.0 - 2026-06-03
 > **Status:** Implemented - `sab_usenet` and `qbittorrent_torrent` source connectors
-> **Related:** [ADR-0012 QC import-gate scope](../architecture/adr/0012-qc-import-gate-scope.md), [F3.5 Soulseek completed-folder ingest](F3.5_SOULSEEK_COMPLETED_INGEST.md), [CONNECTOR_MANIFEST_v1.md](../specs/CONNECTOR_MANIFEST_v1.md)
+> **Related:** [ADR-0012 QC import-gate scope](../architecture/adr/0012-qc-import-gate-scope.md), [Download client category gate](DOWNLOAD_CLIENT_CATEGORY_GATE.md), [F3.5 Soulseek completed-folder ingest](F3.5_SOULSEEK_COMPLETED_INGEST.md), [CONNECTOR_MANIFEST_v1.md](../specs/CONNECTOR_MANIFEST_v1.md)
 
 ## 1. Goal
 
@@ -22,6 +22,9 @@ Implemented connector IDs:
 ADR-0012 is binding:
 
 - Mintarr gates only Mintarr-routed sources.
+- SAB/qBit completed-folder ingest requires a dedicated Lidarr/Mintarr music
+  category and completed path; shared TV/movie completed roots are not valid
+  source roots (see [Download client category gate](DOWNLOAD_CLIENT_CATEGORY_GATE.md)).
 - These connectors read completed folders, copy into Mintarr-managed work/output,
   then run the normal source-grab pipeline.
 - Adapter code never calls Lidarr ManualImport.

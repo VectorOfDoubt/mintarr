@@ -178,6 +178,7 @@ nav:
       - "F4.4 Connector install guidance": design/F4.4_CONNECTOR_INSTALL_GUIDANCE.md
       - "F4.5 Optional verifier connectors": design/F4.5_OPTIONAL_VERIFIER_CONNECTORS.md
       - "Phase 4 SAB/qBit completed ingest": design/PHASE4_SAB_QBIT_COMPLETED_INGEST.md
+      - "Download client category gate": design/DOWNLOAD_CLIENT_CATEGORY_GATE.md
       - "Phase 3 restore endpoint": design/PHASE3_RESTORE_ENDPOINT_DESIGN.md
       - "F5.3 CD-rip evidence lane": design/F5.3_CD_RIP_EVIDENCE_LANE.md
       - "F5.3B CTDB network verifier": design/F5.3B_CTDB_NETWORK_VERIFIER.md

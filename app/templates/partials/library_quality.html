@@ -19,49 +19,72 @@
 <div class="sys-kv"><span>Scan</span><span>idle</span></div>
 {% endif %}
 
-<div class="library-buckets">
-  {% for bucket in quality.buckets %}
-  {% if compact %}
-  <span class="library-bucket library-bucket-{{ 'bad' if bucket.key in ['invalid', 'measured_fake'] else 'warn' if bucket.key in ['nonstandard_flac_tags', 'checksum_mismatch', 'stale', 'unmeasured', 'lossy', 'mixed_tier', 'integrity_unknown', 'unknown_authenticity'] else 'ok' }}"
-        title="{{ bucket.description }}">
-    <span>{{ bucket.label }}</span>
-    <strong>{{ bucket.count }}</strong>
-  </span>
-  {% else %}
-  <button class="library-bucket library-bucket-{{ 'bad' if bucket.key in ['invalid', 'measured_fake'] else 'warn' if bucket.key in ['nonstandard_flac_tags', 'checksum_mismatch', 'stale', 'unmeasured', 'lossy', 'mixed_tier', 'integrity_unknown', 'unknown_authenticity'] else 'ok' }}{% if quality.selected_bucket == bucket.key %} selected{% endif %}"
-          type="button"
-          title="{{ bucket.description }}"
-          hx-get="/dashboard/v1/library-quality/partial?bucket={{ bucket.key }}&limit={{ quality.limit }}"
-          hx-target="#quality-live"
-          hx-swap="innerHTML">
-    <span>{{ bucket.label }}</span>
-    <strong>{{ bucket.count }}</strong>
-  </button>
+<div class="library-quality-section">
+  {% if not compact %}
+  <div class="library-quality-section-head">
+    <div>
+      <strong>Problem filters</strong>
+      <span>Filter by the primary operator action.</span>
+    </div>
+    {% if quality.selected_bucket %}
+    <button type="button"
+            hx-get="/dashboard/v1/library-quality/partial?limit={{ quality.limit }}"
+            hx-target="#quality-live"
+            hx-swap="innerHTML">Clear filter</button>
+    {% endif %}
+  </div>
   {% endif %}
-  {% endfor %}
+  <div class="library-buckets" role="group" aria-label="Problem filters">
+    {% for bucket in quality.buckets %}
+    {% set severity = 'bad' if bucket.key in ['invalid', 'measured_fake'] else 'warn' if bucket.key in ['nonstandard_flac_tags', 'checksum_mismatch', 'stale', 'unmeasured', 'lossy', 'mixed_tier', 'integrity_unknown', 'unknown_authenticity'] else 'ok' %}
+    {% if compact %}
+    <span class="library-bucket library-bucket-{{ severity }}" title="{{ bucket.description }}">
+      <span>{{ bucket.label }}</span>
+      <strong>{{ bucket.count }}</strong>
+    </span>
+    {% else %}
+    <button class="library-bucket library-filter-button library-bucket-{{ severity }}{% if quality.selected_bucket == bucket.key %} selected{% endif %}"
+            type="button"
+            title="{{ bucket.description }}"
+            aria-pressed="{{ 'true' if quality.selected_bucket == bucket.key else 'false' }}"
+            hx-get="/dashboard/v1/library-quality/partial?bucket={{ bucket.key }}&limit={{ quality.limit }}"
+            hx-target="#quality-live"
+            hx-swap="innerHTML">
+      <span>{{ bucket.label }}</span>
+      <strong>{{ bucket.count }}</strong>
+    </button>
+    {% endif %}
+    {% endfor %}
+  </div>
 </div>
 
 {% if not compact %}
-<div class="library-tier-summary" aria-label="Audio tier distribution">
-  <span class="library-tier-title">Audio tier</span>
-  {% for tier in quality.tiers %}
-  <span class="library-tier-chip" title="{{ tier.description }}">
-    <span>{{ tier.label }}</span>
-    <strong>{{ tier.count }}</strong>
-  </span>
-  {% endfor %}
+<div class="library-quality-distribution">
+  <div class="library-distribution-panel" aria-label="Audio distribution">
+    <div class="library-distribution-title">Audio distribution</div>
+    <div class="library-tier-summary">
+      {% for tier in quality.tiers %}
+      <span class="library-tier-chip" title="{{ tier.description }}">
+        <span>{{ tier.label }}</span>
+        <strong>{{ tier.count }}</strong>
+      </span>
+      {% endfor %}
+    </div>
+  </div>
+  {% if quality.lossy_breakdown %}
+  <div class="library-distribution-panel" aria-label="Lossy codec breakdown">
+    <div class="library-distribution-title">Lossy breakdown</div>
+    <div class="library-tier-summary">
+      {% for item in quality.lossy_breakdown %}
+      <span class="library-tier-chip">
+        <span>{{ item.label }}</span>
+        <strong>{{ item.count }}</strong>
+      </span>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
 </div>
-{% if quality.lossy_breakdown %}
-<div class="library-tier-summary" aria-label="Lossy codec breakdown">
-  <span class="library-tier-title">Lossy breakdown</span>
-  {% for item in quality.lossy_breakdown %}
-  <span class="library-tier-chip">
-    <span>{{ item.label }}</span>
-    <strong>{{ item.count }}</strong>
-  </span>
-  {% endfor %}
-</div>
-{% endif %}
 {% endif %}
 
 {% if compact %}
@@ -135,9 +158,13 @@
       {% for album in quality.albums %}
       <tr>
         <td>
-          <span class="library-quality-bucket library-bucket-{{ 'bad' if album.primary_bucket in ['invalid', 'measured_fake'] else 'warn' if album.primary_bucket in ['nonstandard_flac_tags', 'checksum_mismatch', 'stale', 'unmeasured', 'lossy', 'mixed_tier', 'integrity_unknown', 'unknown_authenticity'] else 'ok' }}">
-            {{ album.primary_bucket.replace('_', ' ') }}
-          </span>
+          <div class="library-quality-problem">
+            <span class="library-quality-bucket library-bucket-{{ 'bad' if album.primary_bucket in ['invalid', 'measured_fake'] else 'warn' if album.primary_bucket in ['nonstandard_flac_tags', 'checksum_mismatch', 'stale', 'unmeasured', 'lossy', 'mixed_tier', 'integrity_unknown', 'unknown_authenticity'] else 'ok' }}">
+              {{ album.bucket_label }}
+            </span>
+            <strong>{{ album.bucket_action_kind }}</strong>
+            <span>{{ album.bucket_description }}</span>
+          </div>
         </td>
         <td class="library-quality-album-cell">
           <strong>
@@ -150,13 +177,15 @@
           <span class="muted">Album {{ album.album_id if album.album_id is not none else 'unknown' }}</span>
         </td>
         <td class="library-quality-evidence-cell">
-          <span>{{ album.measured_count }}/{{ album.track_count }} measured</span>
-          <span>{{ album.tier_bucket.replace('_', ' ') }}</span>
-          {% for label in album.lossy_labels %}<span class="warn">{{ label }}</span>{% endfor %}
-          {% if album.invalid_count %}<span class="danger">{{ album.invalid_count }} decode corrupt</span>{% endif %}
-          {% if album.nonstandard_flac_tags_count %}<span class="warn">{{ album.nonstandard_flac_tags_count }} FLAC tag cleanup</span>{% endif %}
-          {% if album.md5_mismatch_count %}<span class="warn">{{ album.md5_mismatch_count }} MD5 stale</span>{% endif %}
-          {% if album.min_tier is not none %}<span>tier {{ album.min_tier }}</span>{% endif %}
+          <div class="library-quality-evidence-list">
+            <span>{{ album.measured_count }}/{{ album.track_count }} measured</span>
+            <span>{{ album.tier_bucket.replace('_', ' ') }}</span>
+            {% for label in album.lossy_labels %}<span class="warn">{{ label }}</span>{% endfor %}
+            {% if album.invalid_count %}<span class="danger">{{ album.invalid_count }} decode corrupt</span>{% endif %}
+            {% if album.nonstandard_flac_tags_count %}<span class="warn">{{ album.nonstandard_flac_tags_count }} FLAC tag cleanup</span>{% endif %}
+            {% if album.md5_mismatch_count %}<span class="warn">{{ album.md5_mismatch_count }} MD5 stale</span>{% endif %}
+            {% if album.min_tier is not none %}<span>tier {{ album.min_tier }}</span>{% endif %}
+          </div>
         </td>
         <td class="library-quality-track-cell">
           {% for file in album.sample_files[:6] %}

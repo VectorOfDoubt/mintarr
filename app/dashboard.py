@@ -1646,6 +1646,23 @@ _LIBRARY_QUALITY_BUCKETS = [
 _LIBRARY_QUALITY_BUCKET_ORDER = {
     bucket["key"]: index for index, bucket in enumerate(_LIBRARY_QUALITY_BUCKETS)
 }
+_LIBRARY_QUALITY_BUCKET_INFO = {
+    bucket["key"]: bucket for bucket in _LIBRARY_QUALITY_BUCKETS
+}
+_LIBRARY_QUALITY_ACTION_KIND = {
+    "invalid": "Replacement candidate",
+    "measured_fake": "Replacement candidate",
+    "nonstandard_flac_tags": "Cleanup candidate",
+    "checksum_mismatch": "Advisory",
+    "stale": "Rescan needed",
+    "unmeasured": "Scan needed",
+    "lossy": "Upgrade target",
+    "redbook": "Healthy baseline",
+    "mixed_tier": "Inspect edition",
+    "integrity_unknown": "Verify if needed",
+    "unknown_authenticity": "Verify if needed",
+    "ok": "No action",
+}
 _LIBRARY_QUALITY_TIERS = [
     {
         "key": "lossy",
@@ -1888,6 +1905,13 @@ def _library_quality_album_summary(
     return {
         "album_id": album_id,
         "primary_bucket": bucket,
+        "bucket_label": _LIBRARY_QUALITY_BUCKET_INFO.get(bucket, {}).get(
+            "label", bucket.replace("_", " ")
+        ),
+        "bucket_description": _LIBRARY_QUALITY_BUCKET_INFO.get(bucket, {}).get(
+            "description", ""
+        ),
+        "bucket_action_kind": _LIBRARY_QUALITY_ACTION_KIND.get(bucket, "Inspect"),
         "tier_bucket": tier_bucket,
         "lossy_labels": lossy_labels,
         "track_count": len(rows),

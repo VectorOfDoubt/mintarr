@@ -2001,15 +2001,11 @@ def _enrich_library_quality_albums(albums: list[dict]) -> list[dict]:
     return albums
 
 
-def _build_library_quality_view(
-    *, bucket: str | None = None, limit: int = 50, offset: int = 0
-) -> dict:
+def _library_quality_aggregate() -> dict:
     import library_comparison
     import library_evidence
     import state_db
 
-    limit = max(1, min(int(limit or 50), 200))
-    offset = max(0, int(offset or 0))
     total_rows, rows = state_db.list_all_library_evidence()
     grouped: dict[int | None, list[dict]] = {}
     for row in rows:
@@ -2038,12 +2034,9 @@ def _build_library_quality_view(
     for album in albums:
         for label in album.get("lossy_labels") or []:
             lossy_counts[label] += 1
-    if bucket:
-        albums = [a for a in albums if a["primary_bucket"] == bucket]
-    returned = _enrich_library_quality_albums(albums[offset : offset + limit])
-    prev_offset = max(0, offset - limit)
-    next_offset = offset + limit if offset + limit < len(albums) else None
+
     return {
+        "albums": albums,
         "buckets": [
             {**b, "count": int(bucket_counts.get(b["key"], 0))}
             for b in _LIBRARY_QUALITY_BUCKETS
@@ -2058,14 +2051,56 @@ def _build_library_quality_view(
                 lossy_counts.items(), key=lambda item: (-item[1], item[0])
             )
         ][:12],
+        "total_albums": len(grouped),
+        "total_rows": total_rows,
+    }
+
+
+def _cached_library_quality_aggregate() -> dict:
+    import library_evidence
+    import state_db
+
+    revision = state_db.library_evidence_revision()
+    return get_or_compute(
+        (
+            "library-quality-aggregate",
+            revision,
+            library_evidence.METADATA_SENSOR_VERSION,
+            library_evidence.INTEGRITY_SENSOR_VERSION,
+            library_evidence.SPECTRAL_SENSOR_VERSION,
+            bool(library_evidence.spectral_enabled()),
+        ),
+        120.0,
+        _library_quality_aggregate,
+    )
+
+
+def _build_library_quality_view(
+    *, bucket: str | None = None, limit: int = 50, offset: int = 0
+) -> dict:
+    import state_db
+
+    limit = max(1, min(int(limit or 50), 200))
+    offset = max(0, int(offset or 0))
+    aggregate = _cached_library_quality_aggregate()
+    albums = list(aggregate["albums"])
+    if bucket:
+        albums = [a for a in albums if a["primary_bucket"] == bucket]
+    returned = _enrich_library_quality_albums(albums[offset : offset + limit])
+    prev_offset = max(0, offset - limit)
+    next_offset = offset + limit if offset + limit < len(albums) else None
+    return {
+        "buckets": aggregate["buckets"],
+        "tiers": aggregate["tiers"],
+        "lossy_breakdown": aggregate["lossy_breakdown"],
         "albums": returned,
         "selected_bucket": bucket or "",
         "selected_bucket_info": next(
             (b for b in _LIBRARY_QUALITY_BUCKETS if b["key"] == bucket), None
         ),
-        "total_albums": len(grouped),
+        "total_albums": aggregate["total_albums"],
         "filtered_albums": len(albums),
-        "total_rows": total_rows,
+        "total_rows": aggregate["total_rows"],
         "limit": limit,
         "offset": offset,
         "prev_offset": prev_offset if offset > 0 else None,

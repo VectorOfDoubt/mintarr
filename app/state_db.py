@@ -802,6 +802,61 @@ def list_all_library_evidence() -> tuple[int, list[dict]]:
         return (0, [])
 
 
+def library_evidence_revision() -> tuple:
+    """Cheap revision key for cached library-quality dashboard rollups.
+
+    The rollup itself is intentionally Python-side because it shares bucket
+    semantics with the dashboard/policy helpers. This revision is DB-only and
+    changes when any of the evidence columns that affect the rollup change, so
+    dashboard caches can avoid recomputing an O(library) summary on every render
+    without serving stale quality classifications after a scan write.
+    """
+    if not _ensure_initialized():
+        return (0, 0, 0, 0)
+    try:
+        with _lock, _connect() as conn:
+            row = conn.execute(
+                """
+                SELECT
+                  COUNT(*) AS n,
+                  COALESCE(MAX(measured_at), 0) AS max_measured_at,
+                  COALESCE(MAX(spectral_measured_at), 0) AS max_spectral_measured_at,
+                  COALESCE(SUM(
+                    COALESCE(trackfile_id, 0)
+                    + COALESCE(album_id, 0)
+                    + COALESCE(size, 0)
+                    + CAST(COALESCE(mtime, 0) AS INTEGER)
+                    + COALESCE(sample_rate, 0)
+                    + COALESCE(bit_depth, 0)
+                    + COALESCE(bitrate_kbps, 0)
+                    + COALESCE(channels, 0)
+                    + COALESCE(lossless, -7)
+                    + COALESCE(integrity_ok, -11)
+                    + COALESCE(checksum_ok, -13)
+                    + COALESCE(authentic, -17)
+                    + LENGTH(COALESCE(status, ''))
+                    + LENGTH(COALESCE(reason, ''))
+                    + LENGTH(COALESCE(codec, ''))
+                    + LENGTH(COALESCE(integrity_issue, ''))
+                    + LENGTH(COALESCE(sensor_version, ''))
+                    + LENGTH(COALESCE(integrity_sensor_version, ''))
+                    + LENGTH(COALESCE(spectral_status, ''))
+                    + LENGTH(COALESCE(spectral_sensor_version, ''))
+                  ), 0) AS fingerprint
+                FROM library_evidence
+                """
+            ).fetchone()
+            return (
+                int(row["n"] or 0),
+                float(row["max_measured_at"] or 0),
+                float(row["max_spectral_measured_at"] or 0),
+                int(row["fingerprint"] or 0),
+            )
+    except Exception:
+        log.exception("state_db.library_evidence_revision failed")
+        return (0, 0, 0, 0)
+
+
 def log_action(
     jid: str, action: str, actor: str, result: str, details: dict | None = None
 ) -> None:

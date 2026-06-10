@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import dashboard
+import dashboard_cache
 import library_evidence
 import server
 import state_db
@@ -406,3 +407,35 @@ def test_library_quality_rollup_counts_rows_beyond_first_10000(monkeypatch):
     assert counts["invalid"] == 1
     assert view["filtered_albums"] == 1
     assert view["albums"][0]["album_id"] == 400001
+
+
+def test_library_quality_aggregate_is_cached_until_evidence_changes(monkeypatch):
+    monkeypatch.setattr(library_evidence, "is_measured_row_fresh", lambda _r: True)
+    monkeypatch.setattr(library_evidence, "is_spectral_row_fresh", lambda _r: True)
+    monkeypatch.setattr(library_evidence, "spectral_enabled", lambda: False)
+    dashboard_cache.clear()
+    _seed(500, 1500, bit_depth=16, sample_rate=44100)
+
+    calls = 0
+    original = state_db.list_all_library_evidence
+
+    def counted_list_all():
+        nonlocal calls
+        calls += 1
+        return original()
+
+    monkeypatch.setattr(state_db, "list_all_library_evidence", counted_list_all)
+
+    first = dashboard._build_library_quality_view()
+    second = dashboard._build_library_quality_view(bucket="redbook")
+
+    assert calls == 1
+    assert first["total_albums"] == 1
+    assert second["filtered_albums"] == 1
+
+    _seed(501, 1501, integrity_ok=False, integrity_issue="decode_corrupt")
+    third = dashboard._build_library_quality_view(bucket="invalid")
+
+    assert calls == 2
+    assert third["filtered_albums"] == 1
+    assert third["albums"][0]["album_id"] == 1501

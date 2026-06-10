@@ -871,6 +871,16 @@ def sab():
                 }
             }
         )
+    # Lidarr issues "remove from download client (+ blocklist)" as a SAB delete that
+    # arrives in several shapes: bare ``mode=delete``, or ``mode=queue``/``mode=history``
+    # carrying ``name=delete&value=<nzo_id>``. The queue/history branches below answer
+    # the listing first, so a delete addressed to them would otherwise be a no-op. Honor
+    # the delete intent across all variants here, before the listing returns.
+    if (request.values.get("name") or "").lower() == "delete":
+        _cancel_and_hide_job(
+            request.values.get("value") or request.values.get("nzo_id")
+        )
+        return jsonify({"status": True})
     if mode == "queue":
         _reconcile_pending_import_jobs()
         with _jobs_lock:
@@ -1051,14 +1061,15 @@ def sab():
 
         return jsonify({"status": True, "nzo_ids": [jid]})
     if mode == "delete":
-        # Lidarr may call delete to clean up history
-        name = (
-            request.values.get("name")
-            or request.values.get("value")
-            or request.values.get("nzo_id")
-        )
-        if name:
-            _hide_from_lidarr(name)
+        # Bare ``mode=delete`` (history cleanup or a remove without name=delete). The
+        # ``name=delete`` shape is already handled above; here the identifier is the
+        # nzo_id itself. Cancel any still-active job, then hide. For terminal/history
+        # rows there is no active job, so this degrades to a plain hide.
+        nzo = request.values.get("value") or request.values.get("nzo_id")
+        if (request.values.get("name") or "").lower() != "delete":
+            nzo = nzo or request.values.get("name")
+        if nzo:
+            _cancel_and_hide_job(nzo)
         return jsonify({"status": True})
     return jsonify({"status": False, "error": f"unsupported mode: {mode}"}), 400
 
@@ -4060,6 +4071,34 @@ def _hide_from_lidarr(jid: str) -> None:
             _save_jobs()
 
 
+def _cancel_and_hide_job(value: str | None) -> None:
+    """Honor a Lidarr remove/blocklist (SAB delete): cancel the worker job, then hide.
+
+    Lidarr's "remove from download client (+ blocklist)" reaches us as a SAB delete
+    (``mode=delete``, or ``mode=queue|history`` with ``name=delete``). Hiding the job
+    from Lidarr's view is not enough — the in-flight grab keeps downloading and still
+    reaches QC→ManualImport. So we also ``request_job_cancel`` the backing SQLite job;
+    the worker honors that flag at the download and (post-fix) library-mutating
+    checkpoints. Best-effort and never raises.
+    """
+    if not value:
+        return
+    try:
+        import state_db
+
+        job = state_db.get_active_job_by_jid(value)
+        if job and job.get("id") is not None:
+            if state_db.request_job_cancel(int(job["id"])):
+                log.info(
+                    "[%s] SAB delete → cancel requested for worker job %s",
+                    value,
+                    job["id"],
+                )
+    except Exception:
+        log.exception("[%s] SAB delete cancel-request failed (continuing)", value)
+    _hide_from_lidarr(value)
+
+
 def _create_review_required(
     jid: str,
     result: VerificationResult,
@@ -4117,6 +4156,13 @@ def _trigger_lidarr_import(
     import requests
 
     import_started = time.monotonic()
+
+    # #147: the download phase is cancellable, but everything from here to import was
+    # not — a cancel raised after the download completes was ignored and the job still
+    # mutated the library. Honor cancel at entry and again right before each
+    # library-mutating step (ManualImport POST, rescue place-and-rescan). cleanup=False:
+    # the QC'd output is left in place on a late cancel rather than deleted here.
+    _raise_if_job_cancelled(worker_job_id, jid, output_dir, cleanup=False)
 
     # Bind source_type into closures so we don't have to repeat the kwarg
     # at every sidecar-write call site below (14 of them). Both helpers
@@ -4717,7 +4763,7 @@ def _trigger_lidarr_import(
                                             len(files),
                                         )
                                         rescued = _rescue_place_and_rescan(
-                                            jid, files, api, key
+                                            jid, files, api, key, worker_job_id
                                         )
                                         _record_job_timing(
                                             jid,
@@ -4869,6 +4915,10 @@ def _trigger_lidarr_import(
         except Exception:
             pre_counts[aid] = 0
 
+    # #147: last gate before the library mutation — a cancel issued during precheck/
+    # Detective/policy/lookup must stop the import here, before Lidarr moves files.
+    _raise_if_job_cancelled(worker_job_id, jid, output_dir, cleanup=False)
+
     cmd = requests.post(
         f"{api}/command",
         json={"name": "ManualImport", "files": files, "importMode": "auto"},
@@ -4939,7 +4989,7 @@ def _trigger_lidarr_import(
         len(files),
     )
     try:
-        if _rescue_place_and_rescan(jid, files, api, key):
+        if _rescue_place_and_rescan(jid, files, api, key, worker_job_id):
             _record_job_timing(
                 jid, "lidarr_manualimport_sec", time.monotonic() - manualimport_started
             )
@@ -5011,7 +5061,7 @@ def _sanitize_path_segment(s: str) -> str:
     return s
 
 
-def _rescue_place_and_rescan(jid, files, api, key):
+def _rescue_place_and_rescan(jid, files, api, key, worker_job_id: int | None = None):
     """Last resort: place files directly in Lidarr's library tree and rescan.
     Lidarr scans them as library files, excluding missing_tracks from the
     score and bypassing the 80% import-match issue.
@@ -5019,6 +5069,10 @@ def _rescue_place_and_rescan(jid, files, api, key):
     import requests
     import shutil
     from pathlib import Path as _P
+
+    # #147: rescue copies files straight into the library tree — a library mutation.
+    # Honor a late cancel before placing anything. cleanup=False leaves the QC'd output.
+    _raise_if_job_cancelled(worker_job_id, jid, cleanup=False)
 
     if not _rescue_rescan_enabled():
         log.warning(
@@ -5360,7 +5414,7 @@ def _run_manual_import_only(
     _raise_if_job_cancelled(worker_job_id, jid, output_dir, cleanup=False)
 
     _set_worker_progress(worker_job_id, jid, "rescue", 80, "Trying rescue import")
-    if _rescue_place_and_rescan(jid, files, api, key):
+    if _rescue_place_and_rescan(jid, files, api, key, worker_job_id):
         _complete_lidarr_import_without_queue_delete(jid, output_dir)
         _set_worker_progress(worker_job_id, jid, "done", 100, "Rescue import complete")
         return "RESCUED"

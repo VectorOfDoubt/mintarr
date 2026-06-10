@@ -95,6 +95,79 @@ def test_sab_history_hides_cleaned_jobs(mocker):
     server._jobs.pop("hidden123", None)
 
 
+def _seed_active_job(mocker, jid, job_id=4242):
+    """Seed a visible job in _jobs and a matching active SQLite job (mocked)."""
+    import state_db
+
+    mocker.patch.object(server, "_save_jobs")
+    server._jobs[jid] = {"id": jid, "status": "downloading", "title": "X"}
+    mocker.patch.object(
+        state_db, "get_active_job_by_jid", return_value={"id": job_id, "jid": jid}
+    )
+    cancel = mocker.patch.object(state_db, "request_job_cancel", return_value=True)
+    return cancel
+
+
+def test_sab_history_name_delete_cancels_and_hides(mocker):
+    """Lidarr blocklist-delete arrives as mode=history&name=delete — must cancel, not list."""
+    client = server.app.test_client()
+    cancel = _seed_active_job(mocker, "hdel123")
+    try:
+        resp = client.get(
+            f"/sabnzbd/api?mode=history&name=delete&value=hdel123&apikey={VALID_KEY}"
+        )
+        assert resp.status_code == 200
+        assert resp.get_json() == {"status": True}
+        cancel.assert_called_once_with(4242)
+        assert server._jobs["hdel123"]["hidden_from_lidarr"] is True
+    finally:
+        server._jobs.pop("hdel123", None)
+
+
+def test_sab_queue_name_delete_cancels(mocker):
+    client = server.app.test_client()
+    cancel = _seed_active_job(mocker, "qdel123")
+    try:
+        resp = client.get(
+            f"/sabnzbd/api?mode=queue&name=delete&value=qdel123&apikey={VALID_KEY}"
+        )
+        assert resp.status_code == 200
+        cancel.assert_called_once_with(4242)
+        assert server._jobs["qdel123"]["hidden_from_lidarr"] is True
+    finally:
+        server._jobs.pop("qdel123", None)
+
+
+def test_sab_bare_delete_cancels_active_job(mocker):
+    client = server.app.test_client()
+    cancel = _seed_active_job(mocker, "bdel123")
+    try:
+        resp = client.get(f"/sabnzbd/api?mode=delete&value=bdel123&apikey={VALID_KEY}")
+        assert resp.status_code == 200
+        cancel.assert_called_once_with(4242)
+        assert server._jobs["bdel123"]["hidden_from_lidarr"] is True
+    finally:
+        server._jobs.pop("bdel123", None)
+
+
+def test_sab_delete_no_active_job_just_hides(mocker):
+    """History cleanup of a terminal job: no active job → hide only, no cancel error."""
+    import state_db
+
+    client = server.app.test_client()
+    mocker.patch.object(server, "_save_jobs")
+    server._jobs["term123"] = {"id": "term123", "status": "completed", "title": "X"}
+    mocker.patch.object(state_db, "get_active_job_by_jid", return_value=None)
+    cancel = mocker.patch.object(state_db, "request_job_cancel")
+    try:
+        resp = client.get(f"/sabnzbd/api?mode=delete&value=term123&apikey={VALID_KEY}")
+        assert resp.status_code == 200
+        cancel.assert_not_called()
+        assert server._jobs["term123"]["hidden_from_lidarr"] is True
+    finally:
+        server._jobs.pop("term123", None)
+
+
 def test_sab_queue_reports_progress_and_mbleft(mocker):
     client = server.app.test_client()
     mocker.patch.object(server, "_save_jobs")

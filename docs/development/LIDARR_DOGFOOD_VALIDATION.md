@@ -256,3 +256,49 @@ dequeue). Findings:
   `MINTARR_MEASURED_EXISTING=true` gives a real existing-quality comparison, or
   from a real `FAKE_CERTAIN` grab.
 - All three test records were discarded; `needs_review=0`, no library mutation.
+
+### 2026-06-10 (cont.) — measured-existing live dogfood (Claude)
+
+Flipped the live container to the conservative metadata-tier config
+(`MINTARR_MEASURED_EXISTING=true`, `MINTARR_REQUIRE_INTEGRITY=false`,
+`MINTARR_LIBRARY_SPECTRAL=false`) and drove real Lidarr grabs through the chain.
+
+**Decision results**
+
+| Scenario | Outcome | Verdict |
+|---|---|---|
+| Missing album (Inger Lise Rypdal — *Just for You*) | `ACCEPT` → imported; measured-existing no-op (`existing=nothing`) | ✅ correct |
+| Existing lossy compilation (Dire Straits *Private Investigations*, MP3-VBR) | `REVIEW_REQUIRED` via `AMBIGUOUS_EDITION` (identity dominated; `title_similarity` 0.0, 21 files vs 14) — library untouched, no ManualImport | ✅ two-axis correct |
+| a-ha *Hunting High and Low* **deluxe** (60 trk FLAC 24bit, grabbed by mistake) | `AUTHENTIC` + `SAME_FAMILY` (confidence 94.8, `title_similarity` 0.91, **`track_count_delta` 0** — matched the real 60-trk deluxe release 258) → imported as a lossy→FLAC upgrade, replacing the original MP3 association | ✅ **F5.1 correct** — recognized the deluxe as a legitimate same-family edition; not a mis-score |
+| a-ha *Hunting High and Low* **1985 original** (TIDAL FLAC 24bit) | `FAKE_CERTAIN` → `BLOCK` → `SKIPPED`, not imported | ✅ **fresh hard BLOCK confirmed** — TIDAL's "24bit" of the 1985 master is upsampled hi-res; Detective caught it. Deluxe (genuine remaster) was correctly `AUTHENTIC`. |
+
+**Key findings**
+- Fresh hard `BLOCK` reproduced from a real `FAKE_CERTAIN` (upsampled TIDAL hi-res),
+  confirming the earlier prediction. `context.existing.label` is Lidarr's label view
+  (manual grab ⇒ "nothing"), *not* the measured-existing evidence — measured-existing
+  adjusts the audio decision separately and is subordinate to identity in
+  `combine_audio_identity_decision`.
+- **F5.1 release-family matching (shipped, [ADR-0013](../architecture/adr/0013-release-family-identity-policy.md)) worked correctly.** The deluxe matched a real
+  60-track release in the same family (`track_count_delta` 0, confidence 94.8), so
+  `SAME_FAMILY` was the right verdict — the deluxe *is* a legitimate edition of the
+  album. It imported because existing was lossy MP3 (measured-existing upgrade
+  lossy→FLAC) and the operator-review release-switch is opt-in default-off. The
+  outcome (keep the deluxe) matched operator preference. The only defect was the
+  accidental release pick, not a Mintarr identity/policy bug.
+- **Open edition-policy question (not a bug):** auto-importing a substantially larger
+  edition (60-trk deluxe over a standard 10-trk edition) when existing is lossy
+  happens silently. Whether that should surface an operator notice is a policy
+  refinement, not an F5.1 correctness gap.
+
+**Operational gaps found (real, verified — candidate issues)**
+1. Lidarr "remove from download client + blocklist" does **not** stop Mintarr's
+   download/import — `mode=delete` only `_hide_from_lidarr`; QC→import proceeds.
+2. The `cancel_requested` flag is only honored inside the download subprocess, not
+   during QC/normalize/import. A cancel set after the download finishes is ignored
+   and the job imports. Combined with (1): once a grab's download completes there is
+   no operator-facing way to prevent its import.
+
+**Incident note:** the deluxe grab was an accidental release pick (picker matched the
+8.9 GB Super Deluxe, not the 1985 original). Per operator decision the deluxe was kept
+as album 13 and the original MP3 rip removed; no data loss to other albums. Config
+remains live; rollback = `mintarr-prev-measured-existing-20260610134928`.

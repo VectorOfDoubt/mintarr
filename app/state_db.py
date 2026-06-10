@@ -1586,6 +1586,29 @@ def find_active_job_by_dedupe(dedupe_key: str) -> dict | None:
         return None
 
 
+def get_active_job_by_jid(jid: str) -> dict | None:
+    """Return the active job (queued/running/cancelling) for ``jid``, or None.
+
+    Used by the SAB delete/cancel handler to map a Lidarr ``nzo_id`` (== jid) to
+    its worker job so an operator remove/blocklist can ``request_job_cancel`` the
+    in-flight grab, not merely hide it from Lidarr.
+    """
+    if not _ensure_initialized() or not jid:
+        return None
+    try:
+        with _lock, _connect() as conn:
+            placeholders = ",".join("?" * len(ACTIVE_JOB_STATES))
+            row = conn.execute(
+                f"SELECT * FROM jobs WHERE jid = ? AND state IN ({placeholders}) "
+                "ORDER BY id DESC LIMIT 1",
+                (jid, *ACTIVE_JOB_STATES),
+            ).fetchone()
+            return dict(row) if row else None
+    except Exception:
+        log.exception("state_db.get_active_job_by_jid failed jid=%s", jid)
+        return None
+
+
 # ============================================================================
 # F5.4 slice 5: background library scan state
 # ============================================================================

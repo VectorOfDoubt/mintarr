@@ -271,6 +271,22 @@ def test_request_job_cancel_ignores_terminal_jobs(fresh_db):
     assert state_db.request_job_cancel(job_id) is False
 
 
+def test_get_active_job_by_jid_returns_active(fresh_db):
+    job_id = state_db.enqueue_job(jid="grab-jid-1", type="tidal_grab")
+    found = state_db.get_active_job_by_jid("grab-jid-1")
+    assert found is not None
+    assert found["id"] == job_id
+    assert found["jid"] == "grab-jid-1"
+
+
+def test_get_active_job_by_jid_ignores_terminal_and_unknown(fresh_db):
+    job_id = state_db.enqueue_job(jid="grab-jid-2", type="tidal_grab")
+    state_db.dequeue_next_job(worker_id="w1")
+    state_db.mark_job_completed(job_id, result_state="ok")
+    assert state_db.get_active_job_by_jid("grab-jid-2") is None
+    assert state_db.get_active_job_by_jid("never-existed") is None
+
+
 # ============================================================================
 # worker loop end-to-end
 # ============================================================================

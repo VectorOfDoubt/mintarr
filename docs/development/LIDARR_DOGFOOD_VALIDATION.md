@@ -198,3 +198,34 @@ Remaining before enabling measured-existing decisions:
 - Confirm a hard-block candidate still never reaches Lidarr ManualImport in the
   current runtime. Existing blocked records demonstrate the path historically,
   but a fresh post-cutover block run is still the stronger proof.
+
+### 2026-06-10 (cont.) — completed-folder (LocalFolder) + hard-block path (Claude)
+
+Setup unchanged: Mintarr-only Lidarr config, `MINTARR_MEASURED_EXISTING=false`,
+`MINTARR_REQUIRE_INTEGRITY` unset.
+
+- **Hard-block path verified (code + live residue):** the V2 `BLOCK` branch
+  aborts *before* Lidarr ManualImport, sets outcome `SKIPPED`, blocklists the
+  grabbed release via `/history/failed/<id>`, calls `_cleanup_lidarr_queue`, and
+  removes the output dir (containment-checked). Live state corroborates: 18
+  archived block sidecars / 19 `blocked` decisions, with Lidarr `queue_total=0`
+  and `0` active/blocking commands — no stuck queue rows or retry loops. A fresh
+  fabricated-bad-candidate block run remains the only stronger proof.
+- **Completed-folder (LocalFolder) lane passed end-to-end:** a controlled
+  synthetic-but-genuine 16/44 FLAC album (non-monitored artist "Mintarr
+  Dogfood") was dropped into `LOCAL_INGEST_PATH` and triggered via
+  `POST /local/ingest`. JID `7588c40967a6` ran the **same QC gate** (ffprobe
+  pass, `flac -t` pass, FLAC Detective `pass`/authentic on real lossless),
+  release identity returned `AMBIGUOUS_EDITION`/warn (correctly unidentifiable),
+  and the two-axis policy produced `REVIEW_REQUIRED` — clean audio but weak
+  identity held for review, **not auto-imported**. Sidecar written with full
+  sensor evidence; `imported` stayed 28; Lidarr untouched (no ManualImport, queue
+  0). Confirms the local lane shares the QC/sidecar/decision flow and never
+  auto-imports an unidentifiable release.
+- **Discard-sync re-validated:** discarding the test record via
+  `POST /verification/<jid>/discard` moved `needs_review` 0 and `discarded`
+  13→14 with no backfill needed — the `7f6da83` fix holds on a fresh record.
+
+Remaining: fresh fabricated hard-block grab; SAB/qBit completed-folder lanes
+(after LocalFolder/Soulseek); then consider `MINTARR_MEASURED_EXISTING=true`
+(optionally with `MINTARR_REQUIRE_INTEGRITY=true`).

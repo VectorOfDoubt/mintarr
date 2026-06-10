@@ -229,3 +229,30 @@ Setup unchanged: Mintarr-only Lidarr config, `MINTARR_MEASURED_EXISTING=false`,
 Remaining: fresh fabricated hard-block grab; SAB/qBit completed-folder lanes
 (after LocalFolder/Soulseek); then consider `MINTARR_MEASURED_EXISTING=true`
 (optionally with `MINTARR_REQUIRE_INTEGRITY=true`).
+
+### 2026-06-10 (cont.) — fresh fake-hi-res via local lane (Claude)
+
+Attempted a fresh hard-block by ingesting fabricated fake-hi-res FLAC through the
+local lane (fully contained — a local grab has no Lidarr download to blocklist or
+dequeue). Findings:
+
+- **FLAC Detective works on real transcodes.** A genuine fake (real library track
+  → MP3 96k/48k → repacked 24/96 FLAC) was flagged `SUSPICIOUS` with reason
+  "Looks like upsampled hi-res: useful high-frequency content stops at the file's
+  technical cutoff" (detective score 5). A naive synthetic fake (lowpassed pink
+  noise repacked 24/96) was *not* flagged (`AUTHENTIC`) — Detective keys on real
+  transcode artifacts, not a bare spectral cutoff, so it does not false-positive
+  on non-transcode content.
+- **`SUSPICIOUS` → `REVIEW_REQUIRED`, never auto-import.** With no existing-library
+  downgrade context and no `FAKE_CERTAIN` verdict, a suspicious fake routes to
+  operator review (two-axis: suspicious audio + `AMBIGUOUS_EDITION` identity), is
+  retained not imported, and never calls Lidarr ManualImport. `imported` stayed
+  28, Lidarr queue 0 throughout. This is the key safety property: bad/fake audio
+  is never silently imported.
+- **A hard `BLOCK` needs `FAKE_CERTAIN` or a downgrade-vs-existing comparison** —
+  neither is reproducible on the local lane with synthetic non-monitored content.
+  The 19 historical blocks (code path verified above) remain the evidence for the
+  hard-block branch; a fresh hard `BLOCK` will fall out naturally once
+  `MINTARR_MEASURED_EXISTING=true` gives a real existing-quality comparison, or
+  from a real `FAKE_CERTAIN` grab.
+- All three test records were discarded; `needs_review=0`, no library mutation.

@@ -302,3 +302,15 @@ Flipped the live container to the conservative metadata-tier config
 8.9 GB Super Deluxe, not the 1985 original). Per operator decision the deluxe was kept
 as album 13 and the original MP3 rip removed; no data loss to other albums. Config
 remains live; rollback = `mintarr-prev-measured-existing-20260610134928`.
+
+**Open finding — edition switch can bypass operator review on a lossy→FLAC upgrade.**
+The release-switch review ([HTTP_API_v1.md](../specs/HTTP_API_v1.md)) only engages for
+`AMBIGUOUS_EDITION`/`INSUFFICIENT_EVIDENCE` identity. The a-ha deluxe matched a real
+60-track release in its own family → `SAME_FAMILY` (confident), and existing was lossy
+MP3, so measured-existing scored it a pure lossy→FLAC upgrade → auto-ACCEPT. Net effect:
+a *different edition* (60 trk deluxe vs the 10 trk standard that was there) was imported
+and replaced the original with no edition-switch review, because the swap rode in on the
+audio-upgrade axis, not the identity axis. Not a bug (operator wanted the deluxe here),
+but for RSS/auto mode an edition change that also happens to be an audio upgrade is
+silent. Worth a policy decision: should a large `track_count_delta` vs the
+currently-tracked edition surface a notice even on `SAME_FAMILY` + audio-upgrade?

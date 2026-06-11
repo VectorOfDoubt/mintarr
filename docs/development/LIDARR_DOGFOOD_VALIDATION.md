@@ -16,8 +16,10 @@ Validate the two hard product promises:
    Mintarr.**
 2. **Automatic, review, and block paths behave exactly as the policy says.**
 
-Do not enable stricter decision flags such as `MINTARR_MEASURED_EXISTING=true`
-until these paths have been dogfooded against a real Lidarr instance.
+Do not enable stricter decision flags until the relevant paths have been
+dogfooded against a real Lidarr instance. As of the 2026-06-10/11 dogfood,
+`MINTARR_MEASURED_EXISTING=true` is live in the conservative metadata-tier mode;
+`MINTARR_REQUIRE_INTEGRITY=false` and `MINTARR_LIBRARY_SPECTRAL=false` remain off.
 
 ## Preconditions
 
@@ -27,8 +29,12 @@ until these paths have been dogfooded against a real Lidarr instance.
   test.
 - Other Lidarr indexers/download clients that could satisfy the same test grab
   are disabled or excluded from the test.
-- `MINTARR_MEASURED_EXISTING=false` unless the test explicitly covers measured
-  existing-library decisions.
+- `MINTARR_MEASURED_EXISTING` state is recorded for the run. It is currently live
+  in conservative metadata-tier mode; do not silently change stricter flags.
+- `MINTARR_REQUIRE_INTEGRITY=false` unless an integrity-scan-backed run explicitly
+  tests stricter integrity semantics.
+- `MINTARR_LIBRARY_SPECTRAL=false` unless the run explicitly tests existing-file
+  spectral authenticity.
 - Library scans are idle unless the test explicitly covers import-priority
   yielding.
 - API keys and private paths are not copied into the dogfood notes.
@@ -148,17 +154,44 @@ Check:
 
 ## Current rollout rule
 
-Keep `MINTARR_MEASURED_EXISTING=false` until at least one dogfood pass covers:
+`MINTARR_MEASURED_EXISTING=true` is now live after the 2026-06-10/11 controlled
+dogfood. Keep it in conservative metadata-tier mode:
 
-- one automatic happy-path import;
-- one review-held candidate promoted or discarded by the operator;
-- one blocked candidate confirmed not imported;
-- one completed-folder ingest path, if that source remains enabled;
-- a bypass audit confirming the tested source cannot reach Lidarr around Mintarr.
+- `MINTARR_REQUIRE_INTEGRITY=false`
+- `MINTARR_LIBRARY_SPECTRAL=false`
 
-Only after that should measured-existing decision use be tested, and then as a
-separate opt-in dogfood run with `MINTARR_REQUIRE_INTEGRITY=true` considered for
-stricter evidence semantics.
+Do not enable broader RSS/autonomous testing, `MINTARR_REQUIRE_INTEGRITY`, or
+`MINTARR_LIBRARY_SPECTRAL` until the next checklist below has been run with real
+Lidarr grabs and no new queue/import ownership bugs appear.
+
+## Next measured-existing validation checklist
+
+Run these one at a time, with the operator watching Lidarr and Mintarr. The goal
+is to prove that automatic, review, block, discard, cancel, and queue-hold paths
+match the policy before enabling broader unattended search.
+
+| Case | Expected Mintarr result | Expected Lidarr result |
+|---|---|---|
+| Missing album / nothing existing | `ACCEPT` or `ACCEPT_PROVISIONAL` when hard gates pass | Imported; no stale Mintarr queue row |
+| Existing lossy release, clean FLAC candidate, same edition | Auto import as an upgrade when identity is confident | Imported; existing lossy replaced |
+| Existing good FLAC, worse/fake/down-tier candidate | `REVIEW_REQUIRED` or `BLOCK` depending on evidence | No automatic import |
+| Oversized same-family edition (deluxe/anniversary, e.g. `>= +4` tracks or `>= 1.5x`) | `REVIEW_REQUIRED` with `edition/tracklist mismatch` | Held as SAB `Paused`; no re-grab while pending |
+| Real hard failure (`FAKE_CERTAIN`, real decode corruption, wrong album) | `BLOCK` | No `ManualImport`; queue cleaned/blocklisted as applicable |
+| Review discard | lifecycle `discarded`; exact release blocklisted | Held queue row removed; later re-grab only for different release is acceptable |
+| Review promote | lifecycle `promoted`; `manual_promote` override present | Imported, then Mintarr-owned queue row cleaned/settled |
+| Operator cancel after download but before import | worker job terminalizes `cancelled` | No `ManualImport`; no library mutation |
+| Bypass audit after test window | all in-scope imports have Mintarr JID/sidecar | No Lidarr-native path silently bypassed Mintarr |
+
+Pass criteria:
+
+- no item reaches Lidarr's library without a Mintarr record/JID;
+- no `REVIEW_REQUIRED` item imports before explicit operator promote;
+- no `BLOCK` item calls Lidarr `ManualImport`;
+- review-held items remain visible as `Paused` until promote/discard/expire;
+- discard/expire blocklists and cleans the held queue row;
+- post-discard re-grabs are treated as new candidates and re-gated by Mintarr;
+- the runbook captures the exact JID, source, decision, import outcome, and
+  queue state for each case.
 
 ## Dogfood log
 

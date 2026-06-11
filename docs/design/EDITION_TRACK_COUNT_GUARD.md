@@ -24,10 +24,14 @@ mode an edition change that also happens to be an audio upgrade is silent.
 
 Add a conservative **edition/tracklist guard** to the verification decision.
 
-When the combined decision is `ACCEPT`, the identity is `SAME_FAMILY` or
-`AMBIGUOUS_EDITION`, and the candidate's tracklist is *much* larger than the
-expected Lidarr release, route the record to `REVIEW_REQUIRED` with the reason
-**"edition/tracklist mismatch"** so an operator confirms the edition swap.
+When the combined decision is an auto-import decision (`ACCEPT` **or**
+`ACCEPT_PROVISIONAL` — both proceed to Lidarr ManualImport), the identity is
+`SAME_FAMILY` or `AMBIGUOUS_EDITION`, and the candidate's tracklist is *much*
+larger than the expected Lidarr release, route the record to `REVIEW_REQUIRED`
+with the reason **"edition/tracklist mismatch"** so an operator confirms the
+edition swap. Covering `ACCEPT_PROVISIONAL` matters because a large edition
+mismatch can otherwise still auto-import via a provisional accept
+(suspicious-but-upgrade or measured-existing rescue).
 
 - **Never escalates to `BLOCK`** — it may genuinely be the right edition.
 - **Never auto-switches** the Lidarr release.
@@ -60,12 +64,14 @@ grab.
 
 ## 4. Placement
 
-`edition_track_count_mismatch()` is a pure predicate in `app/verification.py`,
-applied in `_compute_verification` immediately after
-`combine_audio_identity_decision`. On a trip it sets `REVIEW_REQUIRED` and appends
-the `edition_tracklist_mismatch` override marker, which surfaces the reason in
-`VerificationResult._legacy_reason` (decisions log) and
-`dashboard._review_reason` (operator UI).
+Two pure helpers in `app/verification.py`: `edition_track_count_mismatch()` (the
+threshold predicate) and `apply_edition_guard(decision, identity, candidate,
+expected) -> (decision, tripped)` (the decision-application layer, which gates on
+`ACCEPT`/`ACCEPT_PROVISIONAL`). `_compute_verification` calls `apply_edition_guard`
+immediately after `combine_audio_identity_decision`; on a trip it appends the
+`edition_tracklist_mismatch` override marker, which surfaces the reason in
+`VerificationResult._legacy_reason` (decisions log) and `dashboard._review_reason`
+(operator UI).
 
 ## 5. Non-goals
 

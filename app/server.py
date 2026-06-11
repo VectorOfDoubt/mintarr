@@ -69,11 +69,11 @@ from verification import (
     ImportOutcome,
     VerificationDecision,
     VerificationResult,
+    apply_edition_guard,
     apply_overrides,
     combine_audio_identity_decision,
     compute_components,
     decide,
-    edition_track_count_mismatch,
 )
 
 configure_logging()
@@ -3481,17 +3481,16 @@ def _compute_verification(
         audio_decision,
         identity_result.decision.value,
     )
-    # Edition/tracklist guard (measured-existing hardening): a clear-upgrade,
-    # same-family candidate with a much larger tracklist than the expected Lidarr
-    # release is probably a different edition (deluxe/anniversary). Route it to
-    # REVIEW so an operator confirms the edition swap instead of auto-importing it.
-    # Never escalates to BLOCK (it may be the right edition) and never auto-switches.
-    if decision == "ACCEPT" and edition_track_count_mismatch(
-        identity_result.decision.value, new_track_count, expected_track_count
-    ):
-        decision = "REVIEW_REQUIRED"
-        if "edition_tracklist_mismatch" not in overrides:
-            overrides = [*overrides, "edition_tracklist_mismatch"]
+    # Edition/tracklist guard (measured-existing hardening): a same-family candidate
+    # with a much larger tracklist than the expected Lidarr release is probably a
+    # different edition (deluxe/anniversary). Route either auto-import decision
+    # (ACCEPT or ACCEPT_PROVISIONAL) to REVIEW so an operator confirms the edition
+    # swap. Never escalates to BLOCK (it may be the right edition), never auto-switches.
+    decision, edition_tripped = apply_edition_guard(
+        decision, identity_result.decision.value, new_track_count, expected_track_count
+    )
+    if edition_tripped and "edition_tracklist_mismatch" not in overrides:
+        overrides = [*overrides, "edition_tracklist_mismatch"]
     return VerificationResult(
         jid=jid,
         score=score,

@@ -8,6 +8,7 @@ import pytest
 
 from verification import (
     VerificationResult,
+    apply_edition_guard,
     apply_overrides,
     combine_audio_identity_decision,
     compute_components,
@@ -427,6 +428,37 @@ def test_edition_guard_reason_surfaces_in_legacy_reason():
         identity_decision="SAME_FAMILY",
     ).to_decisions_log()
     assert record["reason"] == "edition/tracklist mismatch"
+
+
+def test_apply_edition_guard_routes_accept_to_review():
+    assert apply_edition_guard("ACCEPT", "SAME_FAMILY", 60, 10) == (
+        "REVIEW_REQUIRED",
+        True,
+    )
+
+
+def test_apply_edition_guard_routes_provisional_accept_to_review():
+    # ACCEPT_PROVISIONAL also proceeds to ManualImport (suspicious-but-upgrade,
+    # measured-existing rescue), so a big edition mismatch must still go to review.
+    assert apply_edition_guard("ACCEPT_PROVISIONAL", "SAME_FAMILY", 60, 10) == (
+        "REVIEW_REQUIRED",
+        True,
+    )
+
+
+def test_apply_edition_guard_keeps_accept_without_mismatch():
+    assert apply_edition_guard("ACCEPT", "SAME_FAMILY", 12, 10) == ("ACCEPT", False)
+
+
+def test_apply_edition_guard_never_changes_block():
+    assert apply_edition_guard("BLOCK", "SAME_FAMILY", 60, 10) == ("BLOCK", False)
+
+
+def test_apply_edition_guard_leaves_existing_review_untouched():
+    assert apply_edition_guard("REVIEW_REQUIRED", "SAME_FAMILY", 60, 10) == (
+        "REVIEW_REQUIRED",
+        False,
+    )
 
 
 # ---- V2.1 completeness rule (added 2026-05-23) ----

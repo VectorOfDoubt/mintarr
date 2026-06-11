@@ -176,6 +176,28 @@ def edition_track_count_mismatch(
     )
 
 
+def apply_edition_guard(
+    decision: VerificationDecision,
+    identity_decision: ReleaseIdentityDecision,
+    candidate_tracks: int,
+    expected_tracks: int,
+) -> tuple[VerificationDecision, bool]:
+    """Route an oversized-edition same-family candidate to review.
+
+    Applies to **both** auto-import decisions — ``ACCEPT`` and
+    ``ACCEPT_PROVISIONAL`` — because both proceed to Lidarr ManualImport; a large
+    edition mismatch must be seen by an operator even when the accept is provisional
+    (e.g. a suspicious-but-upgrade or measured-existing rescue). Returns the
+    (possibly changed) decision and whether the guard tripped. Never changes
+    ``BLOCK``/``REVIEW_REQUIRED`` and never escalates to ``BLOCK``.
+    """
+    if decision in {"ACCEPT", "ACCEPT_PROVISIONAL"} and edition_track_count_mismatch(
+        identity_decision, candidate_tracks, expected_tracks
+    ):
+        return "REVIEW_REQUIRED", True
+    return decision, False
+
+
 def compute_components(
     ffprobe_ok: bool,
     flac_t_ok: bool,

@@ -348,3 +348,27 @@ the specific oversized release (while keeping it promotable) so Lidarr does not
 re-grab it; or the review-hold should retain the Lidarr queue item instead of
 clearing it. Prior reviews did not surface this because they were local-lane (no
 Lidarr search).
+
+### 2026-06-11 (cont.) — review-hold invariant live (Claude)
+
+Redeployed with the review-hold fix (#150) and re-ran the edition-guard review
+(Depeche Mode *Black Celebration* deluxe, album 600). Resolves the open caveat:
+does Lidarr leave a SAB Paused-at-100% item without stalling or re-grabbing?
+
+- **Review hold — clean PASS.** Decision `REVIEW_REQUIRED` (edition guard). The
+  emulated SAB queue presented the held job as `Paused 100%`; Lidarr kept the item
+  in its queue and, after 90 s, still showed **the same single item** as `paused`
+  with **no re-grab**. The previous behaviour (immediate auto-re-grab on review) is
+  gone. Answer to the caveat: **yes, Lidarr leaves a Paused-at-100% hold alone.**
+- **Discard — clean PASS.** Discarding the held review blocklisted the deluxe and
+  `Lidarr queue cleaned: 1 entries removed`; Lidarr queue and SAB queue both went to
+  0. Album 600 stayed MP3-192 (not imported).
+- **Post-discard re-grab is correct, not the bug.** After discard (operator
+  rejected), Lidarr grabbed a *different* release (the standard) — expected, since
+  the album is still wanted; the deluxe is blocklisted so only a new candidate is
+  tried, and it is re-gated by Mintarr.
+- **Cancel-fix re-validated, cleanly.** Removing that re-grab via Lidarr
+  remove+blocklist arrived as `mode=history&name=delete` → `request_job_cancel`, and
+  because it was caught during download the job terminalized as **`cancelled`** (not
+  blocked/failed) — confirming both #146 (delete→cancel routing) and #147
+  (JobCancelled propagation) live.

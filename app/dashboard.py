@@ -113,6 +113,12 @@ def _review_reason(rec: dict) -> str:
         return "FLAC integrity check failed"
     if "validator_error" in overrides:
         return "Validator unavailable during analysis"
+    if "edition_tracklist_mismatch" in overrides:
+        return (
+            "Edition/tracklist mismatch: the candidate has many more tracks than the "
+            "tracked release — likely a different edition (deluxe/anniversary). "
+            "Confirm before it replaces the current edition."
+        )
     if verdict in ("FAKE_CERTAIN", "FAKE"):
         return "Detective: certain MP3-to-FLAC transcode"
     if verdict == "SUSPICIOUS":

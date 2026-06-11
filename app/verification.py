@@ -104,6 +104,8 @@ class VerificationResult:
             return "no flac files found"
         if "validator_error" in self.overrides:
             return "validator unavailable"
+        if "edition_tracklist_mismatch" in self.overrides:
+            return "edition/tracklist mismatch"
         if (
             self.verification_decision == "BLOCK"
             and self.identity_decision == "WRONG_ALBUM"
@@ -140,6 +142,60 @@ def combine_audio_identity_decision(
     if identity_decision in {"AMBIGUOUS_EDITION", "INSUFFICIENT_EVIDENCE"}:
         return "REVIEW_REQUIRED"
     return audio_decision
+
+
+# Edition/tracklist guard thresholds (measured-existing hardening). A same-family
+# candidate whose tracklist is much larger than the expected Lidarr release is
+# probably a different edition (deluxe/anniversary/expanded), so it should be seen
+# by an operator before it replaces the tracked edition — even on a clear audio
+# upgrade. Conservative by design: trip on either an absolute margin or a ratio.
+EDITION_TRACK_COUNT_ABS_MARGIN = 4
+EDITION_TRACK_COUNT_RATIO = 1.5
+
+
+def edition_track_count_mismatch(
+    identity_decision: ReleaseIdentityDecision,
+    candidate_tracks: int,
+    expected_tracks: int,
+) -> bool:
+    """True when a same-family candidate has a suspiciously larger tracklist.
+
+    Used to route an otherwise-accepted audio upgrade to REVIEW so an operator
+    confirms an edition swap (e.g. a 60-track deluxe replacing a 10-track standard
+    edition) instead of letting it auto-import. Never applies to ``WRONG_ALBUM``
+    (already blocked) or to missing track counts; a near-equal count (a complete
+    candidate filling an incomplete existing release) does not trip it.
+    """
+    if identity_decision not in {"SAME_FAMILY", "AMBIGUOUS_EDITION"}:
+        return False
+    if expected_tracks <= 0 or candidate_tracks <= 0:
+        return False
+    return (
+        candidate_tracks >= expected_tracks + EDITION_TRACK_COUNT_ABS_MARGIN
+        or candidate_tracks >= expected_tracks * EDITION_TRACK_COUNT_RATIO
+    )
+
+
+def apply_edition_guard(
+    decision: VerificationDecision,
+    identity_decision: ReleaseIdentityDecision,
+    candidate_tracks: int,
+    expected_tracks: int,
+) -> tuple[VerificationDecision, bool]:
+    """Route an oversized-edition same-family candidate to review.
+
+    Applies to **both** auto-import decisions — ``ACCEPT`` and
+    ``ACCEPT_PROVISIONAL`` — because both proceed to Lidarr ManualImport; a large
+    edition mismatch must be seen by an operator even when the accept is provisional
+    (e.g. a suspicious-but-upgrade or measured-existing rescue). Returns the
+    (possibly changed) decision and whether the guard tripped. Never changes
+    ``BLOCK``/``REVIEW_REQUIRED`` and never escalates to ``BLOCK``.
+    """
+    if decision in {"ACCEPT", "ACCEPT_PROVISIONAL"} and edition_track_count_mismatch(
+        identity_decision, candidate_tracks, expected_tracks
+    ):
+        return "REVIEW_REQUIRED", True
+    return decision, False
 
 
 def compute_components(

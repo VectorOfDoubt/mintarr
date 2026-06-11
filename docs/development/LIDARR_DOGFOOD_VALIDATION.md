@@ -405,3 +405,52 @@ does Lidarr leave a SAB Paused-at-100% item without stalling or re-grabbing?
   because it was caught during download the job terminalized as **`cancelled`** (not
   blocked/failed) — confirming both #146 (delete→cancel routing) and #147
   (JobCancelled propagation) live.
+
+### 2026-06-11 (cont.) — measured-existing checklist continuation (Codex)
+
+Continued the controlled measured-existing dogfood with the live configuration:
+`MINTARR_MEASURED_EXISTING=true`, `MINTARR_REQUIRE_INTEGRITY=false`,
+`MINTARR_LIBRARY_SPECTRAL=false`. Mintarr health was `ok`, `active_jobs=0` before
+each grab, and Lidarr queue/SAB-emulated queue were clean after terminal outcomes.
+
+**Checklist results**
+
+| Scenario | JID | Outcome | Verdict |
+|---|---|---|---|
+| Missing album / nothing existing: Inger Lise Rypdal — *Ansikter* | `6256ab090215` | `ACCEPT` → `MANUAL_IMPORTED`; Lidarr imported 10 FLAC trackfiles; no stale queue row | ✅ pass |
+| Existing lossy → clean FLAC, same track count: The Police — *Outlandos d'Amour* | `bd404685590d` | `ACCEPT` → `MANUAL_IMPORTED`; Lidarr replaced 10 MP3-VBR-V0 trackfiles with 10 FLAC trackfiles | ✅ pass |
+| Hard evidence failure on existing lossy album: 10cc — *The Original Soundtrack* | `4032baff1c2c` | 9 authentic FLAC tracks + 1 `FAKE_CERTAIN` track → `BLOCK`/`SKIPPED`; no import; album stayed MP3-192 | ✅ pass |
+| Re-grab after block, bad source payload: 10cc — *The Original Soundtrack [Bonus Tracks]* | `45c965e75bcb` | codec gate found no usable FLAC/audio files → `BLOCK`/`SKIPPED`; no import; queue cleaned | ✅ pass |
+| Existing lossy → candidate with fewer tracks than existing: Weezer — *Weezer (Green Album)* | `c632f057e983` | audio passed (`AUTHENTIC`, `ACCEPT`) but Lidarr `ManualImport` rejected every file with "Has fewer tracks than existing release" → `FAILED`; album stayed MP3-192 | 🟡 product gap |
+
+**Passes confirmed**
+
+- The positive measured-existing upgrade path works end-to-end: a measured lossy
+  album can be replaced by a clean FLAC candidate through Mintarr, with the final
+  Lidarr library showing FLAC and no stale queue rows.
+- The missing-album path still imports automatically when hard gates pass.
+- Hard audio failures still win over the measured-existing upgrade axis: one
+  `FAKE_CERTAIN` track in an otherwise plausible FLAC release blocked the entire
+  candidate before `ManualImport`.
+- Post-block re-grabs are treated as new candidates and re-gated by Mintarr. The
+  second 10cc candidate was blocked independently by the codec gate; no bypass was
+  observed.
+
+**Follow-up findings**
+
+1. **ManualImport track-count rejection should be predicted before import
+   ([#151](https://github.com/eivindsjursen-lab/mintarr/issues/151)).** The
+   Weezer candidate had 10 new tracks while the existing/tracked Lidarr release had
+   11. Mintarr accepted the audio-quality upgrade, then Lidarr rejected all files as
+   "Has fewer tracks than existing release". This is safe (no library mutation), but
+   the operator experience is poor and the job lands as `FAILED`. A future guard
+   should route "candidate materially has fewer tracks than existing/tracked release"
+   to `REVIEW_REQUIRED` before `ManualImport`, analogous to the oversized-edition
+   guard but in the opposite direction.
+2. **Hard-block reason text can hide the real blocker
+   ([#152](https://github.com/eivindsjursen-lab/mintarr/issues/152)).** JID
+   `4032baff1c2c` blocked
+   correctly because one track was `FAKE_CERTAIN`, but the dashboard/status reason
+   read "Blocked by policy: upgrade from MP3-192." The decision is correct; the
+   human-facing reason should prefer the hard blocker (`FAKE_CERTAIN` / Detective)
+   over the lower-priority upgrade context.

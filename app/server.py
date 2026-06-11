@@ -145,7 +145,14 @@ def _sab_queue_slot(jid: str, job: dict) -> dict:
         max(0, total_bytes - int(total_bytes * percent / 100)) if total_bytes else 0
     )
     status = job.get("status")
-    if status == "downloading":
+    if job.get("lidarr_hold") or status == "review_required":
+        # Review-hold: present as a paused download so Lidarr keeps the item in its
+        # queue (no re-grab) and does not treat it as completed/ready-to-import.
+        sab_status = "Paused"
+        timeleft = "0:00:00"
+        percent = 100
+        left_bytes = 0
+    elif status == "downloading":
         sab_status = "Downloading"
         timeleft = "0:00:30" if left_bytes else "0:00:00"
     elif status == "processing":
@@ -889,7 +896,12 @@ def sab():
             for jid, j in _jobs.items():
                 if j.get("hidden_from_lidarr"):
                     continue
-                if j.get("status") in ("queued", "downloading", "processing"):
+                # review_required jobs carry lidarr_hold=True so they stay visible to
+                # Lidarr as a paused download (review-hold invariant), preventing a
+                # re-grab while the operator decides.
+                if j.get("status") in ("queued", "downloading", "processing") or j.get(
+                    "lidarr_hold"
+                ):
                     slots.append(_sab_queue_slot(jid, j))
             mb_total = sum(float(slot["mb"]) for slot in slots)
             mb_left = sum(float(slot["mbleft"]) for slot in slots)
@@ -4039,6 +4051,7 @@ def _mark_import_failed(jid: str, reason: str):
             percent=100,
             hidden_from_lidarr=True,
         )
+        job.pop("lidarr_hold", None)
         _save_jobs()
 
 
@@ -4055,22 +4068,31 @@ def _mark_import_completed(jid: str, output_dir: Path | None = None):
         if output_dir is not None:
             update["output_dir"] = str(output_dir)
         job.update(update)
+        job.pop("lidarr_hold", None)
         _save_jobs()
 
 
 def _mark_review_required(jid: str, reason: str):
-    """Hold files for manual V2 review without marking the download as imported."""
+    """Hold files for manual V2 review without marking the download as imported.
+
+    Review-hold invariant: a pending review stays *visible* to Lidarr as an active
+    (paused) download for the same downloadId, so Lidarr does not re-grab the album
+    while a human decides. ``lidarr_hold`` is the explicit marker; the emulated SAB
+    queue presents it as ``Paused``. The hold is cleared only by promote/discard/
+    expire (which then clean the Lidarr queue), so we must NOT hide it here.
+    """
     with _jobs_lock:
         job = _jobs.setdefault(jid, {"id": jid})
         job.update(
             status="review_required",
+            lidarr_hold=True,
             warning=reason,
             review_required_at=time.time(),
             completed_at=time.time(),
             output_dir=str(OUTPUT_BASE / jid),
             percent=100,
-            hidden_from_lidarr=True,
         )
+        job.pop("hidden_from_lidarr", None)
         _save_jobs()
 
 
@@ -4137,7 +4159,10 @@ def _create_review_required(
             record["lifecycle"] = lifecycle
             _atomic_write_json(path, record)
         _mark_review_required(jid, f"V2 review required: {result.verdict}")
-        _cleanup_lidarr_queue(jid, api, key)
+        # Review-hold invariant: do NOT clean the Lidarr queue here. The grab stays
+        # visible to Lidarr as a paused download (lidarr_hold) so Lidarr does not
+        # re-grab the album while the operator decides. The queue is cleaned only on
+        # promote (import) / discard (blocklist) / expire (blocklist).
 
 
 def _trigger_lidarr_import(
@@ -5959,6 +5984,12 @@ def _expire_review_required_jobs() -> None:
         if path.exists() and path != target:
             path.unlink()
 
+        # Review-hold invariant: the grab was kept visible to Lidarr while pending;
+        # on expiry, clean the Lidarr queue (blocklist above stops a re-grab of this
+        # exact release after expiry).
+        if key:
+            _cleanup_lidarr_queue(jid, api, key)
+
         output_dir = Path(_jobs.get(jid, {}).get("output_dir") or OUTPUT_BASE / jid)
         if output_dir.exists():
             _safe_rmtree_under(OUTPUT_BASE, output_dir)
@@ -5967,6 +5998,7 @@ def _expire_review_required_jobs() -> None:
                 _jobs[jid].update(
                     status="failed", error="review_required expired", completed_at=now
                 )
+                _jobs[jid].pop("lidarr_hold", None)
                 _save_jobs()
 
 
@@ -6577,6 +6609,11 @@ def verification_discard(jid: str):
     api = os.environ.get("LIDARR_API_URL", "http://host.docker.internal:8686/api/v1")
     key = _get_lidarr_key()
     blocklisted = _blocklist_grab(jid, api, key) if key else False
+    # Review-hold invariant: the grab was kept visible to Lidarr while pending, so the
+    # terminal operator action must clean the Lidarr queue now (blocklist above stops
+    # a re-grab of this exact release).
+    if key:
+        _cleanup_lidarr_queue(jid, api, key)
 
     lifecycle = record.setdefault("lifecycle", {})
     lifecycle["state"] = "discarded"

@@ -936,6 +936,7 @@ def test_expire_review_required_archives_and_deletes_output(
     monkeypatch.setenv("REVIEW_RETENTION_DAYS", "0")
     mocker.patch.object(server, "_get_lidarr_key", return_value="lidarr-key")
     mocker.patch.object(server, "_blocklist_grab", return_value=True)
+    cleanup = mocker.patch.object(server, "_cleanup_lidarr_queue")
     mocker.patch.object(server, "_save_jobs")
 
     server._expire_review_required_jobs()
@@ -947,6 +948,9 @@ def test_expire_review_required_archives_and_deletes_output(
     assert expired["lifecycle"]["state"] == "expired"
     assert expired["lifecycle"]["blocklist_status"] == "done"
     assert server._jobs["abc12345"]["status"] == "failed"
+    # Review-hold invariant: expiry clears the hold and cleans the Lidarr queue.
+    assert server._jobs["abc12345"].get("lidarr_hold") is None
+    cleanup.assert_called_once()
 
 
 def test_dashboard_renders_summary_cards(tmp_path, monkeypatch):

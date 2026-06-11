@@ -214,6 +214,51 @@ def test_sab_queue_reports_progress_and_mbleft(mocker):
     server._jobs.pop("hiddenq", None)
 
 
+def test_sab_queue_shows_review_hold_as_paused(mocker):
+    """Review-hold invariant: a pending review stays visible to Lidarr as Paused so
+    Lidarr does not re-grab the album while the operator decides."""
+    client = server.app.test_client()
+    mocker.patch.object(server, "_save_jobs")
+    server._jobs["rev123"] = {
+        "id": "rev123",
+        "status": "review_required",
+        "lidarr_hold": True,
+        "title": "Held For Review",
+        "category": "music",
+        "size": 50 * 1024 * 1024,
+        "percent": 100,
+    }
+    try:
+        response = client.get(f"/sabnzbd/api?mode=queue&apikey={VALID_KEY}")
+        assert response.status_code == 200
+        slots = {s["nzo_id"]: s for s in response.get_json()["queue"]["slots"]}
+        assert "rev123" in slots, "review-held job must stay visible to Lidarr"
+        assert slots["rev123"]["status"] == "Paused"
+        assert slots["rev123"]["sizeleft"] == "0"
+    finally:
+        server._jobs.pop("rev123", None)
+
+
+def test_sab_history_excludes_review_hold(mocker):
+    """A review-held job must not appear as completed in history (would trigger import)."""
+    client = server.app.test_client()
+    mocker.patch.object(server, "_save_jobs")
+    server._jobs["rev456"] = {
+        "id": "rev456",
+        "status": "review_required",
+        "lidarr_hold": True,
+        "title": "Held",
+        "completed_at": 1,
+    }
+    try:
+        response = client.get(f"/sabnzbd/api?mode=history&apikey={VALID_KEY}")
+        assert response.status_code == 200
+        names = [s["nzo_id"] for s in response.get_json()["history"]["slots"]]
+        assert "rev456" not in names
+    finally:
+        server._jobs.pop("rev456", None)
+
+
 def test_apikey_is_redacted_from_success_logs(caplog):
     client = server.app.test_client()
 

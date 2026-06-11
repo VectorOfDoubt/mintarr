@@ -452,7 +452,12 @@ def test_v2_enabled_fake_without_existing_goes_review_required(tmp_path, mocker)
     v2_result = log_decision.call_args.kwargs["v2_result"]
     assert v2_result.verification_decision == "REVIEW_REQUIRED"
     assert v2_result.import_outcome == "PENDING"
-    delete_mock.assert_called_once()
+    # Review-hold invariant: a pending review stays visible to Lidarr (lidarr_hold,
+    # not hidden) and must NOT clean the Lidarr queue — clearing it is what let Lidarr
+    # re-grab the album. Cleanup happens only on promote/discard/expire.
+    assert server._jobs[jid].get("lidarr_hold") is True
+    assert not server._jobs[jid].get("hidden_from_lidarr")
+    delete_mock.assert_not_called()
 
 
 def test_v2_block_skips_manualimport_for_authentic_partial_codec_mismatch(

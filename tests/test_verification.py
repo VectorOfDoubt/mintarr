@@ -12,6 +12,7 @@ from verification import (
     combine_audio_identity_decision,
     compute_components,
     decide,
+    edition_track_count_mismatch,
 )
 
 
@@ -375,6 +376,57 @@ def test_audio_review_takes_precedence_over_identity_accept():
         combine_audio_identity_decision("REVIEW_REQUIRED", "SAME_RELEASE")
         == "REVIEW_REQUIRED"
     )
+
+
+# ---- Edition/tracklist guard (measured-existing hardening, 2026-06-10) ----
+
+
+def test_edition_guard_trips_on_deluxe_over_standard():
+    # 60-track deluxe matched same-family against a 10-track tracked edition.
+    assert edition_track_count_mismatch("SAME_FAMILY", 60, 10) is True
+
+
+def test_edition_guard_ignores_small_bonus_tracklist():
+    # 12 vs 10: neither +4 nor *1.5 — a couple of bonus tracks is not an edition swap.
+    assert edition_track_count_mismatch("SAME_FAMILY", 12, 10) is False
+
+
+def test_edition_guard_trips_at_absolute_margin():
+    assert edition_track_count_mismatch("SAME_FAMILY", 14, 10) is True
+
+
+def test_edition_guard_trips_on_ratio_for_larger_albums():
+    # +4 not enough proportionally, but 1.5x is: 30 vs 20.
+    assert edition_track_count_mismatch("SAME_FAMILY", 30, 20) is True
+
+
+def test_edition_guard_applies_to_ambiguous_edition():
+    assert edition_track_count_mismatch("AMBIGUOUS_EDITION", 60, 10) is True
+
+
+def test_edition_guard_skips_wrong_album():
+    # WRONG_ALBUM is already blocked by combine(); the guard never touches it.
+    assert edition_track_count_mismatch("WRONG_ALBUM", 60, 10) is False
+
+
+def test_edition_guard_noop_without_expected_count():
+    # No expected count (e.g. unmatched/missing album) → cannot judge edition shape.
+    assert edition_track_count_mismatch("SAME_FAMILY", 60, 0) is False
+
+
+def test_edition_guard_allows_complete_candidate_for_incomplete_existing():
+    # Existing release was incomplete; a complete same-count candidate is not an
+    # edition swap and must still flow on its audio decision.
+    assert edition_track_count_mismatch("SAME_FAMILY", 10, 10) is False
+
+
+def test_edition_guard_reason_surfaces_in_legacy_reason():
+    record = _result(
+        verification_decision="REVIEW_REQUIRED",
+        overrides=["edition_tracklist_mismatch"],
+        identity_decision="SAME_FAMILY",
+    ).to_decisions_log()
+    assert record["reason"] == "edition/tracklist mismatch"
 
 
 # ---- V2.1 completeness rule (added 2026-05-23) ----

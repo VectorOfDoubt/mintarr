@@ -314,3 +314,37 @@ audio-upgrade axis, not the identity axis. Not a bug (operator wanted the deluxe
 but for RSS/auto mode an edition change that also happens to be an audio upgrade is
 silent. Worth a policy decision: should a large `track_count_delta` vs the
 currently-tracked edition surface a notice even on `SAME_FAMILY` + audio-upgrade?
+
+### 2026-06-11 — edition guard + cancel-fix live (Claude)
+
+Redeployed Mintarr with the merged edition-guard (#149) and cancel-fix (#148),
+measured-existing flags preserved. Grabbed Depeche Mode *Black Celebration* (album
+600, existing MP3-192) **deluxe** via TIDAL.
+
+- **Edition guard — clean PASS.** `existing=14 / expected=14 / new=22`, identity
+  `SAME_FAMILY`, `flac-detective AUTHENTIC` (audio would otherwise `ACCEPT` as a
+  lossy→FLAC upgrade). Decision: **`REVIEW_REQUIRED`**, reason surfaced in both the
+  decisions log and dashboard as *"Edition/tracklist mismatch: the candidate has
+  many more tracks than the tracked release — likely a different edition
+  (deluxe/anniversary). Confirm before it replaces the current edition."* The deluxe
+  was **not** imported; album 600 stayed MP3-192.
+- **Cancel-fix (#146) validated live.** After discarding the review, Lidarr
+  auto-re-grabbed (see finding below); a Lidarr "remove from download client +
+  blocklist" arrived as `mode=history&name=delete&value=<jid>` and was correctly
+  routed to `request_job_cancel` (`SAB delete → cancel requested for worker job 58`)
+  — the exact no-op gap #146 closed.
+- **Bonus QC catch.** The *standard* Black Celebration TIDAL "FLAC" is itself an
+  upsampled fake → `FAKE_CERTAIN` → `BLOCK` with existing MP3 present. Correctly
+  blocked + blocklisted; not imported.
+
+**Finding — review-held Lidarr-monitored albums get auto-re-grabbed.** A
+`REVIEW_REQUIRED` hold cleans the Lidarr queue entry (so Lidarr does not see it as
+downloading), but because review does not blocklist, a monitored album with
+automatic search enabled is **re-grabbed by Lidarr**. Observed here: after the
+deluxe went to review, Lidarr immediately re-grabbed a (different) standard release.
+For the edition guard specifically this risks a re-grab loop if Lidarr keeps finding
+the same deluxe. Worth a follow-up: an edition-guard review should likely blocklist
+the specific oversized release (while keeping it promotable) so Lidarr does not
+re-grab it; or the review-hold should retain the Lidarr queue item instead of
+clearing it. Prior reviews did not surface this because they were local-lane (no
+Lidarr search).

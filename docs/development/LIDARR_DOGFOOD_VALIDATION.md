@@ -555,3 +555,32 @@ Finding and follow-up:
   blocklist entry, the queue was empty, and no import happened.
 - Follow-up fix: discard now preserves `blocklist_status=done` and does not call
   the blocklist endpoint again when the record is already blocklisted.
+
+### 2026-06-12 — LocalFolder hard-block path (Codex)
+
+Ran a fabricated LocalFolder hard-block test to verify that invalid local source
+audio is stopped by Mintarr's shared QC gate and never reaches Lidarr.
+
+Candidate:
+
+- Source: LocalFolder via `POST /local/ingest`.
+- Test path: `Mintarr Dogfood HardBlock TextFLAC`.
+- Payload: one intentionally invalid `01 - Fake.flac` text file.
+- JID: `d88c282d4ba6`.
+
+Result:
+
+- Job type: `local_grab`.
+- Worker result: `blocked`.
+- Decision: `BLOCK`.
+- Import outcome: `SKIPPED`.
+- Derived status: `blocked`.
+- Sensor evidence: `ffprobe` blocker with `audio_count=0`; `flac_t` blocker with
+  `integrity_failed=1`; FLAC Detective skipped because no valid FLAC remained.
+- Lidarr queue stayed `0`.
+- No `ManualImport` was called and no library mutation happened.
+
+Verdict: **hard-block path passes** for the LocalFolder/completed-folder lane. The
+operator-facing message was safe but generic (*"no audio files downloaded"*); a
+future UX polish could explain this class as "invalid FLAC wrapper / no decodable
+audio" more directly.

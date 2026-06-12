@@ -490,3 +490,35 @@ reasons such as "upgrade from MP3-192".
 Expected result for the 10cc case: the decision remains `BLOCK`/`SKIPPED`, but the
 operator-facing reason should now explain the hard `FAKE_CERTAIN` Detective verdict
 instead of the lower-priority upgrade context.
+
+### 2026-06-12 — controlled happy-path grab after status/branding polish (Codex)
+
+Ran a single interactive Lidarr release grab after the dashboard status-label and
+Mintarr-branding fixes were live. Configuration remained conservative:
+`MINTARR_MEASURED_EXISTING=true`, `MINTARR_REQUIRE_INTEGRITY=false`,
+`MINTARR_LIBRARY_SPECTRAL=false`.
+
+Candidate:
+
+- Lidarr action: interactive release grab through Lidarr `/release`.
+- Source/indexer: Mintarr/TidalHires.
+- Album: D'Sound — *25* (album id `12132`), missing before the grab.
+- JID/downloadId: `a056864653a5`.
+
+Result:
+
+- Mintarr created a `tidal_grab` job and Lidarr queue showed the same JID as the
+  download id while the item was downloading.
+- Mintarr progressed through download, postprocess, FLAC Detective, then
+  `ManualImport`; no import happened before QC completed.
+- Decision: `ACCEPT`.
+- Import outcome: `MANUAL_IMPORTED`.
+- Derived status: `imported`.
+- FLAC Detective verdict: `AUTHENTIC`; dashboard file evidence showed 8 FLAC
+  files.
+- Lidarr imported 8 FLAC trackfiles for album `12132`.
+- Final Lidarr queue: `0`; final Mintarr active jobs: `0`.
+
+Verdict: **happy path still passes** with measured-existing enabled in
+metadata-tier mode. The current dashboard display also presents the record as
+`Imported` / `ACCEPT` / `Imported`, with no available operator actions.

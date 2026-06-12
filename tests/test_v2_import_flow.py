@@ -75,6 +75,45 @@ def test_compute_verification_accepts_complete_authentic_album(tmp_path):
     assert result.sensors[3]["evidence"]["identity_decision"] == "SAME_RELEASE"
 
 
+def test_compute_verification_reviews_fewer_tracks_than_complete_existing(tmp_path):
+    jid = "under123"
+    output_dir = tmp_path / jid
+    output_dir.mkdir()
+    manualimport_items = []
+    for idx in range(10):
+        filename = f"{idx + 1:02d}.flac"
+        (output_dir / filename).write_bytes(b"flac")
+        item = _manualimport_item(jid)
+        item["path"] = f"/downloads/TidalHiRes/complete/{jid}/{filename}"
+        item["tracks"] = [{"id": 100 + idx}]
+        manualimport_items.append(item)
+
+    result = server._compute_verification(
+        jid,
+        output_dir,
+        manualimport_items,
+        verdict="AUTHENTIC",
+        detective_error=None,
+        detective_result={"files": [{"is_fake_high_res": False}] * 10},
+        existing_kbps=192,
+        existing_label="MP3-192",
+        new_effective_kbps=3000,
+        album_ids=[20],
+        title="Artist - Album",
+        existing_track_count=11,
+        new_track_count=10,
+        expected_track_count=11,
+    )
+
+    assert result.verification_decision == "REVIEW_REQUIRED"
+    assert result.import_outcome == "PENDING"
+    assert result.identity_decision == "SAME_RELEASE"
+    assert "track_count_undercount" in result.overrides
+    assert result.to_decisions_log()["reason"] == (
+        "candidate has fewer tracks than tracked release"
+    )
+
+
 def test_compute_verification_blocks_wrong_album_identity_even_with_authentic_audio(
     tmp_path, mocker
 ):

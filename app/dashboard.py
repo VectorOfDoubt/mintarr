@@ -119,6 +119,11 @@ def _review_reason(rec: dict) -> str:
             "tracked release — likely a different edition (deluxe/anniversary). "
             "Confirm before it replaces the current edition."
         )
+    if "track_count_undercount" in overrides:
+        return (
+            "Track-count mismatch: the candidate has fewer tracks than the tracked "
+            "release. Confirm before it replaces a more complete library copy."
+        )
     if verdict in ("FAKE_CERTAIN", "FAKE"):
         return "Detective: certain MP3-to-FLAC transcode"
     if verdict == "SUSPICIOUS":

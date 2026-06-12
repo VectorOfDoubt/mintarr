@@ -69,8 +69,8 @@ from verification import (
     ImportOutcome,
     VerificationDecision,
     VerificationResult,
-    apply_edition_guard,
     apply_overrides,
+    apply_track_count_guard,
     combine_audio_identity_decision,
     compute_components,
     decide,
@@ -3493,16 +3493,20 @@ def _compute_verification(
         audio_decision,
         identity_result.decision.value,
     )
-    # Edition/tracklist guard (measured-existing hardening): a same-family candidate
-    # with a much larger tracklist than the expected Lidarr release is probably a
-    # different edition (deluxe/anniversary). Route either auto-import decision
-    # (ACCEPT or ACCEPT_PROVISIONAL) to REVIEW so an operator confirms the edition
-    # swap. Never escalates to BLOCK (it may be the right edition), never auto-switches.
-    decision, edition_tripped = apply_edition_guard(
-        decision, identity_result.decision.value, new_track_count, expected_track_count
+    # Track-count guard (measured-existing hardening): catch risky tracklist
+    # mismatches before Lidarr ManualImport. Oversized same-family editions need
+    # operator confirmation; under-count candidates for an already-complete tracked
+    # release would be rejected by Lidarr anyway, so hold them as review instead of
+    # surfacing a failed import.
+    decision, track_count_marker = apply_track_count_guard(
+        decision,
+        identity_result.decision.value,
+        new_track_count,
+        expected_track_count,
+        existing_track_count,
     )
-    if edition_tripped and "edition_tracklist_mismatch" not in overrides:
-        overrides = [*overrides, "edition_tracklist_mismatch"]
+    if track_count_marker and track_count_marker not in overrides:
+        overrides = [*overrides, track_count_marker]
     return VerificationResult(
         jid=jid,
         score=score,

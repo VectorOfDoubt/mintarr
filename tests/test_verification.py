@@ -10,10 +10,12 @@ from verification import (
     VerificationResult,
     apply_edition_guard,
     apply_overrides,
+    apply_track_count_guard,
     combine_audio_identity_decision,
     compute_components,
     decide,
     edition_track_count_mismatch,
+    track_count_undercount_mismatch,
 )
 
 
@@ -459,6 +461,67 @@ def test_apply_edition_guard_leaves_existing_review_untouched():
         "REVIEW_REQUIRED",
         False,
     )
+
+
+def test_track_count_undercount_trips_for_complete_existing_release():
+    # Dogfood repro: existing/tracked release has 11 tracks; candidate only has 10.
+    assert track_count_undercount_mismatch("SAME_FAMILY", 10, 11, 11) is True
+
+
+def test_track_count_undercount_applies_to_same_release():
+    assert track_count_undercount_mismatch("SAME_RELEASE", 10, 11, 11) is True
+
+
+def test_track_count_undercount_keeps_incomplete_existing_rescue():
+    # Existing is incomplete; a 7/10 candidate may still improve a 5/10 library copy.
+    assert track_count_undercount_mismatch("SAME_FAMILY", 7, 10, 5) is False
+
+
+def test_track_count_undercount_noop_without_expected_count():
+    assert track_count_undercount_mismatch("SAME_FAMILY", 10, 0, 10) is False
+
+
+def test_track_count_undercount_skips_wrong_album():
+    assert track_count_undercount_mismatch("WRONG_ALBUM", 10, 11, 11) is False
+
+
+def test_apply_track_count_guard_routes_undercount_accept_to_review():
+    assert apply_track_count_guard("ACCEPT", "SAME_FAMILY", 10, 11, 11) == (
+        "REVIEW_REQUIRED",
+        "track_count_undercount",
+    )
+
+
+def test_apply_track_count_guard_routes_undercount_provisional_to_review():
+    assert apply_track_count_guard(
+        "ACCEPT_PROVISIONAL", "SAME_RELEASE", 10, 11, 11
+    ) == (
+        "REVIEW_REQUIRED",
+        "track_count_undercount",
+    )
+
+
+def test_apply_track_count_guard_keeps_incomplete_existing_accept():
+    assert apply_track_count_guard("ACCEPT", "SAME_FAMILY", 7, 10, 5) == (
+        "ACCEPT",
+        None,
+    )
+
+
+def test_apply_track_count_guard_preserves_oversized_marker():
+    assert apply_track_count_guard("ACCEPT", "SAME_FAMILY", 60, 10, 10) == (
+        "REVIEW_REQUIRED",
+        "edition_tracklist_mismatch",
+    )
+
+
+def test_track_count_undercount_reason_surfaces_in_legacy_reason():
+    record = _result(
+        verification_decision="REVIEW_REQUIRED",
+        overrides=["track_count_undercount"],
+        identity_decision="SAME_FAMILY",
+    ).to_decisions_log()
+    assert record["reason"] == "candidate has fewer tracks than tracked release"
 
 
 # ---- V2.1 completeness rule (added 2026-05-23) ----

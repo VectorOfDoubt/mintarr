@@ -106,6 +106,8 @@ class VerificationResult:
             return "validator unavailable"
         if "edition_tracklist_mismatch" in self.overrides:
             return "edition/tracklist mismatch"
+        if "track_count_undercount" in self.overrides:
+            return "candidate has fewer tracks than tracked release"
         if (
             self.verification_decision == "BLOCK"
             and self.identity_decision == "WRONG_ALBUM"
@@ -176,6 +178,53 @@ def edition_track_count_mismatch(
     )
 
 
+def track_count_undercount_mismatch(
+    identity_decision: ReleaseIdentityDecision,
+    candidate_tracks: int,
+    expected_tracks: int,
+    existing_tracks: int,
+) -> bool:
+    """True when an auto-import candidate has fewer tracks than a complete release.
+
+    Lidarr rejects these at ManualImport time ("Has fewer tracks than existing
+    release"). Catching it before ManualImport keeps the decision in Mintarr's
+    operator-review lane. The guard only applies when the existing/tracked release
+    is already complete enough; incomplete-existing rescue remains intact.
+    """
+    if identity_decision not in {"SAME_RELEASE", "SAME_FAMILY", "AMBIGUOUS_EDITION"}:
+        return False
+    if expected_tracks <= 0 or candidate_tracks <= 0:
+        return False
+    if existing_tracks < expected_tracks:
+        return False
+    return candidate_tracks < expected_tracks
+
+
+def apply_track_count_guard(
+    decision: VerificationDecision,
+    identity_decision: ReleaseIdentityDecision,
+    candidate_tracks: int,
+    expected_tracks: int,
+    existing_tracks: int,
+) -> tuple[VerificationDecision, str | None]:
+    """Route risky track-count mismatches to review before ManualImport.
+
+    Returns the possibly changed decision and the override marker to append. It
+    never changes ``BLOCK``/``REVIEW_REQUIRED`` and never escalates to ``BLOCK``.
+    """
+    if decision not in {"ACCEPT", "ACCEPT_PROVISIONAL"}:
+        return decision, None
+    if edition_track_count_mismatch(
+        identity_decision, candidate_tracks, expected_tracks
+    ):
+        return "REVIEW_REQUIRED", "edition_tracklist_mismatch"
+    if track_count_undercount_mismatch(
+        identity_decision, candidate_tracks, expected_tracks, existing_tracks
+    ):
+        return "REVIEW_REQUIRED", "track_count_undercount"
+    return decision, None
+
+
 def apply_edition_guard(
     decision: VerificationDecision,
     identity_decision: ReleaseIdentityDecision,
@@ -191,11 +240,14 @@ def apply_edition_guard(
     (possibly changed) decision and whether the guard tripped. Never changes
     ``BLOCK``/``REVIEW_REQUIRED`` and never escalates to ``BLOCK``.
     """
-    if decision in {"ACCEPT", "ACCEPT_PROVISIONAL"} and edition_track_count_mismatch(
-        identity_decision, candidate_tracks, expected_tracks
-    ):
-        return "REVIEW_REQUIRED", True
-    return decision, False
+    guarded_decision, marker = apply_track_count_guard(
+        decision,
+        identity_decision,
+        candidate_tracks,
+        expected_tracks,
+        existing_tracks=0,
+    )
+    return guarded_decision, marker == "edition_tracklist_mismatch"
 
 
 def compute_components(

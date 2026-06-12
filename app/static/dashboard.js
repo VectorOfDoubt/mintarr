@@ -317,7 +317,7 @@ function renderSummary(s, connectors=[]) {
   $('summary-grid').innerHTML = cards.map(c =>
     `<div class="card ${c.cls}"><div class="label">${c.label}</div><div class="val">${c.val}</div></div>`
   ).join('');
-  $('meta').textContent = `${c.total_decisions} records · Stack: tidalhires=${s.stack_health.tidalhires}, flac-detective=${flacHealth}, lidarr=${lidarrHealth}`;
+  $('meta').textContent = `${c.total_decisions} records · Stack: mintarr=${s.stack_health.tidalhires}, flac-detective=${flacHealth}, lidarr=${lidarrHealth}`;
   renderLidarrCommands(commands);
 }
 
@@ -404,7 +404,7 @@ function renderRecords(recs) {
       <td><span class="badge ${cls}" title="${esc(r.status_reason || '')}">${txt}</span></td>
       <td class="reason" title="${esc(r.status_reason || '')}">${esc(r.status_reason || '')}</td>
       <td class="title">${esc(r.title || '')}</td>
-      <td title="Historical QC decision">${esc(display.qc_decision || r.verification_decision || '—')}</td>
+      <td title="Raw QC decision: ${esc(display.raw_qc_decision || r.verification_decision || '—')}">${esc(display.qc_decision || r.verification_decision || '—')}</td>
       <td title="Current import result">${esc(display.import_result || r.import_outcome || '—')}</td>
       <td title="Current lifecycle state">${esc(display.lifecycle || r.lifecycle_state || '—')}</td>
       <td>${r.score ?? ''}</td>

@@ -69,7 +69,14 @@ def derive_status(rec: dict) -> str:
     return "unknown"
 
 
-def _display_decision(decision: str | None) -> str:
+def _display_decision(rec: dict) -> str:
+    status = derive_status(rec)
+    decision = rec.get("v2_verification_decision", "")
+    if status in {"discarded", "expired"}:
+        if decision == "REVIEW_REQUIRED":
+            return "Review closed"
+        if decision == "BLOCK":
+            return "Block closed"
     return decision or "—"
 
 
@@ -122,7 +129,8 @@ def record_display_fields(rec: dict) -> dict:
     """
     return {
         "current_status": derive_status(rec),
-        "qc_decision": _display_decision(rec.get("v2_verification_decision")),
+        "qc_decision": _display_decision(rec),
+        "raw_qc_decision": rec.get("v2_verification_decision") or "—",
         "import_result": _display_outcome(rec),
         "lifecycle": _display_lifecycle(rec),
         "actionable": bool(available_actions(rec)),

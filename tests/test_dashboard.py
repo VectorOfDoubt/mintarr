@@ -61,7 +61,7 @@ def test_dashboard_html_does_not_require_apikey(monkeypatch, tmp_path):
     assert resp.status_code == 200
     assert "text/html" in resp.content_type
     body = resp.get_data(as_text=True)
-    assert "TidalHires V2 Dashboard" in body
+    assert "Mintarr Dashboard" in body
     assert "summary-grid" in body
     assert "drawer" in body
     assert "integrations-body" in body
@@ -111,11 +111,13 @@ def test_dashboard_records_table_uses_current_state_labels(monkeypatch, tmp_path
     assert "Import result" in shell
     assert "Lifecycle" in shell
     assert "All QC decisions" in shell
+    assert "Mintarr Dashboard" in shell
 
     js = client.get("/static/dashboard.js").get_data(as_text=True)
     assert "display.import_result" in js
-    assert "Historical QC decision" in js
+    assert "Raw QC decision:" in js
     assert "Raw outcome" in js
+    assert "Stack: mintarr=" in js
 
 
 def test_dashboard_js_contains_release_identity_drawer(monkeypatch, tmp_path):
@@ -1199,7 +1201,8 @@ def test_record_display_fields_separate_current_state_from_qc_audit():
     )
     assert discarded == {
         "current_status": "discarded",
-        "qc_decision": "REVIEW_REQUIRED",
+        "qc_decision": "Review closed",
+        "raw_qc_decision": "REVIEW_REQUIRED",
         "import_result": "Not imported",
         "lifecycle": "discarded",
         "actionable": False,

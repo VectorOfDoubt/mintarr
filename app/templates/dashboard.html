@@ -16,7 +16,7 @@
     root.setAttribute("data-density", localStorage.getItem("mintarr_density") || "comfortable");
   })();
 </script>
-<title>TidalHires V2 Dashboard</title>
+<title>Mintarr Dashboard</title>
 <script defer src="{{ url_for('static', filename='vendor/htmx-2.0.3.min.js') }}" integrity="sha384-0895/pl2MU10Hqc6jd4RvrthNlDiE9U1tWmX7WRESftEDRosgxNsQG/Ze9YMRzHq"></script>
 <script defer src="{{ url_for('static', filename='vendor/alpine-3.14.1.min.js') }}" integrity="sha384-l8f0VcPi/M1iHPv8egOnY/15TDwqgbOR1anMIJWvU6nLRgZVLTLSaNqi/TOoT5Fh"></script>
 <link rel="stylesheet" href="{{ url_for('static', filename='dashboard.css') }}">
@@ -25,7 +25,7 @@
 
 <header>
   <div>
-    <h1>TidalHires V2 Dashboard</h1>
+    <h1>Mintarr Dashboard</h1>
     <div class="meta" id="meta">Loading...</div>
   </div>
   <input id="topbar-search" type="search" placeholder="Search records…" aria-label="Search records">
@@ -269,7 +269,7 @@
 <div id="auth-prompt" style="display:none">
   <div class="box">
     <h2 style="margin:0">API key required</h2>
-    <p class="meta">Enter the TidalHires API key. It will be stored in your browser's localStorage.</p>
+    <p class="meta">Enter the Mintarr API key. It will be stored in your browser's localStorage.</p>
     <input type="password" id="auth-key-input" placeholder="API key" autofocus>
     <button onclick="saveKey()">Save</button>
   </div>

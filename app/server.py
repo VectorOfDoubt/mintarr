@@ -5935,10 +5935,10 @@ def _verification_html(rows: list[dict]) -> str:
 
     return (
         "<!doctype html><html><head><meta charset='utf-8'>"
-        "<title>TidalHires V2 Dashboard</title>"
+        "<title>Mintarr Verification Dashboard</title>"
         f"<style>{_DASHBOARD_CSS}</style>"
         "</head><body>"
-        "<h1>TidalHires V2 Dashboard</h1>"
+        "<h1>Mintarr Verification Dashboard</h1>"
         f"<div class='summary'>{summary_html}</div>"
         f"{needs_section}"
         f"{active_section}"

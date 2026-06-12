@@ -329,7 +329,7 @@ def test_verification_list_can_render_review_dashboard(tmp_path, monkeypatch):
     assert response.status_code == 200
     assert response.mimetype == "text/html"
     text = response.get_data(as_text=True)
-    assert "TidalHires V2 Dashboard" in text
+    assert "Mintarr Verification Dashboard" in text
     assert "Needs action" in text
     assert "Active jobs" in text
     assert "All verification records" in text

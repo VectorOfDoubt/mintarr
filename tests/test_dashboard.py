@@ -103,6 +103,21 @@ def test_dashboard_js_contains_connector_rendering(monkeypatch, tmp_path):
     assert "__LIDARR_WEB_BASE__" not in body
 
 
+def test_dashboard_records_table_uses_current_state_labels(monkeypatch, tmp_path):
+    _patch_paths(monkeypatch, tmp_path)
+    client = server.app.test_client()
+    shell = client.get("/dashboard").get_data(as_text=True)
+    assert "QC decision" in shell
+    assert "Import result" in shell
+    assert "Lifecycle" in shell
+    assert "All QC decisions" in shell
+
+    js = client.get("/static/dashboard.js").get_data(as_text=True)
+    assert "display.import_result" in js
+    assert "Historical QC decision" in js
+    assert "Raw outcome" in js
+
+
 def test_dashboard_js_contains_release_identity_drawer(monkeypatch, tmp_path):
     _patch_paths(monkeypatch, tmp_path)
     client = server.app.test_client()
@@ -420,7 +435,7 @@ def test_dashboard_summary_returns_expected_shape(monkeypatch, tmp_path):
 
 
 def test_dashboard_summary_counts_pending_from_derived_status(monkeypatch, tmp_path):
-    """Terminal records with a historical PENDING outcome must not inflate the card."""
+    """Terminal records with historical audit fields must not inflate live cards."""
     _patch_paths(monkeypatch, tmp_path)
     output_base = tmp_path / "output"
 
@@ -451,6 +466,25 @@ def test_dashboard_summary_counts_pending_from_derived_status(monkeypatch, tmp_p
         imported_dir,
     )
 
+    discarded_block_dir = output_base / "blk44444"
+    discarded_block_dir.mkdir(parents=True)
+    discarded_block_path = server._write_verification_sidecar(
+        "blk44444",
+        _result(jid="blk44444", decision="BLOCK", outcome="SKIPPED"),
+        discarded_block_dir,
+    )
+    discarded_block = json.loads(discarded_block_path.read_text())
+    discarded_block["lifecycle"]["state"] = "discarded"
+    discarded_block_path.write_text(json.dumps(discarded_block))
+
+    blocked_dir = output_base / "blk55555"
+    blocked_dir.mkdir(parents=True)
+    server._write_verification_sidecar(
+        "blk55555",
+        _result(jid="blk55555", decision="BLOCK", outcome="SKIPPED"),
+        blocked_dir,
+    )
+
     from dashboard_cache import clear
 
     clear()
@@ -460,8 +494,9 @@ def test_dashboard_summary_counts_pending_from_derived_status(monkeypatch, tmp_p
     assert resp.status_code == 200
     counts = resp.get_json()["counts"]
     assert counts["pending"] == 1
-    assert counts["discarded"] == 1
+    assert counts["discarded"] == 2
     assert counts["imported"] == 1
+    assert counts["blocked"] == 1
 
 
 def test_dashboard_summary_flags_blocking_lidarr_commands(monkeypatch, tmp_path):
@@ -1144,6 +1179,53 @@ def test_derive_status_for_common_combinations():
         )
         == "policy_violation"
     )
+    assert (
+        derive_status(
+            {"v2_import_outcome": "FAILED", "lifecycle": {"state": "promoted"}}
+        )
+        == "failed"
+    )
+
+
+def test_record_display_fields_separate_current_state_from_qc_audit():
+    from dashboard import record_display_fields
+
+    discarded = record_display_fields(
+        {
+            "v2_verification_decision": "REVIEW_REQUIRED",
+            "v2_import_outcome": "PENDING",
+            "lifecycle": {"state": "discarded", "actor": "user_discard"},
+        }
+    )
+    assert discarded == {
+        "current_status": "discarded",
+        "qc_decision": "REVIEW_REQUIRED",
+        "import_result": "Not imported",
+        "lifecycle": "discarded",
+        "actionable": False,
+    }
+
+    needs_review = record_display_fields(
+        {
+            "v2_verification_decision": "REVIEW_REQUIRED",
+            "v2_import_outcome": "PENDING",
+            "lifecycle": {"state": "pending_review"},
+        }
+    )
+    assert needs_review["current_status"] == "needs_review"
+    assert needs_review["import_result"] == "Awaiting operator review"
+    assert needs_review["actionable"] is True
+
+    promoted_failed = record_display_fields(
+        {
+            "v2_verification_decision": "REVIEW_REQUIRED",
+            "v2_import_outcome": "FAILED",
+            "lifecycle": {"state": "promoted"},
+        }
+    )
+    assert promoted_failed["current_status"] == "failed"
+    assert promoted_failed["import_result"] == "Promote failed"
+    assert promoted_failed["actionable"] is True
 
 
 def test_status_reason_for_operator_states():

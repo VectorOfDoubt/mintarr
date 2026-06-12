@@ -394,6 +394,7 @@ function renderRecords(recs) {
   }
   $('records-body').innerHTML = recs.map(r => {
     const [cls, txt] = STATUS_BADGES[r.derived_status] || ['neutral', r.derived_status];
+    const display = r.display || {};
     const albumId = r.album_ids[0];
     const deeplink = albumId
       ? `<a class="deeplink" href="${LIDARR_WEB_BASE}/album/${albumId}" target="_blank" onclick="event.stopPropagation()" title="Open in Lidarr">↗</a>`
@@ -403,9 +404,9 @@ function renderRecords(recs) {
       <td><span class="badge ${cls}" title="${esc(r.status_reason || '')}">${txt}</span></td>
       <td class="reason" title="${esc(r.status_reason || '')}">${esc(r.status_reason || '')}</td>
       <td class="title">${esc(r.title || '')}</td>
-      <td>${esc(r.verification_decision || '')}</td>
-      <td>${esc(r.import_outcome || '')}</td>
-      <td>${esc(r.lifecycle_state || '')}</td>
+      <td title="Historical QC decision">${esc(display.qc_decision || r.verification_decision || '—')}</td>
+      <td title="Current import result">${esc(display.import_result || r.import_outcome || '—')}</td>
+      <td title="Current lifecycle state">${esc(display.lifecycle || r.lifecycle_state || '—')}</td>
       <td>${r.score ?? ''}</td>
       <td class="jid">${(r.jid || '').slice(0,8)} · ${when}</td>
       <td>${deeplink}</td>
@@ -556,6 +557,7 @@ function renderDrawer(d) {
   $('drawer-title').textContent = d.context.title || d.jid;
   $('drawer-jid').textContent = 'JID: ' + d.jid;
   const v = d.verification;
+  const vDisplay = v.display || {};
   const comps = v.components || {};
   const compsRows = Object.entries(comps).map(([k,val]) => `<div class="kvrow"><span class="k">${k}</span><span class="v">${val}</span></div>`).join('');
   const timings = d.timings || {};
@@ -601,8 +603,10 @@ function renderDrawer(d) {
     </section>
     <section>
       <h2>Decision</h2>
-      <div class="kvrow"><span class="k">Decision</span><span class="v">${esc(v.decision || '')}</span></div>
-      <div class="kvrow"><span class="k">Outcome</span><span class="v">${esc(v.outcome || '')}</span></div>
+      <div class="kvrow"><span class="k">Current status</span><span class="v">${esc(vDisplay.current_status || d.derived_status || '')}</span></div>
+      <div class="kvrow"><span class="k">Import result</span><span class="v">${esc(vDisplay.import_result || v.outcome || '—')}</span></div>
+      <div class="kvrow"><span class="k">QC decision</span><span class="v">${esc(vDisplay.qc_decision || v.decision || '—')}</span></div>
+      <div class="kvrow"><span class="k">Raw outcome</span><span class="v">${esc(v.outcome || '—')}</span></div>
       <div class="kvrow"><span class="k">Verdict</span><span class="v">${esc(v.verdict || '')}</span></div>
       <div class="kvrow"><span class="k">Score</span><span class="v">${v.score ?? '—'}</span></div>
       <div class="kvrow"><span class="k">Overrides</span><span class="v">${esc(overrides)}</span></div>
@@ -638,7 +642,7 @@ function renderDrawer(d) {
     </section>
     <section>
       <h2>Lifecycle</h2>
-      <div class="kvrow"><span class="k">State</span><span class="v">${esc(d.lifecycle.state || '')}</span></div>
+      <div class="kvrow"><span class="k">State</span><span class="v">${esc(vDisplay.lifecycle || d.lifecycle.state || '')}</span></div>
       <div class="kvrow"><span class="k">Actor</span><span class="v">${esc(d.lifecycle.actor || '—')}</span></div>
     </section>
   `;

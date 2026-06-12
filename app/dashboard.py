@@ -52,14 +52,14 @@ def derive_status(rec: dict) -> str:
         return "discarded"
     if state == "expired":
         return "expired"
-    if state == "promoted":
-        return "promoted"
     if decision == "REVIEW_REQUIRED" and state == "pending_review":
         return "needs_review"
     if decision == "BLOCK" and outcome in ("MANUAL_IMPORTED", "RESCUED"):
         return "policy_violation"
     if outcome == "FAILED":
         return "failed"
+    if state == "promoted":
+        return "promoted"
     if outcome == "PENDING":
         return "pending"
     if outcome in ("MANUAL_IMPORTED", "RESCUED"):
@@ -67,6 +67,66 @@ def derive_status(rec: dict) -> str:
     if decision == "BLOCK":
         return "blocked"
     return "unknown"
+
+
+def _display_decision(decision: str | None) -> str:
+    return decision or "—"
+
+
+def _display_outcome(rec: dict) -> str:
+    status = derive_status(rec)
+    outcome = rec.get("v2_import_outcome", "")
+    state = rec.get("verification_state") or (rec.get("lifecycle") or {}).get(
+        "state", ""
+    )
+
+    if status in {"discarded", "expired"}:
+        return "Not imported"
+    if status == "needs_review":
+        return "Awaiting operator review"
+    if status == "blocked":
+        return "Skipped"
+    if status == "policy_violation":
+        return "Imported despite block"
+    if status == "failed":
+        return "Promote failed" if state == "promoted" else "Failed"
+    if status == "promoted":
+        if outcome == "RESCUED":
+            return "Rescued after promote"
+        if outcome == "MANUAL_IMPORTED":
+            return "Imported after promote"
+        return "Promoted"
+    if status == "imported":
+        return "Rescued" if outcome == "RESCUED" else "Imported"
+    if status == "pending":
+        return "Pending"
+    return outcome or "—"
+
+
+def _display_lifecycle(rec: dict) -> str:
+    state = rec.get("verification_state") or (rec.get("lifecycle") or {}).get(
+        "state", ""
+    )
+    if not state:
+        return "—"
+    return str(state).replace("_", " ")
+
+
+def record_display_fields(rec: dict) -> dict:
+    """Presentation-only labels for records.
+
+    Raw QC/audit fields are preserved separately. These labels describe what an
+    operator can infer from the record *now*, so terminal discarded/expired rows
+    do not look pending/actionable just because their historical QC decision was
+    REVIEW_REQUIRED.
+    """
+    return {
+        "current_status": derive_status(rec),
+        "qc_decision": _display_decision(rec.get("v2_verification_decision")),
+        "import_result": _display_outcome(rec),
+        "lifecycle": _display_lifecycle(rec),
+        "actionable": bool(available_actions(rec)),
+    }
 
 
 # ---------- Available actions per STRATEGY §4.5 ----------
@@ -324,11 +384,6 @@ def _build_summary(server_mod) -> dict:
     # still acceptable at current scale; switch to DB counts if it bottlenecks.
     rows = server_mod._verification_records()
     rows = [server_mod._decision_with_current_verification_state(r) for r in rows]
-    decisions = Counter(
-        r.get("v2_verification_decision")
-        for r in rows
-        if r.get("v2_verification_decision")
-    )
     statuses = Counter(derive_status(r) for r in rows)
     total_records = len(rows)
 
@@ -388,7 +443,7 @@ def _build_summary(server_mod) -> dict:
             "pending": statuses.get("pending", 0),
             "failed": statuses.get("failed", 0),
             "policy_violations": statuses.get("policy_violation", 0),
-            "blocked": decisions.get("BLOCK", 0),
+            "blocked": statuses.get("blocked", 0),
             "discarded": statuses.get("discarded", 0),
             "expired": statuses.get("expired", 0),
             "active_jobs": active,
@@ -995,6 +1050,8 @@ def _build_records_from_db(server_mod, filters: dict) -> dict | None:
                 sidecar_like["job_error"] = job.get("error")
             if job.get("warning"):
                 sidecar_like["job_warning"] = job.get("warning")
+            derived = derive_status(sidecar_like)
+            display = record_display_fields(sidecar_like)
             out.append(
                 {
                     "jid": r["jid"],
@@ -1004,11 +1061,12 @@ def _build_records_from_db(server_mod, filters: dict) -> dict | None:
                     "verification_decision": r.get("verification_decision"),
                     "import_outcome": r.get("import_outcome"),
                     "lifecycle_state": r.get("lifecycle_state"),
+                    "display": display,
                     "score": r.get("score"),
                     "verdict": r.get("verdict"),
                     "overrides": sidecar_like.get("v2_overrides") or [],
-                    "needs_action": r.get("derived_status") == "needs_review",
-                    "derived_status": r.get("derived_status"),
+                    "needs_action": display["actionable"],
+                    "derived_status": derived,
                     "status_reason": status_reason(sidecar_like),
                     "album_ids": album_ids,
                     "_source": "db",
@@ -1072,6 +1130,7 @@ def _build_records(server_mod, filters: dict) -> dict:
             enriched["job_error"] = job.get("error")
         if job.get("warning"):
             enriched["job_warning"] = job.get("warning")
+        display = record_display_fields(enriched)
         out.append(
             {
                 "jid": r.get("jid"),
@@ -1082,10 +1141,11 @@ def _build_records(server_mod, filters: dict) -> dict:
                 "import_outcome": r.get("v2_import_outcome"),
                 "lifecycle_state": r.get("verification_state")
                 or (r.get("lifecycle") or {}).get("state"),
+                "display": display,
                 "score": r.get("v2_score"),
                 "verdict": r.get("verdict"),
                 "overrides": r.get("v2_overrides") or [],
-                "needs_action": derive_status(r) == "needs_review",
+                "needs_action": display["actionable"],
                 "derived_status": derive_status(r),
                 "status_reason": status_reason(enriched),
                 "album_ids": r.get("album_ids") or [],
@@ -2220,6 +2280,7 @@ def _build_record_detail(server_mod, jid: str) -> dict | None:
         "verification": {
             "decision": sidecar.get("v2_verification_decision"),
             "outcome": sidecar.get("v2_import_outcome"),
+            "display": record_display_fields(sidecar),
             "score": sidecar.get("v2_score"),
             "components": sidecar.get("v2_components") or {},
             "overrides": sidecar.get("v2_overrides") or [],

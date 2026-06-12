@@ -477,3 +477,16 @@ was re-run:
 This closes the product gap from JID `c632f057e983`: predictable Lidarr
 "Has fewer tracks than existing release" failures now stay in Mintarr's review lane
 instead of becoming failed imports.
+
+### 2026-06-12 — hard-block reason priority (Codex)
+
+Fixed the follow-up from JID `4032baff1c2c`
+([#152](https://github.com/eivindsjursen-lab/mintarr/issues/152)): blocked
+dashboard/status reasons now prefer hard evidence over measured-existing upgrade
+context. For a `BLOCK` record, codec gate, `flac -t`, validator failure,
+`WRONG_ALBUM`, and FLAC Detective hard fake verdicts are surfaced before fallback
+reasons such as "upgrade from MP3-192".
+
+Expected result for the 10cc case: the decision remains `BLOCK`/`SKIPPED`, but the
+operator-facing reason should now explain the hard `FAKE_CERTAIN` Detective verdict
+instead of the lower-priority upgrade context.

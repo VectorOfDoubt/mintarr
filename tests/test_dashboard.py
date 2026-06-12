@@ -1228,6 +1228,42 @@ def test_status_reason_for_operator_states():
         status_reason(
             {
                 "v2_verification_decision": "BLOCK",
+                "v2_import_outcome": "SKIPPED",
+                "reason": "upgrade from MP3-192",
+                "verdict": "FAKE_CERTAIN",
+                "lifecycle": {"state": "created"},
+            }
+        )
+        == "Blocked by policy after Detective verdict FAKE_CERTAIN."
+    )
+    assert (
+        status_reason(
+            {
+                "v2_verification_decision": "BLOCK",
+                "v2_import_outcome": "SKIPPED",
+                "reason": "upgrade from FLAC",
+                "v2_overrides": ["flac_t_fail"],
+                "lifecycle": {"state": "created"},
+            }
+        )
+        == "Blocked by policy: FLAC integrity check failed."
+    )
+    assert (
+        status_reason(
+            {
+                "v2_verification_decision": "BLOCK",
+                "v2_import_outcome": "SKIPPED",
+                "reason": "upgrade from MP3-192",
+                "release_identity_decision": "WRONG_ALBUM",
+                "lifecycle": {"state": "created"},
+            }
+        )
+        == "Blocked by policy: wrong album identity."
+    )
+    assert (
+        status_reason(
+            {
+                "v2_verification_decision": "BLOCK",
                 "v2_import_outcome": "MANUAL_IMPORTED",
                 "reason": "codec mismatch",
                 "lifecycle": {"state": "created"},

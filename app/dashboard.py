@@ -197,6 +197,16 @@ def status_reason(rec: dict) -> str:
             if skipped > 0:
                 return f"Blocked by policy: {skipped} downloaded file(s) failed the FLAC/ALAC codec gate."
             return "Blocked by policy: downloaded files did not match the expected FLAC/ALAC codec."
+        if "flac_t_fail" in overrides:
+            return "Blocked by policy: FLAC integrity check failed."
+        if "validator_error" in overrides:
+            return "Blocked by policy: validator unavailable."
+        if rec.get("release_identity_decision") == "WRONG_ALBUM":
+            return "Blocked by policy: wrong album identity."
+        if verdict in ("FAKE_CERTAIN", "FAKE"):
+            return f"Blocked by policy after Detective verdict {verdict}."
+        if "fake_hi_res" in overrides:
+            return "Blocked by policy: likely fake hi-res."
         if reason:
             return f"Blocked by policy: {reason}."
         if verdict:

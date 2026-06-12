@@ -858,6 +858,31 @@ def test_discard_deletes_output_and_archives_sidecar(tmp_path, monkeypatch, mock
     assert record["lifecycle"]["blocklist_status"] == "done"
 
 
+def test_discard_preserves_existing_blocklist_done(tmp_path, monkeypatch, mocker):
+    output_base = _patch_paths(monkeypatch, tmp_path)
+    output_dir = output_base / "abc12345"
+    output_dir.mkdir(parents=True)
+    (output_dir / "01.flac").write_bytes(b"flac")
+    path = server._write_verification_sidecar("abc12345", _result(), output_dir)
+    record = json.loads(path.read_text())
+    record["lifecycle"]["blocklist_status"] = "done"
+    path.write_text(json.dumps(record))
+    server._jobs["abc12345"] = {"id": "abc12345", "output_dir": str(output_dir)}
+    mocker.patch.object(server, "_get_lidarr_key", return_value="lidarr-key")
+    blocklist = mocker.patch.object(server, "_blocklist_grab", return_value=False)
+    mocker.patch.object(server, "_save_jobs")
+
+    client = server.app.test_client()
+    response = client.post(f"/verification/abc12345/discard?apikey={VALID_KEY}")
+
+    assert response.status_code == 200
+    archived = server.DISCARDED_DIR / "abc12345.json"
+    archived_record = json.loads(archived.read_text())
+    assert archived_record["lifecycle"]["state"] == "discarded"
+    assert archived_record["lifecycle"]["blocklist_status"] == "done"
+    blocklist.assert_not_called()
+
+
 def test_discard_updates_db_record_status(tmp_path, monkeypatch, mocker):
     output_base = _patch_paths(monkeypatch, tmp_path)
     output_dir = output_base / "abc12345"

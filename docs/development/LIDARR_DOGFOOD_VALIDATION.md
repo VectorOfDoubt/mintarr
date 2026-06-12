@@ -522,3 +522,36 @@ Result:
 Verdict: **happy path still passes** with measured-existing enabled in
 metadata-tier mode. The current dashboard display also presents the record as
 `Imported` / `ACCEPT` / `Imported`, with no available operator actions.
+
+### 2026-06-12 — review discard path and blocklist idempotence (Codex)
+
+Closed the remaining pending review record to re-check the operator discard path
+after the status-label changes:
+
+- Record/JID: `759411b624be`.
+- Source: TIDAL through Mintarr.
+- Album: Roger Whittaker — *Festliche Weihnacht*.
+- Review reason: FLAC Detective found one `FAKE_CERTAIN` track in an otherwise
+  authentic-looking release.
+- Before action: `derived_status=needs_review`, available actions
+  `promote, discard`, Lidarr queue `0`.
+- Operator action used: dashboard discard API.
+
+Result:
+
+- Discard returned `200`.
+- Record moved to `derived_status=discarded`; available actions became empty.
+- State index recorded a `discard` audit action from `user_dashboard`.
+- Lidarr queue remained `0`.
+- No library import happened.
+
+Finding and follow-up:
+
+- The release was already present in Lidarr's blocklist from the original review
+  creation, but the later discard overwrote the sidecar's `blocklist_status` from
+  `done` to `failed` because there was no new `grabbed` history row to blocklist
+  again.
+- This was a status/idempotence bug, not a safety failure: Lidarr already had the
+  blocklist entry, the queue was empty, and no import happened.
+- Follow-up fix: discard now preserves `blocklist_status=done` and does not call
+  the blocklist endpoint again when the record is already blocklisted.

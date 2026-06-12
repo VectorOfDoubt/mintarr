@@ -6612,7 +6612,10 @@ def verification_discard(jid: str):
 
     api = os.environ.get("LIDARR_API_URL", "http://host.docker.internal:8686/api/v1")
     key = _get_lidarr_key()
-    blocklisted = _blocklist_grab(jid, api, key) if key else False
+    already_blocklisted = record.get("lifecycle", {}).get("blocklist_status") == "done"
+    blocklisted = already_blocklisted or (
+        _blocklist_grab(jid, api, key) if key else False
+    )
     # Review-hold invariant: the grab was kept visible to Lidarr while pending, so the
     # terminal operator action must clean the Lidarr queue now (blocklist above stops
     # a re-grab of this exact release).

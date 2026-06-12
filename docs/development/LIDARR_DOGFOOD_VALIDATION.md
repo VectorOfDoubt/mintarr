@@ -454,3 +454,26 @@ each grab, and Lidarr queue/SAB-emulated queue were clean after terminal outcome
    read "Blocked by policy: upgrade from MP3-192." The decision is correct; the
    human-facing reason should prefer the hard blocker (`FAKE_CERTAIN` / Detective)
    over the lower-priority upgrade context.
+
+### 2026-06-12 — fewer-track guard live validation (Codex)
+
+Redeployed `main` with the fewer-track guard
+([#153](https://github.com/eivindsjursen-lab/mintarr/pull/153), closing
+[#151](https://github.com/eivindsjursen-lab/mintarr/issues/151)). The same Weezer
+*Weezer (Green Album)* candidate that previously failed at Lidarr `ManualImport`
+was re-run:
+
+- Existing/tracked album: 11 MP3-192 trackfiles.
+- Candidate: 10 TIDAL FLAC files, `AUTHENTIC`.
+- JID: `8b9235bbdedf`.
+- Result: **`REVIEW_REQUIRED`** with override `track_count_undercount`.
+- Dashboard/status reason: *"Track-count mismatch: the candidate has fewer tracks
+  than the tracked release. Confirm before it replaces a more complete library
+  copy."*
+- No `ManualImport` was called; album stayed MP3-192.
+- Discarding the review removed the held Lidarr queue row; final Mintarr health
+  `ok`, `active_jobs=0`, Lidarr queue `0`.
+
+This closes the product gap from JID `c632f057e983`: predictable Lidarr
+"Has fewer tracks than existing release" failures now stay in Mintarr's review lane
+instead of becoming failed imports.

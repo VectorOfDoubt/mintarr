@@ -214,6 +214,107 @@ If the other agent claims ownership of a document (via the "Owner" column in the
 
 When you take ownership, update the index in the same commit so the other agent sees the claim. Claude-vs-Codex coordination has worked well via this convention.
 
+## Shared agent workflow
+
+Claude and Codex often alternate between implementation and review. Use this
+workflow unless the human maintainer explicitly says otherwise.
+
+### Default loop
+
+1. **Builder creates a draft PR.** Work on a feature branch, never directly on
+   `main`. Keep the PR scoped to one design slice or one narrowly described bug.
+2. **Reviewer posts the review on the PR.** With the current shared
+   `eivindsjursen-lab` GitHub identity, GitHub blocks formal self-reviews, so
+   use `gh pr comment` with an explicit verdict (`LGTM`, `request changes`, or
+   `commentary`). If separate reviewer identities are introduced later, prefer
+   `gh pr review --approve` / `--request-changes`. A short chat summary is
+   enough once the full review lives on GitHub.
+3. **Builder fixes review findings on the same branch.** After pushing, verify
+   the PR head really moved; do not assume a local commit reached GitHub.
+4. **Merge only after LGTM and green checks.** Use squash merges. Delete the
+   branch after merge.
+5. **Deploy only when requested or when the change is explicitly part of the
+   live dogfood loop.** Docs-only PRs do not need deploy.
+
+### Role split
+
+- **Builder:** implements, writes/updates tests and docs, opens the draft PR,
+  and reports verification commands.
+- **Reviewer:** reviews for correctness, safety, scope, missing tests, and
+  product semantics. Findings go on the PR.
+- **Human maintainer:** decides product direction, live-risk tradeoffs, and
+  whether a change should be dogfooded or deployed.
+
+Either Claude or Codex can be builder or reviewer. Do not assume one agent
+always owns one role.
+
+### Gated actions
+
+These actions should remain deliberate and should not be performed as drive-by
+cleanup:
+
+- `gh pr merge`
+- Docker stop/remove/rename/run for the live `mintarr` container
+- live redeploys on `127.0.0.1:5025`
+- changes to agent permission/config files such as `.claude/settings.local.json`
+  or Codex's local approval configuration
+- deleting rollback containers, backups, source downloads, or library files
+
+Review comments and read-only GitHub inspection are low-risk. Merging and live
+runtime changes are not. Keep one deploy owner at a time.
+
+### Branch and PR-head ritual
+
+Before opening or updating a PR, and after every review-fix push, verify the
+branch and remote PR head:
+
+```bash
+git branch --show-current
+git rev-parse HEAD
+git ls-remote origin <branch-name>
+gh pr view <number> --json headRefOid,mergeable,isDraft
+```
+
+The local `HEAD`, `git ls-remote`, and `headRefOid` should match. This prevents
+the recurring failure mode where a fix exists locally or on a stray `pr-NNN`
+branch while the actual PR still points at the old commit.
+
+### Verification expectations
+
+Match verification scope to the change. Common commands:
+
+```bash
+ruff check app tests
+ruff format --check app tests
+MYPY_CACHE_DIR=/tmp/mintarr-mypy-cache mypy app
+python3 scripts/check_markdown_links.py docs
+mkdocs build --strict --site-dir /tmp/mintarr-mkdocs-check
+node --check app/static/dashboard.js
+```
+
+For risky pipeline, import, worker, or state changes, run targeted tests plus the
+Docker test suite when feasible:
+
+```bash
+docker compose -f docker-compose.test.yaml run --rm tests pytest /tests
+```
+
+If local WSL `/config` permissions make a full suite noisy, say so in the PR and
+show the targeted tests that were run. CI/Docker remains the source of truth.
+
+### Live dogfood
+
+For live dogfood against Lidarr:
+
+- ensure Mintarr active jobs are zero before redeploy unless the test explicitly
+  covers in-flight recovery
+- take a `/backup` export before replacing the container
+- keep the previous container renamed as rollback
+- preserve the existing env, mounts, port, and measured-existing flags
+- verify health, active jobs, Lidarr queue, and the specific behavior under test
+- record non-trivial dogfood findings in
+  [LIDARR_DOGFOOD_VALIDATION.md](LIDARR_DOGFOOD_VALIDATION.md)
+
 ## How to know when to stop
 
 The Mintarr maintainers (currently Eivind, with Claude and Codex assisting) value scope discipline highly. If you are working on something and it feels like the change is growing, stop and check:
@@ -248,4 +349,4 @@ Mintarr is built without a deadline ([VISION.md](../strategy/VISION.md)). It is 
 
 ---
 
-> Last updated: 2026-06-02
+> Last updated: 2026-06-12

@@ -16,6 +16,9 @@ Mintarr now detects several cases where Lidarr's release matching is technically
   another operator prefers original album editions
 - a candidate can have fewer tracks than the tracked Lidarr release, which
   predicts a Lidarr ManualImport failure
+- a candidate can have a small number of bonus tracks (for example one demo or
+  regional bonus track), which may be acceptable for one operator but unwanted
+  for another
 - a larger edition can be acceptable when the operator explicitly wants expanded
   editions, but should be review-only when the operator wants strict album
   editions
@@ -93,6 +96,7 @@ Use when:
 - dogfooding new release-family logic
 - operator wants explicit control over every deluxe/remaster/anniversary swap
 - library curation values exact edition more than automation
+- even minor bonus-track differences should be confirmed by the operator
 
 This should be the safest first dogfood mode.
 
@@ -110,6 +114,8 @@ Default behavior:
 
 - same release + better audio may import
 - near-equal same-family release may import
+- small bonus-track differences may import when the classifier treats them as
+  the same practical edition
 - remaster may import only when track count is near-equal
 - deluxe / anniversary / expanded / box-set routes to review
 - fewer-track candidate routes to review when existing copy is already complete
@@ -143,6 +149,16 @@ when:
 In v1 this profile can only **recommend** the preference and route to review
 unless release-switch integration is enabled. Box sets should remain review-only
 in the first version even under this profile.
+
+### Exact album only
+
+Route any tracklist difference to review, including a single bonus/demo track.
+
+This is stricter than `Manual` in wording but can be implemented as a profile
+that specifically targets edition/tracklist drift while allowing unrelated
+non-edition automation to continue. It is useful for operators who want the
+tracked Lidarr release to remain the exact album edition unless they explicitly
+approve a replacement.
 
 ### Custom
 
@@ -178,7 +194,7 @@ set should be intentionally small and explainable:
 | `hi_res_remaster` | hi-res remaster, 24-bit remaster | quality-preferred if near-equal |
 | `deluxe` | deluxe edition, expanded deluxe | review unless profile allows |
 | `anniversary` | 30th anniversary, 40th anniversary | review unless profile allows |
-| `expanded` | expanded edition, bonus tracks | review unless profile allows |
+| `expanded` | expanded edition, bonus tracks | profile-dependent: minor bonus tracks may be allowed; larger expansion reviews unless profile allows |
 | `box_set` | complete sessions, super deluxe, multi-disc box | review in v1 |
 | `live` | live, concert, radio broadcast | review or block depending identity evidence |
 | `compilation` | greatest hits, anthology, best of | usually not a replacement for an album |
@@ -279,6 +295,26 @@ undercount:
   and existing_tracks >= expected_tracks
 ```
 
+Minor bonus tracks are not a separate user-facing policy. They are a signal
+inside the same edition-preference model:
+
+```text
+minor_bonus:
+  candidate_tracks > expected_tracks
+  and candidate_tracks < expected_tracks + 4
+  and candidate_tracks < expected_tracks * 1.5
+```
+
+Profiles decide how to handle this signal:
+
+| Profile | Example: expected 14, candidate 15 | Result |
+|---|---|---|
+| `manual` | one demo / bonus track | `REVIEW_REQUIRED` |
+| `exact_album_only` | one demo / bonus track | `REVIEW_REQUIRED` |
+| `conservative` | one demo / bonus track, high classifier confidence | keep accepted decision |
+| `prefer_expanded` | one demo / bonus track | keep accepted decision |
+| `custom` | depends on ranked category / per-category control | profile-defined |
+
 Profiles can decide what to do with `expanded`, but they cannot ignore
 `undercount` silently. A candidate with fewer tracks than an already complete
 library copy should route to review even when it is otherwise a quality upgrade.
@@ -310,6 +346,7 @@ Future custom config can live in state DB / dashboard settings:
   ],
   "allow_box_set_auto_replace_after_release_switch": false,
   "allow_compilation_auto_replace_after_release_switch": false,
+  "minor_bonus_tracks": "review|allow",
   "max_auto_track_ratio": 1.5,
   "max_auto_extra_tracks": 4
 }
@@ -320,6 +357,8 @@ The dashboard should eventually expose this as:
 - profile selector
 - ranked edition-category list for custom mode
 - per-category "auto / review / never" controls
+- minor bonus-track behavior as part of the edition profile, not as a separate
+  quality setting
 - preview examples showing how common releases would be classified
 
 ## 8. Dashboard behavior

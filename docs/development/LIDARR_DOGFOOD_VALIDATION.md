@@ -584,3 +584,51 @@ Verdict: **hard-block path passes** for the LocalFolder/completed-folder lane. T
 operator-facing message was safe but generic (*"no audio files downloaded"*); a
 future UX polish could explain this class as "invalid FLAC wrapper / no decodable
 audio" more directly.
+
+### 2026-06-13 — controlled measured-existing upgrade after redeploy (Codex)
+
+Redeployed current `main` and ran one controlled interactive Lidarr grab with the
+conservative measured-existing configuration preserved:
+
+```text
+MINTARR_MEASURED_EXISTING=true
+MINTARR_REQUIRE_INTEGRITY=false
+MINTARR_LIBRARY_SPECTRAL=false
+```
+
+Candidate:
+
+- Lidarr action: interactive release grab through Lidarr `/release`.
+- Source/indexer: Mintarr/TidalHires.
+- Album: Jack Johnson — *In Between Dreams* (album id `924`).
+- Existing library evidence: 14 measured lossy trackfiles; Lidarr label
+  `MP3-192`.
+- Candidate title: `Jack Johnson - In Between Dreams (2005) [TIDAL] [FLAC 24bit]`.
+- JID/downloadId: `18ff49e52894`.
+
+Result:
+
+- Mintarr created a `tidal_grab` job and completed the full download/postprocess
+  path before import.
+- Existing library quality was detected as `MP3-192` (`~192 kbps`).
+- Track counts: existing `14`, expected `14`, candidate `15`.
+- FLAC Detective verdict: `AUTHENTIC` for 15 files.
+- Decision: `ACCEPT`.
+- Import outcome: `MANUAL_IMPORTED`.
+- Derived status: `imported`.
+- Lidarr `ManualImport` succeeded for 15/15 files.
+- Final Lidarr queue: `0`; final Mintarr active jobs: `0`.
+
+Verdict: **happy path passes** after the redeploy. Measured-existing correctly
+treated an existing lossy album as replaceable by a clean FLAC candidate, and
+the import happened only after Mintarr QC completed.
+
+Product observation:
+
+- The candidate contained one extra demo/bonus track (`expected=14`,
+  `candidate=15`). Today's edition/track-count guard intentionally treats this
+  as near-equal and allows the import.
+- This is not a failure under the current conservative guard, but it is a useful
+  real example for the proposed edition-preference policy: minor bonus tracks
+  should be configurable as part of the deluxe/remaster/expanded edition policy,
+  not as a separate quality setting.

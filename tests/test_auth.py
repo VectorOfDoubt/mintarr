@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 
 import server
@@ -148,6 +149,193 @@ def test_sab_bare_delete_cancels_active_job(mocker):
         assert server._jobs["bdel123"]["hidden_from_lidarr"] is True
     finally:
         server._jobs.pop("bdel123", None)
+
+
+def test_sab_delete_creates_album_hold_from_target_album_id(mocker):
+    import state_db
+
+    client = server.app.test_client()
+    mocker.patch.object(server, "_save_jobs")
+    server._jobs["holdpayload"] = {
+        "id": "holdpayload",
+        "status": "downloading",
+        "title": "X",
+        "source_type": "tidal",
+        "source_id": "tidal-release",
+    }
+    mocker.patch.object(
+        state_db,
+        "get_active_job_by_jid",
+        return_value={
+            "id": 4242,
+            "jid": "holdpayload",
+            "source_type": "tidal",
+            "source_id": "tidal-release",
+            "payload_json": json.dumps({"target_album_id": 777}),
+        },
+    )
+    mocker.patch.object(state_db, "request_job_cancel", return_value=True)
+    create_hold = mocker.patch.object(state_db, "create_album_hold")
+    queue_lookup = mocker.patch.object(server, "_lidarr_queue_record_for_download_id")
+
+    try:
+        resp = client.get(
+            f"/sabnzbd/api?mode=delete&value=holdpayload&apikey={VALID_KEY}"
+        )
+
+        assert resp.status_code == 200
+        queue_lookup.assert_not_called()
+        create_hold.assert_called_once()
+        assert create_hold.call_args.args == (777,)
+        kwargs = create_hold.call_args.kwargs
+        assert kwargs["reason"] == "operator_cancelled_active_grab"
+        assert kwargs["source_jid"] == "holdpayload"
+        assert kwargs["source_type"] == "tidal"
+        assert kwargs["source_id"] == "tidal-release"
+        assert kwargs["actor"] == "lidarr_delete"
+        assert kwargs["details"] == {"download_id": "holdpayload"}
+        assert server._jobs["holdpayload"]["hidden_from_lidarr"] is True
+    finally:
+        server._jobs.pop("holdpayload", None)
+
+
+def test_sab_delete_persists_album_hold_with_real_state_db(tmp_path, mocker):
+    import state_db
+
+    db_file = tmp_path / "state.db"
+    state_db._initialized = False
+    state_db.init(db_path=db_file)
+    job_id = state_db.enqueue_job(
+        jid="realhold",
+        type="tidal_grab",
+        payload={"target_album_id": 909},
+        source_type="tidal",
+        source_id="tidal-release",
+    )
+    assert job_id is not None
+    mocker.patch.object(server, "_save_jobs")
+    server._jobs["realhold"] = {
+        "id": "realhold",
+        "status": "downloading",
+        "title": "X",
+        "source_type": "tidal",
+        "source_id": "tidal-release",
+    }
+    client = server.app.test_client()
+
+    try:
+        resp = client.get(f"/sabnzbd/api?mode=delete&value=realhold&apikey={VALID_KEY}")
+
+        assert resp.status_code == 200
+        job = state_db.get_job(job_id)
+        assert job is not None
+        assert job["cancel_requested"] == 1
+        hold = state_db.get_album_hold(909)
+        assert hold is not None
+        assert hold["reason"] == "operator_cancelled_active_grab"
+        assert hold["source_jid"] == "realhold"
+        assert hold["source_type"] == "tidal"
+        assert hold["source_id"] == "tidal-release"
+        assert hold["actor"] == "lidarr_delete"
+        assert hold["details"] == {"download_id": "realhold"}
+    finally:
+        server._jobs.pop("realhold", None)
+        state_db._initialized = False
+
+
+def test_sab_delete_creates_album_hold_from_lidarr_queue_record(mocker):
+    import state_db
+
+    client = server.app.test_client()
+    mocker.patch.object(server, "_save_jobs")
+    server._jobs["holdqueue"] = {
+        "id": "holdqueue",
+        "status": "downloading",
+        "title": "X",
+    }
+    mocker.patch.object(
+        state_db,
+        "get_active_job_by_jid",
+        return_value={
+            "id": 4242,
+            "jid": "holdqueue",
+            "source_type": "tidal",
+            "source_id": "tidal-release",
+            "payload_json": json.dumps({"source_id": "tidal-release"}),
+        },
+    )
+    mocker.patch.object(state_db, "request_job_cancel", return_value=True)
+    mocker.patch.object(server, "_get_lidarr_key", return_value="lidarr-key")
+    mocker.patch.object(
+        server,
+        "_lidarr_queue_record_for_download_id",
+        return_value={
+            "id": 99,
+            "downloadId": "holdqueue",
+            "title": "Release title",
+            "album": {
+                "id": 888,
+                "title": "Album title",
+                "artist": {"artistName": "Artist name"},
+            },
+        },
+    )
+    create_hold = mocker.patch.object(state_db, "create_album_hold")
+
+    try:
+        resp = client.get(
+            f"/sabnzbd/api?mode=history&name=delete&value=holdqueue&apikey={VALID_KEY}"
+        )
+
+        assert resp.status_code == 200
+        create_hold.assert_called_once()
+        assert create_hold.call_args.args == (888,)
+        kwargs = create_hold.call_args.kwargs
+        assert kwargs["details"] == {
+            "album_title": "Album title",
+            "artist": "Artist name",
+            "download_title": "Release title",
+            "lidarr_queue_id": 99,
+            "download_id": "holdqueue",
+        }
+    finally:
+        server._jobs.pop("holdqueue", None)
+
+
+def test_sab_delete_without_trusted_album_id_does_not_create_album_hold(mocker):
+    import state_db
+
+    client = server.app.test_client()
+    mocker.patch.object(server, "_save_jobs")
+    server._jobs["noalbumhold"] = {
+        "id": "noalbumhold",
+        "status": "downloading",
+        "title": "X",
+    }
+    mocker.patch.object(
+        state_db,
+        "get_active_job_by_jid",
+        return_value={
+            "id": 4242,
+            "jid": "noalbumhold",
+            "payload_json": json.dumps({"source_id": "tidal-release"}),
+        },
+    )
+    mocker.patch.object(state_db, "request_job_cancel", return_value=True)
+    mocker.patch.object(server, "_get_lidarr_key", return_value="lidarr-key")
+    mocker.patch.object(server, "_lidarr_queue_record_for_download_id", return_value={})
+    create_hold = mocker.patch.object(state_db, "create_album_hold")
+
+    try:
+        resp = client.get(
+            f"/sabnzbd/api?mode=queue&name=delete&value=noalbumhold&apikey={VALID_KEY}"
+        )
+
+        assert resp.status_code == 200
+        create_hold.assert_not_called()
+        assert server._jobs["noalbumhold"]["hidden_from_lidarr"] is True
+    finally:
+        server._jobs.pop("noalbumhold", None)
 
 
 def test_sab_delete_no_active_job_just_hides(mocker):

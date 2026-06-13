@@ -2390,23 +2390,29 @@ def _lidarr_album_id_from_record(record: dict) -> int | None:
         return None
 
 
-def _infer_lidarr_target_album_id(jid: str, api: str, key: str) -> int | None:
-    """Infer the Lidarr album targeted by the grab that produced this Mintarr jid."""
-    import requests
-
+def _lidarr_queue_record_for_download_id(jid: str, api: str, key: str) -> dict | None:
+    """Return the current Lidarr queue row for a Mintarr downloadId, if visible."""
+    if not jid or not key:
+        return None
     try:
         q = requests.get(
             f"{api}/queue?pageSize=200", headers={"X-Api-Key": key}, timeout=10
         ).json()
         for record in q.get("records", []) or []:
             if record.get("downloadId") == jid:
-                album_id = _lidarr_album_id_from_record(record)
-                if album_id is not None:
-                    return album_id
+                return record if isinstance(record, dict) else None
     except Exception:
-        log.debug(
-            "[%s] could not infer target album from Lidarr queue", jid, exc_info=True
-        )
+        log.debug("[%s] could not lookup Lidarr queue row", jid, exc_info=True)
+    return None
+
+
+def _infer_lidarr_target_album_id(jid: str, api: str, key: str) -> int | None:
+    """Infer the Lidarr album targeted by the grab that produced this Mintarr jid."""
+    queue_record = _lidarr_queue_record_for_download_id(jid, api, key)
+    if queue_record:
+        album_id = _lidarr_album_id_from_record(queue_record)
+        if album_id is not None:
+            return album_id
 
     try:
         h = requests.get(
@@ -4108,6 +4114,109 @@ def _hide_from_lidarr(jid: str) -> None:
             _save_jobs()
 
 
+def _job_payload_dict(job: dict | None) -> dict:
+    raw = (job or {}).get("payload_json")
+    if isinstance(raw, str) and raw.strip():
+        try:
+            parsed = json.loads(raw)
+            return parsed if isinstance(parsed, dict) else {}
+        except Exception:
+            return {}
+    raw_payload = (job or {}).get("payload")
+    return raw_payload if isinstance(raw_payload, dict) else {}
+
+
+def _int_or_none(value) -> int | None:
+    if value in (None, ""):
+        return None
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return None
+    return parsed if parsed > 0 else None
+
+
+def _album_hold_details_from_lidarr_record(record: dict | None) -> dict:
+    if not isinstance(record, dict):
+        return {}
+    details: dict = {}
+    raw_album = record.get("album")
+    album: dict = raw_album if isinstance(raw_album, dict) else {}
+    raw_artist = record.get("artist")
+    artist: dict = raw_artist if isinstance(raw_artist, dict) else {}
+    raw_album_artist = album.get("artist")
+    album_artist: dict = raw_album_artist if isinstance(raw_album_artist, dict) else {}
+
+    album_title = album.get("title")
+    artist_name = (
+        album_artist.get("artistName")
+        or album_artist.get("name")
+        or artist.get("artistName")
+        or artist.get("name")
+    )
+    if album_title:
+        details["album_title"] = str(album_title)
+    if artist_name:
+        details["artist"] = str(artist_name)
+    if record.get("title"):
+        details["download_title"] = str(record["title"])
+    if record.get("id") not in (None, ""):
+        details["lidarr_queue_id"] = record.get("id")
+    return details
+
+
+def _create_album_hold_for_cancel(value: str, job: dict) -> None:
+    """Best-effort album hold after an operator cancels an active grab.
+
+    Album-level holds must be keyed on a trustworthy Lidarr albumId. The SAB
+    addurl request itself does not carry that id, so we only use explicit
+    ``target_album_id`` state captured earlier or the current Lidarr queue row
+    for this exact downloadId. Never infer from titles.
+    """
+    try:
+        import state_db
+
+        payload = _job_payload_dict(job)
+        with _jobs_lock:
+            projected = dict(_jobs.get(value) or {})
+
+        album_id = _int_or_none(payload.get("target_album_id")) or _int_or_none(
+            projected.get("target_album_id")
+        )
+        queue_record = None
+        if album_id is None:
+            api = os.environ.get(
+                "LIDARR_API_URL", "http://host.docker.internal:8686/api/v1"
+            )
+            key = _get_lidarr_key()
+            queue_record = _lidarr_queue_record_for_download_id(value, api, key)
+            album_id = _lidarr_album_id_from_record(queue_record or {})
+
+        if album_id is None:
+            log.info(
+                "[%s] SAB delete cancel did not create album hold: no trusted albumId",
+                value,
+            )
+            return
+
+        source_type = job.get("source_type") or projected.get("source_type")
+        source_id = job.get("source_id") or projected.get("source_id")
+        details = _album_hold_details_from_lidarr_record(queue_record)
+        details.setdefault("download_id", value)
+        state_db.create_album_hold(
+            album_id,
+            reason="operator_cancelled_active_grab",
+            source_jid=value,
+            source_type=str(source_type) if source_type else None,
+            source_id=str(source_id) if source_id else None,
+            actor="lidarr_delete",
+            details=details,
+        )
+        log.info("[%s] created album hold for Lidarr albumId %s", value, album_id)
+    except Exception:
+        log.exception("[%s] album hold creation failed after SAB delete", value)
+
+
 def _cancel_and_hide_job(value: str | None) -> None:
     """Honor a Lidarr remove/blocklist (SAB delete): cancel the worker job, then hide.
 
@@ -4131,6 +4240,7 @@ def _cancel_and_hide_job(value: str | None) -> None:
                     value,
                     job["id"],
                 )
+                _create_album_hold_for_cancel(value, job)
     except Exception:
         log.exception("[%s] SAB delete cancel-request failed (continuing)", value)
     _hide_from_lidarr(value)

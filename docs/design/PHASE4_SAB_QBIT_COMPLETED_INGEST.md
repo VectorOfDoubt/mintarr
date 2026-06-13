@@ -3,7 +3,7 @@
 > **Type:** Design document
 > **Version:** 1.0 - 2026-06-03
 > **Status:** Implemented - `sab_usenet` and `qbittorrent_torrent` source connectors
-> **Related:** [ADR-0012 QC import-gate scope](../architecture/adr/0012-qc-import-gate-scope.md), [Download client category gate](DOWNLOAD_CLIENT_CATEGORY_GATE.md), [F3.5 Soulseek completed-folder ingest](F3.5_SOULSEEK_COMPLETED_INGEST.md), [CONNECTOR_MANIFEST_v1.md](../specs/CONNECTOR_MANIFEST_v1.md)
+> **Related:** [ADR-0012 QC import-gate scope](../architecture/adr/0012-qc-import-gate-scope.md), [Download client category gate](DOWNLOAD_CLIENT_CATEGORY_GATE.md), [Mintarr-managed SAB/qBit download-client lane](MINTARR_MANAGED_SAB_QBIT_DOWNLOAD_CLIENT.md), [F3.5 Soulseek completed-folder ingest](F3.5_SOULSEEK_COMPLETED_INGEST.md), [CONNECTOR_MANIFEST_v1.md](../specs/CONNECTOR_MANIFEST_v1.md)
 
 ## 1. Goal
 
@@ -11,6 +11,10 @@ Add completed-folder/category ingest source connectors for operator-routed
 SABnzbd and qBittorrent output. This extends Mintarr's scoped QC gate to folders
 the operator explicitly routes to Mintarr without making Mintarr a universal
 gate for everything Lidarr imports.
+
+For automatic Lidarr-triggered SAB/qBit music where Mintarr owns queue status
+and import gating, see the proposed successor design
+[Mintarr-managed SAB/qBit download-client lane](MINTARR_MANAGED_SAB_QBIT_DOWNLOAD_CLIENT.md).
 
 Implemented connector IDs:
 

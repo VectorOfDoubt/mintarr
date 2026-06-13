@@ -179,6 +179,7 @@ nav:
       - "F4.5 Optional verifier connectors": design/F4.5_OPTIONAL_VERIFIER_CONNECTORS.md
       - "Phase 4 SAB/qBit completed ingest": design/PHASE4_SAB_QBIT_COMPLETED_INGEST.md
       - "Download client category gate": design/DOWNLOAD_CLIENT_CATEGORY_GATE.md
+      - "Mintarr-managed SAB/qBit download client": design/MINTARR_MANAGED_SAB_QBIT_DOWNLOAD_CLIENT.md
       - "Edition / track-count guard": design/EDITION_TRACK_COUNT_GUARD.md
       - "Edition preference policy": design/EDITION_PREFERENCE_POLICY.md
       - "Review hold visible to Lidarr": design/REVIEW_HOLD_VISIBLE_TO_LIDARR.md

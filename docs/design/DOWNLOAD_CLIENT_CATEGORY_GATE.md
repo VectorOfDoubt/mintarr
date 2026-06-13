@@ -3,7 +3,7 @@
 > **Type:** Design document
 > **Version:** 0.1 - 2026-06-10
 > **Status:** Proposed
-> **Related:** [ADR-0012 QC import-gate scope](../architecture/adr/0012-qc-import-gate-scope.md), [Phase 4 SAB/qBit completed ingest](PHASE4_SAB_QBIT_COMPLETED_INGEST.md), [Lidarr integration](../specs/LIDARR_INTEGRATION.md)
+> **Related:** [ADR-0012 QC import-gate scope](../architecture/adr/0012-qc-import-gate-scope.md), [Phase 4 SAB/qBit completed ingest](PHASE4_SAB_QBIT_COMPLETED_INGEST.md), [Mintarr-managed SAB/qBit download-client lane](MINTARR_MANAGED_SAB_QBIT_DOWNLOAD_CLIENT.md), [Lidarr integration](../specs/LIDARR_INTEGRATION.md)
 
 ## 1. Problem
 
@@ -64,6 +64,11 @@ unless Lidarr is prevented from independently importing the category. Until that
 mechanism is specified and tested, SAB/qBit completed-folder ingest should be
 treated as operator-routed ingest, not as automatic interception of Lidarr's own
 external-client grabs.
+
+The successor design for automatic Lidarr-triggered SAB/qBit music is
+[Mintarr-managed SAB/qBit download-client lane](MINTARR_MANAGED_SAB_QBIT_DOWNLOAD_CLIENT.md):
+Lidarr talks to Mintarr, and Mintarr uses SAB/qBit only as backend transfer
+engines for a dedicated music category.
 
 ## 3. Required Topology
 

@@ -81,6 +81,20 @@ For the underlying positioning and what is *not* in any phase, see [VISION.md](V
 - Dark / light / auto theme switch
 - Responsive layout that works on a 375px mobile viewport
 
+**Future operator controls:**
+
+- **Lidarr blocklist visibility / controlled unblock.** Lidarr remains the
+  authoritative blocklist. Mintarr should surface releases it caused Lidarr to
+  blocklist, with reason, originating record, actor, timestamp, and exact
+  release/download id where available. Mintarr-only controls such as clearing an
+  album hold are already safe because they touch Mintarr state only. A Lidarr
+  blocklist edit is a larger blast radius: a narrowly scoped, audited "unblock
+  this exact release" action should only be added for entries Mintarr can prove
+  it created, and should be treated as an explicit opt-in write exception to the
+  read-only companion posture. A free-form blocklist editor is a later
+  operator-power feature only if real use cases justify it; it must not let
+  Mintarr silently rewrite Lidarr's blocklist without audit or provenance.
+
 **Depends on:** Phase 1 (Connectors drive several of the new cards).
 
 ---
@@ -218,6 +232,7 @@ Some work spans phases and is tracked here rather than in a specific phase:
 |---|---|
 | Multi-Lidarr-version support | `lidarr/v1/client.py`, capability probing at boot, mock fixtures in CI, designed in Phase 0 specs, exercised in every phase |
 | API versioning | SemVer on `SourceAdapter`, `ConnectorManifest`, `SidecarFormat`, HTTP API; each version is a separate spec document, [ADR-0004](../architecture/adr/0004-api-versioning-semver.md) |
+| Lidarr blocklist authority | Lidarr's blocklist stays source of truth. Mintarr records and explains blocklist operations it initiates, reflects Lidarr state where the API allows it, and only offers controlled, audited release-specific unblock/edit actions after provenance is known. |
 | Security | Threat model in [SECURITY_MODEL.md](../architecture/SECURITY_MODEL.md), public vulnerability disclosure via [SECURITY.md](https://github.com/eivindsjursen-lab/mintarr/blob/main/SECURITY.md), no Docker socket mount, secrets never browser-visible |
 | Documentation | Every phase ships docs as part of the deliverable. Design docs use the F-number convention. ADRs cover locked decisions. Operator-facing docs follow the layout in [MINTARR_DOCUMENTATION_INDEX.md](../MINTARR_DOCUMENTATION_INDEX.md). |
 

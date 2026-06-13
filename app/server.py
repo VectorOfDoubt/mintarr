@@ -931,6 +931,111 @@ def newznab():
     return Response(_newznab_caps(), mimetype="application/xml")
 
 
+# ---- ADR-0014 Mintarr-managed backend lane (slice 4a: addurl -> backend) ----
+def _backend_lane_for_category(cat: str):
+    """Return the backend client iff this addurl belongs to the backend lane.
+
+    The category is the *only* trigger (ADR-0014): the lane is selected when it
+    is explicitly enabled AND the request category exactly matches the client's
+    configured dedicated category. No prefix, no heuristic, no per-request
+    override. A missing/wrong category returns None so the caller falls through
+    to the existing Mintarr-source addurl path (fail closed — never guess the
+    backend lane).
+    """
+    # NOTE: do not enable this lane in production (MINTARR_SAB_BACKEND_ENABLED)
+    # until cancel/remove propagation lands in slice 4c — until then a Lidarr
+    # cancel cannot stop the backend job.
+    if not _env_bool("MINTARR_SAB_BACKEND_ENABLED", False):
+        return None
+    from download_backend import SabBackendClient
+
+    client = SabBackendClient()
+    if not client.is_enabled():
+        return None
+    if not cat or cat != client.category:
+        return None
+    return client
+
+
+def _addurl_backend_lane(name: str, cat: str, client, has_file: bool):
+    """Submit a Lidarr AddUrl release to the backend and project it to Lidarr.
+
+    Slice 4a scope: submit + persist (backend_jobs) + queue projection only.
+    No monitor/poll, no cancel propagation, no ingest — those are 4b/4c/5. On
+    submission failure we return a failed result to Lidarr; we never fall back
+    to a direct Mintarr-source grab (ADR-0014 / design §5.2).
+    """
+    import state_db
+
+    if not name or has_file:
+        # 4a handles addurl(name=URL) only. addfile (uploaded NZB) needs a
+        # submit-by-content path on the client — deferred. Fail closed inside the
+        # lane rather than mishandle it.
+        log.warning("[backend-lane] addfile/empty-name not supported yet (cat=%s)", cat)
+        return jsonify(
+            {"status": False, "error": "backend lane supports addurl URL only (4a)"}
+        ), 400
+
+    try:
+        job = client.submit(url=name)
+    except Exception as exc:
+        log.warning("[backend-lane] submit failed (cat=%s): %s", cat, exc)
+        return jsonify({"status": False, "error": "backend submit failed"}), 502
+
+    jid = uuid.uuid4().hex[:12]
+    # Never use the raw addurl name as a title: it may be a download URL that
+    # carries an indexer apikey, which would leak into backend_jobs.release_title,
+    # the queue projection, and the SAB queue filename. Use Lidarr's nzbname, else
+    # a secret-safe label keyed on the (non-secret) backend job id.
+    title = request.values.get("nzbname") or f"backend release {job.backend_job_id}"
+
+    stored = state_db.create_backend_job(
+        jid,
+        source_type=client.source_type,
+        category=client.category,
+        backend_job_id=job.backend_job_id,
+        state="downloading",
+        release_title=title,
+    )
+    if stored is None:
+        # Submit succeeded but the durable jid <-> backend_job_id mapping did not
+        # persist. Leaving it would create an untracked backend job we could not
+        # monitor/cancel after a restart. Best-effort roll the submission back
+        # (no data deletion) and fail the add to Lidarr.
+        try:
+            client.cancel(job.backend_job_id, delete_files=False)
+        except Exception:
+            log.exception(
+                "[backend-lane] failed to roll back orphaned backend job %s",
+                job.backend_job_id,
+            )
+        return jsonify(
+            {"status": False, "error": "backend job persistence failed"}
+        ), 502
+
+    with _jobs_lock:
+        _jobs[jid] = {
+            "id": jid,
+            "category": cat,
+            "status": "downloading",
+            "title": title,
+            "size": 0,
+            "percent": 0,
+            "source_type": client.source_type,
+            "source_id": job.backend_job_id,
+            "created_at": time.time(),
+        }
+        _save_jobs()
+    log.info(
+        "[backend-lane] submitted %s backend_job_id=%s jid=%s cat=%s",
+        client.source_type,
+        job.backend_job_id,
+        jid,
+        cat,
+    )
+    return jsonify({"status": True, "nzo_ids": [jid]})
+
+
 # ---- SAB endpoint (Lidarr ser oss som SAB-DLclient) ----
 @app.route("/sabnzbd/api", methods=["GET", "POST"])
 @app.route("/api", methods=["POST"])  # fallback hvis Lidarr POSTer hit
@@ -1072,6 +1177,14 @@ def sab():
 
         name = request.values.get("name") or request.values.get("nzbname") or ""
         cat = request.values.get("cat", "music")
+        # ADR-0014 slice 4a: category is the sole backend-lane trigger, gated by
+        # explicit enable. If this addurl belongs to the backend lane, it is
+        # handled there and never falls through to the Mintarr-source path.
+        backend_client = _backend_lane_for_category(cat)
+        if backend_client is not None:
+            return _addurl_backend_lane(
+                name, cat, backend_client, has_file=bool(request.files)
+            )
         # F3.2: dispatch to whichever adapter matches the name prefix or NZB meta.
         parsed = _parse_source_name(name, request.files)
         if not parsed:

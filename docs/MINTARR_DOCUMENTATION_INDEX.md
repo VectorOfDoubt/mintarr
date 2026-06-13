@@ -240,6 +240,7 @@ Per-feature design docs. Numbered F-series (F3.1, F3.4, F4.1, etc). Each one fol
 | `PHASE4_SAB_QBIT_COMPLETED_INGEST.md` | implemented | Codex | P1 | SABnzbd and qBittorrent completed-folder source connectors under ADR-0012 scoped-gate rules. |
 | `F3.5_SOULSEEK_COMPLETED_INGEST.md` | implemented | Codex | P1 | Soulseek completed-folder ingest through connector registry, `/soulseek/ingest`, copy-only adapter, completed-folder safety checks. |
 | `F3.5B_SOULSEEK_SLSKD_TRIGGER.md` | implemented | Codex | P1 | slskd-backed Soulseek search/download trigger through existing Newznab/SAB flow. |
+| `ALBUM_LEVEL_CANCEL_HOLD.md` | proposed | Codex | P1 | Design for short-lived album-scoped holds after operator cancel/remove, preventing immediate same-album re-grab cascades while preserving per-release blocklisting. |
 | `F5.1_RELEASE_FAMILY_MATCHING.md` | planned | Claude | P2 | Mintarr-side mitigation of Lidarr's multi-album / edition matching weakness. Locked-in feature from ADR-0007 §"Multi-album / release matching is not a fork problem". Includes: release-family scoring, track-count + track-title similarity, edition-aware import policy, dashboard explanation when Lidarr rejects, optional manual override with audit. Estimate 15-25h. |
 
 ### 6.8 Community (`docs/community/`)

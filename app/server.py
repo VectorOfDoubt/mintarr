@@ -1036,6 +1036,119 @@ def _addurl_backend_lane(name: str, cat: str, client, has_file: bool):
     return jsonify({"status": True, "nzo_ids": [jid]})
 
 
+# ---- ADR-0014 backend lane (slice 4b: monitor / poll / reconcile) ----
+def _backend_client_for_source(source_type: str):
+    """Return the configured backend client for a stored source_type, or None.
+
+    Only the SAB lane exists today (qBit reconcile follows when its lane is
+    wired). Respects the same explicit enable gate as addurl routing.
+    """
+    if source_type == "sab_usenet_backend":
+        if not _env_bool("MINTARR_SAB_BACKEND_ENABLED", False):
+            return None
+        from download_backend import SabBackendClient
+
+        client = SabBackendClient()
+        return client if client.is_enabled() else None
+    return None
+
+
+def _backend_state_to_jobs_status(lifecycle: str) -> str:
+    """Map a durable backend lifecycle to the Lidarr-facing queue projection.
+
+    A COMPLETED backend download is held as ``processing`` (shown to Lidarr as
+    "Verifying") — never presented as importable — until QC + ManualImport in
+    slice 5. Cancel/blocklist propagation is 4c.
+    """
+    if lifecycle == "failed":
+        return "failed"
+    if lifecycle in ("completed", "importing", "review"):
+        return "processing"
+    return "downloading"
+
+
+def _reconcile_backend_jobs() -> None:
+    """Poll backend status for active backend jobs and reconcile state (4b).
+
+    Lazy, on queue poll (mirrors ``_reconcile_pending_import_jobs``). Updates the
+    durable ``backend_jobs`` row and recreates/refreshes the Lidarr-facing
+    ``_jobs`` projection (recovery after restart). No ingest (slice 5) and no
+    cancel (4c) here.
+    """
+    import state_db
+
+    try:
+        active = state_db.list_active_backend_jobs()
+    except Exception:
+        log.debug("[backend-lane] list active backend jobs failed", exc_info=True)
+        return
+
+    for job in active:
+        jid = job.get("jid")
+        backend_id = job.get("backend_job_id")
+        source_type = str(job.get("source_type") or "")
+        if not (jid and backend_id):
+            continue
+        client = _backend_client_for_source(source_type)
+        if client is None:
+            continue
+        try:
+            status = client.status(backend_id)
+        except Exception:
+            log.debug("[backend-lane] status poll failed jid=%s", jid, exc_info=True)
+            continue
+
+        current = str(job.get("state") or "")
+        new_state = state_db.next_lifecycle_state(current, status.state.value)
+        state_changed = new_state != current
+        path_new = bool(status.completed_path) and status.completed_path != job.get(
+            "backend_path"
+        )
+        # Durable state wins: if a needed backend_jobs update does not persist,
+        # skip the projection so Lidarr never sees a state the recovery row has
+        # not accepted (e.g. "Verifying"/"failed" with no durable row behind it).
+        if state_changed or path_new:
+            updated = None
+            try:
+                updated = state_db.update_backend_job(
+                    jid,
+                    state=new_state if state_changed else None,
+                    backend_path=status.completed_path if path_new else None,
+                    finished=new_state in state_db.BACKEND_JOB_TERMINAL_STATES or None,
+                )
+            except Exception:
+                log.debug(
+                    "[backend-lane] update backend job raised jid=%s",
+                    jid,
+                    exc_info=True,
+                )
+            if updated is None:
+                log.warning(
+                    "[backend-lane] durable update did not persist; "
+                    "not advancing projection jid=%s",
+                    jid,
+                )
+                continue
+
+        with _jobs_lock:
+            proj = _jobs.get(jid)
+            if proj is None:
+                # Recovery: the durable job outlived its queue projection.
+                proj = _jobs[jid] = {
+                    "id": jid,
+                    "category": job.get("category"),
+                    "title": job.get("release_title") or jid,
+                    "size": 0,
+                    "source_type": source_type,
+                    "source_id": backend_id,
+                    "created_at": job.get("created_at") or time.time(),
+                }
+            proj["status"] = _backend_state_to_jobs_status(new_state)
+            proj["percent"] = max(0, min(100, int(status.progress)))
+            if state_changed:
+                _save_jobs()
+
+
 # ---- SAB endpoint (Lidarr ser oss som SAB-DLclient) ----
 @app.route("/sabnzbd/api", methods=["GET", "POST"])
 @app.route("/api", methods=["POST"])  # fallback hvis Lidarr POSTer hit
@@ -1110,6 +1223,7 @@ def sab():
         return jsonify({"status": True})
     if mode == "queue":
         _reconcile_pending_import_jobs()
+        _reconcile_backend_jobs()
         with _jobs_lock:
             slots = []
             for jid, j in _jobs.items():

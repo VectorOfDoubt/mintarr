@@ -92,24 +92,27 @@ function applyRecordsSearch() {
 
 async function refresh() {
   try {
-    const [sumResp, recResp, timingResp, jobsResp, connectorResp] = await Promise.all([
+    const [sumResp, recResp, timingResp, jobsResp, connectorResp, holdsResp] = await Promise.all([
       api('/summary'),
       api('/records?' + buildFilterParams()),
       api('/timings?window=7d'),
       api('/jobs?state=queued,running,cancelling&limit=20'),
-      api('/connectors')
+      api('/connectors'),
+      api('/album-holds')
     ]);
     const sum = await sumResp.json();
     const rec = await recResp.json();
     const timings = await timingResp.json();
     const jobs = await jobsResp.json();
     const connectors = await connectorResp.json();
+    const holds = await holdsResp.json();
     lastConnectors = connectors.connectors || [];
     renderSummary(sum, connectors.connectors || []);
     renderActiveJobs(jobs.jobs || []);
     renderTimings(timings);
     renderRecords(rec.records);
     renderIntegrations(connectors.connectors || []);
+    renderAlbumHolds(holds.holds || []);
     lastUpdate = Date.now();
     updateRefreshIndicator();
     // Save filter state
@@ -353,6 +356,88 @@ function fmtSec(v) {
   if (!v && v !== 0) return '—';
   if (v >= 60) return (v / 60).toFixed(1) + 'm';
   return Number(v).toFixed(1) + 's';
+}
+
+function fmtExpiresIn(sec) {
+  if (sec === null || sec === undefined) return '—';
+  if (sec <= 0) return 'expiring';
+  if (sec >= 3600) return 'in ' + (sec / 3600).toFixed(1) + 'h';
+  if (sec >= 60) return 'in ' + Math.ceil(sec / 60) + 'm';
+  return 'in ' + sec + 's';
+}
+
+function renderAlbumHolds(holds) {
+  if (!holds.length) {
+    $('album-holds-body').innerHTML = '<span class="muted">No active album holds.</span>';
+    return;
+  }
+  $('album-holds-body').innerHTML = `
+    <div class="command-list">
+      ${holds.map(h => `
+        <div class="command-item">
+          <span class="name">${esc(h.artist || '—')} — ${esc(h.album || ('album #' + h.album_id))}</span>
+          <span class="muted">id ${esc(h.album_id)}</span>
+          <span class="reason">${esc(h.reason || '')}</span>
+          <span class="age">expires ${esc(fmtExpiresIn(h.expires_in_sec))}</span>
+          <button class="btn-small" onclick="clearAlbumHold(${Number(h.album_id)})">Clear</button>
+        </div>
+      `).join('')}
+    </div>
+  `;
+}
+
+async function clearAlbumHold(albumId) {
+  showToast('Clearing hold on album ' + albumId + '…');
+  try {
+    const resp = await fetch(API + '/album-holds/' + albumId + '/clear?apikey=' + encodeURIComponent(apikey), {
+      method: 'POST'
+    });
+    if (resp.status === 404) {
+      showToast('Hold already gone', 'error');
+      refresh();
+      return;
+    }
+    if (!resp.ok) {
+      showToast('Clear failed: HTTP ' + resp.status, 'error');
+      return;
+    }
+    showToast('Album hold cleared', 'success');
+    refresh();
+  } catch (e) {
+    showToast('Clear failed: ' + e.message, 'error');
+  }
+}
+
+async function addAlbumHold(event) {
+  event.preventDefault();
+  const input = $('album-hold-id');
+  const albumId = parseInt(input.value, 10);
+  if (!Number.isInteger(albumId) || albumId <= 0) {
+    showToast('Enter a valid Lidarr album id', 'error');
+    return false;
+  }
+  showToast('Holding album ' + albumId + '…');
+  try {
+    const resp = await fetch(API + '/album-holds/' + albumId + '?apikey=' + encodeURIComponent(apikey), {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({reason: 'user_dashboard'})
+    });
+    if (resp.status === 404) {
+      showToast('No such Lidarr album: ' + albumId, 'error');
+      return false;
+    }
+    if (!resp.ok) {
+      showToast('Hold failed: HTTP ' + resp.status, 'error');
+      return false;
+    }
+    input.value = '';
+    showToast('Album hold created', 'success');
+    refresh();
+  } catch (e) {
+    showToast('Hold failed: ' + e.message, 'error');
+  }
+  return false;
 }
 
 function renderTimings(t) {

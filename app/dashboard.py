@@ -1557,6 +1557,130 @@ def job_cancel(job_id: int):
         return jsonify({"error": "internal error"}), 500
 
 
+# ---------- /dashboard/v1/album-holds (#160 slice 3c) ----------
+def _album_hold_view(hold: dict, *, now: float) -> dict:
+    """Shape a stored album hold into a dashboard-friendly payload.
+
+    Display fields come from the snapshot captured at hold-creation time
+    (``details``), never a live Lidarr call per row (design §5).
+    """
+    details = hold.get("details") or {}
+    expires_at = hold.get("expires_at")
+    expires_in = None
+    if isinstance(expires_at, (int, float)):
+        expires_in = max(0, int(expires_at - now))
+    return {
+        "album_id": hold.get("album_id"),
+        "artist": details.get("artist") or details.get("artist_name"),
+        "album": details.get("album_title") or details.get("album"),
+        "reason": hold.get("reason"),
+        "actor": hold.get("actor"),
+        "source_jid": hold.get("source_jid"),
+        "created_at": hold.get("created_at"),
+        "expires_at": expires_at,
+        "expires_in_sec": expires_in,
+    }
+
+
+@dashboard_bp.route("/v1/album-holds", methods=["GET"])
+def album_holds():
+    """List active album-level cancel holds for the dashboard (#160)."""
+    from server import require_apikey_check
+
+    auth_resp = require_apikey_check()
+    if auth_resp:
+        return auth_resp
+    import time
+
+    import state_db
+
+    now = time.time()
+    total, holds = state_db.list_album_holds(active_only=True, now=now)
+    return jsonify(
+        {
+            "total": total,
+            "holds": [_album_hold_view(h, now=now) for h in holds],
+        }
+    )
+
+
+@dashboard_bp.route("/v1/album-holds/<int:album_id>/clear", methods=["POST"])
+def album_hold_clear(album_id: int):
+    """Clear an album hold immediately so the album receives candidates again."""
+    from server import require_apikey_check
+
+    auth_resp = require_apikey_check()
+    if auth_resp:
+        return auth_resp
+    import state_db
+
+    cleared = state_db.clear_album_hold(album_id, actor="user_dashboard")
+    state_db.log_action(
+        f"album:{album_id}",
+        "album_hold_clear",
+        "user_dashboard",
+        "ok" if cleared else "no_active_hold",
+        {"album_id": album_id},
+    )
+    if not cleared:
+        return jsonify({"error": "no active hold", "album_id": album_id}), 404
+    return jsonify({"album_id": album_id, "cleared": True})
+
+
+@dashboard_bp.route("/v1/album-holds/<int:album_id>", methods=["POST"])
+def album_hold_create(album_id: int):
+    """Manually create an album hold.
+
+    The album id is validated against Lidarr's own catalogue before any write
+    so a typo cannot create a phantom hold for a non-existent album (design §7).
+    Display metadata is snapshotted from the same lookup.
+    """
+    from server import require_apikey_check
+
+    auth_resp = require_apikey_check()
+    if auth_resp:
+        return auth_resp
+    import state_db
+
+    labels = _library_quality_lidarr_labels([album_id])
+    label = labels.get(album_id)
+    if not label:
+        state_db.log_action(
+            f"album:{album_id}",
+            "album_hold_create",
+            "user_dashboard",
+            "unknown_album",
+            {"album_id": album_id},
+        )
+        return jsonify({"error": "unknown Lidarr album", "album_id": album_id}), 404
+
+    body = request.get_json(silent=True) or {}
+    details = {
+        "artist": label.get("artist"),
+        "album_title": label.get("album"),
+        "lidarr_url": label.get("lidarr_url"),
+    }
+    hold = state_db.create_album_hold(
+        album_id,
+        reason=str(body.get("reason") or "user_dashboard"),
+        actor="user_dashboard",
+        source_type="user_dashboard",
+        details=details,
+    )
+    state_db.log_action(
+        f"album:{album_id}",
+        "album_hold_create",
+        "user_dashboard",
+        "ok" if hold else "error",
+        {"album_id": album_id, "artist": details["artist"]},
+    )
+    if not hold:
+        return jsonify({"error": "internal error", "album_id": album_id}), 500
+    import time
+
+    return jsonify(_album_hold_view(hold, now=time.time()))
+
+
 # ---------- /dashboard/v1/record/<jid> ----------
 def _basename_any(path: str | None) -> str | None:
     """Basename handling both POSIX and Windows separators.

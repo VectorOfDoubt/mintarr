@@ -93,6 +93,15 @@
         <h2>Active jobs</h2>
         <div id="active-jobs-body" class="muted">No active worker jobs.</div>
       </section>
+      <section class="panel" id="album-holds-panel">
+        <h2>Album holds</h2>
+        <p class="muted">Short-lived holds suppress Mintarr's own search feed for an album after an operator cancel, so Lidarr does not immediately re-grab it. Holds expire automatically and never block other indexers.</p>
+        <form id="album-hold-add" class="album-hold-add" onsubmit="return addAlbumHold(event)">
+          <input id="album-hold-id" type="number" min="1" step="1" placeholder="Lidarr album id" required />
+          <button type="submit">Hold album</button>
+        </form>
+        <div id="album-holds-body" class="muted">No active album holds.</div>
+      </section>
       <section class="panel" id="timings-panel">
         <h2>Pipeline timings</h2>
         <div id="timings-body" class="muted">No timing data yet; new jobs will populate this.</div>

@@ -730,50 +730,21 @@ _ALBUM_CATALOGUE_TTL_SEC = 300.0
 
 
 def _lidarr_album_db_path() -> Path:
-    # Honor the shared Mintarr contract: an explicit MINTARR_LIDARR_DB_PATH wins,
-    # else fall back to the LIDARR_CONFIG_XML sibling. Reuse the F5.4 resolver so
-    # suppression never silently diverges from inventory/dashboard on installs
-    # that configure the DB path explicitly.
-    from library_scan_worker import _lidarr_db_path as _resolve_lidarr_db_path
+    from lidarr_catalogue import lidarr_db_path
 
-    return _resolve_lidarr_db_path()
+    return lidarr_db_path()
 
 
 def _read_lidarr_album_rows() -> list[tuple[int, str, str]]:
     """Read ``(album_id, artist, album)`` for every album in Lidarr's catalogue.
 
-    Read-only (``mode=ro``). Returns ``[]`` on any failure so resolution — and
-    therefore suppression — fails open to normal search results.
+    Read-only. Uses SQLite first and Lidarr API as fallback. Returns ``[]`` on
+    failure so resolution — and therefore suppression — fails open to normal
+    search results.
     """
-    import sqlite3
+    from lidarr_catalogue import read_album_rows
 
-    db_path = _lidarr_album_db_path()
-    if not db_path.exists():
-        return []
-    rows: list[tuple[int, str, str]] = []
-    try:
-        with sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=5) as conn:
-            conn.row_factory = sqlite3.Row
-            for row in conn.execute(
-                """
-                SELECT Albums.Id AS album_id, Albums.Title AS album_title,
-                       ArtistMetadata.Name AS artist_name
-                FROM Albums
-                LEFT JOIN ArtistMetadata
-                  ON ArtistMetadata.Id = Albums.ArtistMetadataId
-                """
-            ):
-                rows.append(
-                    (
-                        row["album_id"],
-                        row["artist_name"] or "",
-                        row["album_title"] or "",
-                    )
-                )
-    except Exception:
-        log.exception("[album-hold] failed reading Lidarr album catalogue")
-        return []
-    return rows
+    return read_album_rows()
 
 
 def _get_album_catalogue(*, force: bool = False) -> list:

@@ -38,6 +38,7 @@ def suppression_env(tmp_path, monkeypatch):
     # Point the loader at a fake Lidarr config/db under tmp_path.
     config_xml = tmp_path / "config.xml"
     monkeypatch.setenv("LIDARR_CONFIG_XML", str(config_xml))
+    monkeypatch.delenv("MINTARR_LIDARR_DB_PATH", raising=False)
     # Reset the module-level catalogue cache between tests.
     server._ALBUM_CATALOGUE_CACHE = None
 
@@ -117,10 +118,11 @@ def test_read_lidarr_album_rows_honors_explicit_db_path(suppression_env, monkeyp
     assert (99, "Decoy", "Sibling") not in rows
 
 
-def test_read_lidarr_album_rows_missing_db_returns_empty(suppression_env):
+def test_read_lidarr_album_rows_missing_db_returns_empty(suppression_env, monkeypatch):
     import server
 
-    # No lidarr.db was created → loader must fail open with [].
+    monkeypatch.setattr("lidarr_catalogue.read_album_rows_api", lambda: [])
+    # No lidarr.db and API unavailable → loader must fail open with [].
     assert server._read_lidarr_album_rows() == []
 
 
@@ -158,6 +160,23 @@ def test_suppressed_album_id_returns_held_album(suppression_env):
 
     _client, tmp_path = suppression_env
     _make_lidarr_db(tmp_path, [(10, "Depeche Mode", "Violator")])
+    state_db.create_album_hold(10, reason="operator_cancel", ttl_seconds=3600)
+
+    assert (
+        server._album_hold_suppressed_album_id(artist="Depeche Mode", album="Violator")
+        == 10
+    )
+
+
+def test_suppressed_album_id_uses_catalogue_api_fallback(suppression_env, monkeypatch):
+    import server
+    import state_db
+
+    _client, _tmp_path = suppression_env
+    monkeypatch.setattr(
+        "lidarr_catalogue.read_album_rows_api",
+        lambda: [(10, "Depeche Mode", "Violator")],
+    )
     state_db.create_album_hold(10, reason="operator_cancel", ttl_seconds=3600)
 
     assert (

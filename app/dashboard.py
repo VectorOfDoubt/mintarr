@@ -2148,39 +2148,9 @@ def _library_quality_lidarr_labels(album_ids: list[int]) -> dict[int, dict]:
     if not album_ids:
         return {}
     try:
-        import os
-        import sqlite3
+        from lidarr_catalogue import label_map
 
-        configured = os.environ.get("MINTARR_LIDARR_DB_PATH")
-        if configured:
-            db_path = Path(configured)
-        else:
-            config_xml = os.environ.get("LIDARR_CONFIG_XML")
-            if not config_xml:
-                return {}
-            db_path = Path(config_xml).with_name("lidarr.db")
-        if not db_path.exists():
-            return {}
-        placeholders = ",".join("?" for _ in album_ids)
-        query = f"""
-            SELECT Albums.Id AS album_id, Albums.Title AS album_title,
-                   ArtistMetadata.Name AS artist_name
-            FROM Albums
-            LEFT JOIN ArtistMetadata
-              ON ArtistMetadata.Id = Albums.ArtistMetadataId
-            WHERE Albums.Id IN ({placeholders})
-        """
-        out: dict[int, dict] = {}
-        with sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=5) as conn:
-            conn.row_factory = sqlite3.Row
-            for row in conn.execute(query, album_ids):
-                aid = int(row["album_id"])
-                out[aid] = {
-                    "artist": row["artist_name"],
-                    "album": row["album_title"],
-                    "lidarr_url": f"{_lidarr_web_base()}/album/{aid}",
-                }
-        return out
+        return label_map(album_ids)
     except Exception:
         return {}
 

@@ -143,6 +143,33 @@ def test_create_album_hold_validates_against_lidarr(holds_api_env):
     assert hold["actor"] == "user_dashboard"
 
 
+def test_create_album_hold_uses_catalogue_fallback(holds_api_env, monkeypatch):
+    import state_db
+
+    client, _tmp_path = holds_api_env
+    monkeypatch.setattr(
+        "lidarr_catalogue.label_map",
+        lambda album_ids: {
+            20: {
+                "artist": "Björk",
+                "album": "Homogenic",
+                "lidarr_url": "http://127.0.0.1:8686/album/20",
+            }
+        }
+        if album_ids == [20]
+        else {},
+    )
+
+    r = client.post(f"/dashboard/v1/album-holds/20?apikey={_key()}")
+
+    assert r.status_code == 200
+    body = r.get_json()
+    assert body["album_id"] == 20
+    assert body["artist"] == "Björk"
+    assert body["album"] == "Homogenic"
+    assert state_db.get_album_hold(20)["details"]["album_title"] == "Homogenic"
+
+
 def test_create_album_hold_rejects_unknown_album(holds_api_env):
     import state_db
 

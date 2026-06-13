@@ -118,11 +118,9 @@ def _integrity_scan_workers() -> int:
 
 
 def _lidarr_db_path() -> Path:
-    raw = os.environ.get("MINTARR_LIDARR_DB_PATH")
-    if raw:
-        return Path(raw)
-    config_xml = Path(os.environ.get("LIDARR_CONFIG_XML", "/lidarr-config/config.xml"))
-    return config_xml.with_name("lidarr.db")
+    from lidarr_catalogue import lidarr_db_path
+
+    return lidarr_db_path()
 
 
 def _fetch_lidarr_trackfiles_sqlite(db_path: Path | None = None) -> list[dict]:

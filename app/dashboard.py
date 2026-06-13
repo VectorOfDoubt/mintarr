@@ -285,7 +285,9 @@ def status_reason(rec: dict) -> str:
     if status == "discarded":
         actor = lifecycle.get("actor")
         if actor == "user_discard":
-            return "Discarded by user; files were removed and the grab was blocklisted when possible."
+            return "Review was discarded; files were removed and the grab was blocklisted when possible."
+        if actor:
+            return f"Discarded by {str(actor).replace('_', ' ')}; no further action is available."
         return "Discarded; no further action is available."
     if status == "expired":
         return "Review window expired; item was blocklisted and hidden."

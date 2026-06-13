@@ -1364,7 +1364,17 @@ def test_status_reason_for_operator_states():
                 "lifecycle": {"state": "discarded", "actor": "user_discard"},
             }
         )
-        == "Discarded by user; files were removed and the grab was blocklisted when possible."
+        == "Review was discarded; files were removed and the grab was blocklisted when possible."
+    )
+    assert (
+        status_reason(
+            {
+                "v2_verification_decision": "REVIEW_REQUIRED",
+                "v2_import_outcome": "PENDING",
+                "lifecycle": {"state": "discarded", "actor": "lidarr_cancel"},
+            }
+        )
+        == "Discarded by lidarr cancel; no further action is available."
     )
 
 

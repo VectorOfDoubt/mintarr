@@ -204,6 +204,28 @@ CREATE INDEX IF NOT EXISTS idx_jobs_created ON jobs(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_jobs_dedupe ON jobs(dedupe_key, state);
 CREATE INDEX IF NOT EXISTS idx_jobs_lease ON jobs(state, lease_expires_at);
 
+-- ADR-0014 Mintarr-managed download-backend lane: jid <-> backend_job_id
+CREATE TABLE IF NOT EXISTS backend_jobs (
+    jid TEXT PRIMARY KEY,
+    source_type TEXT NOT NULL,
+    backend_job_id TEXT,
+    category TEXT NOT NULL,
+    state TEXT NOT NULL,
+    target_album_id INTEGER,
+    release_title TEXT,
+    backend_path TEXT,
+    error_text TEXT,
+    created_at REAL NOT NULL,
+    updated_at REAL NOT NULL,
+    finished_at REAL,
+    details_json TEXT
+);
+-- backend_job_id (SAB NZO / qBit hash) is only unique per backend, so it is
+-- always looked up scoped by source_type.
+CREATE INDEX IF NOT EXISTS idx_backend_jobs_backend_lookup
+    ON backend_jobs(source_type, backend_job_id);
+CREATE INDEX IF NOT EXISTS idx_backend_jobs_state ON backend_jobs(state, updated_at DESC);
+
 -- F4.3 connector runtime config
 CREATE TABLE IF NOT EXISTS connector_config (
     connector_id TEXT PRIMARY KEY,
@@ -1839,6 +1861,273 @@ def expire_album_holds(*, now: float | None = None) -> int:
     except Exception:
         log.exception("state_db.expire_album_holds failed")
         return 0
+
+
+# ============================================================================
+# ADR-0014 slice 3: Mintarr-managed download-backend queue state
+# ============================================================================
+
+# Lifecycle states for a backend job (jid is the Mintarr download id Lidarr
+# sees; backend_job_id is the SAB NZO / qBit hash). These are Mintarr-pipeline
+# states, deliberately broader than the backend's own vocabulary.
+BACKEND_JOB_STATES = (
+    "queued",
+    "downloading",
+    "completed",
+    "importing",
+    "review",
+    "failed",
+    "cancelled",
+)
+BACKEND_JOB_TERMINAL_STATES = frozenset({"failed", "cancelled"})
+# "completed" is not terminal here: the worker still has to import it. Active =
+# anything the reconciler should keep polling/advancing.
+BACKEND_JOB_ACTIVE_STATES = tuple(
+    s for s in BACKEND_JOB_STATES if s not in BACKEND_JOB_TERMINAL_STATES
+)
+
+
+def next_lifecycle_state(current: str, backend_state: str) -> str:
+    """Reconcile a stored backend-job lifecycle state against a fresh backend read.
+
+    Pure mapping used on restart/poll. ``backend_state`` is a
+    ``download_backend.BackendState`` value (``queued``/``downloading``/
+    ``completed``/``failed``/``unknown``). Conservative:
+
+    * terminal lifecycle states are never reopened;
+    * lifecycle states the worker owns past completion (``importing``/``review``)
+      are not pulled back by the backend still reporting ``completed``;
+    * a transient ``unknown`` never flips a job to failed — the worker decides
+      that after its own grace, not the reconciler.
+    """
+    if current in BACKEND_JOB_TERMINAL_STATES or current in ("importing", "review"):
+        return current
+    if backend_state == "failed":
+        return "failed"
+    if backend_state == "completed":
+        return "completed"
+    if backend_state == "downloading":
+        return "downloading"
+    if backend_state == "queued":
+        return "queued"
+    return current  # unknown → leave as-is
+
+
+def _backend_job_row(row: "sqlite3.Row | dict") -> dict:
+    data = dict(row)
+    raw_details = data.get("details_json")
+    if isinstance(raw_details, str) and raw_details.strip():
+        try:
+            details = json.loads(raw_details)
+        except Exception:
+            details = {}
+    else:
+        details = {}
+    data["details"] = details if isinstance(details, dict) else {}
+    return data
+
+
+def create_backend_job(
+    jid: str,
+    *,
+    source_type: str,
+    category: str,
+    backend_job_id: str | None = None,
+    state: str = "queued",
+    target_album_id: int | None = None,
+    release_title: str | None = None,
+    details: dict | None = None,
+    now: float | None = None,
+) -> dict | None:
+    """Persist the jid <-> backend_job_id mapping for one Mintarr-managed job.
+
+    Persistence only (ADR-0014 slice 3). Submission and Lidarr exposure are
+    wired in later slices. Returns the stored row, or None on bad input/error.
+    """
+    if not _ensure_initialized():
+        return None
+    try:
+        jid_text = str(jid or "").strip()
+        category_text = str(category or "").strip()
+        source_text = str(source_type or "").strip()
+        if not (jid_text and category_text and source_text):
+            return None
+        if state not in BACKEND_JOB_STATES:
+            return None
+        now_value = float(now if now is not None else time.time())
+        details_json = json.dumps(details or {}, sort_keys=True)
+        with _lock, _connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO backend_jobs (
+                  jid, source_type, backend_job_id, category, state,
+                  target_album_id, release_title, backend_path, error_text,
+                  created_at, updated_at, finished_at, details_json
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?, NULL, ?)
+                ON CONFLICT(jid) DO UPDATE SET
+                  source_type=excluded.source_type,
+                  backend_job_id=excluded.backend_job_id,
+                  category=excluded.category,
+                  state=excluded.state,
+                  target_album_id=excluded.target_album_id,
+                  release_title=excluded.release_title,
+                  updated_at=excluded.updated_at,
+                  details_json=excluded.details_json
+                WHERE backend_jobs.state NOT IN ('failed', 'cancelled')
+                """,
+                (
+                    jid_text,
+                    source_text,
+                    backend_job_id,
+                    category_text,
+                    state,
+                    target_album_id,
+                    release_title,
+                    now_value,
+                    now_value,
+                    details_json,
+                ),
+            )
+            row = conn.execute(
+                "SELECT * FROM backend_jobs WHERE jid = ?", (jid_text,)
+            ).fetchone()
+            return _backend_job_row(row) if row else None
+    except Exception:
+        log.exception("state_db.create_backend_job failed jid=%s", jid)
+        return None
+
+
+def get_backend_job(jid: str) -> dict | None:
+    """Return one backend job by Mintarr jid, or None."""
+    if not _ensure_initialized():
+        return None
+    try:
+        with _lock, _connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM backend_jobs WHERE jid = ?", (str(jid),)
+            ).fetchone()
+            return _backend_job_row(row) if row else None
+    except Exception:
+        log.exception("state_db.get_backend_job failed jid=%s", jid)
+        return None
+
+
+def get_backend_job_by_backend_id(
+    backend_job_id: str, *, source_type: str
+) -> dict | None:
+    """Return one backend job by its backend identity, or None.
+
+    The lookup is scoped by ``source_type`` because a SAB NZO id and a qBit
+    hash are only unique *within* their backend, not globally. Used to map an
+    inbound backend identity back to the Mintarr jid.
+    """
+    if not _ensure_initialized():
+        return None
+    try:
+        ident = str(backend_job_id or "").strip()
+        source = str(source_type or "").strip()
+        if not (ident and source):
+            return None
+        with _lock, _connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM backend_jobs WHERE backend_job_id = ? AND source_type = ?",
+                (ident, source),
+            ).fetchone()
+            return _backend_job_row(row) if row else None
+    except Exception:
+        log.exception(
+            "state_db.get_backend_job_by_backend_id failed id=%s source=%s",
+            backend_job_id,
+            source_type,
+        )
+        return None
+
+
+def update_backend_job(
+    jid: str,
+    *,
+    state: str | None = None,
+    backend_job_id: str | None = None,
+    backend_path: str | None = None,
+    error_text: str | None = None,
+    finished: bool | None = None,
+    now: float | None = None,
+) -> dict | None:
+    """Patch mutable fields of a backend job. Only provided fields change."""
+    if not _ensure_initialized():
+        return None
+    try:
+        if state is not None and state not in BACKEND_JOB_STATES:
+            return None
+        now_value = float(now if now is not None else time.time())
+        sets = ["updated_at = ?"]
+        params: list = [now_value]
+        if state is not None:
+            sets.append("state = ?")
+            params.append(state)
+        if backend_job_id is not None:
+            sets.append("backend_job_id = ?")
+            params.append(backend_job_id)
+        if backend_path is not None:
+            sets.append("backend_path = ?")
+            params.append(backend_path)
+        if error_text is not None:
+            sets.append("error_text = ?")
+            params.append(error_text)
+        if finished:
+            sets.append("finished_at = ?")
+            params.append(now_value)
+        params.append(str(jid))
+        with _lock, _connect() as conn:
+            cur = conn.execute(
+                f"UPDATE backend_jobs SET {', '.join(sets)} WHERE jid = ?", params
+            )
+            if int(cur.rowcount or 0) == 0:
+                return None
+            row = conn.execute(
+                "SELECT * FROM backend_jobs WHERE jid = ?", (str(jid),)
+            ).fetchone()
+            return _backend_job_row(row) if row else None
+    except Exception:
+        log.exception("state_db.update_backend_job failed jid=%s", jid)
+        return None
+
+
+def list_backend_jobs(
+    *, active_only: bool = False, limit: int = 100, offset: int = 0
+) -> tuple[int, list[dict]]:
+    """List backend jobs (newest first). ``active_only`` drops terminal jobs."""
+    if not _ensure_initialized():
+        return (0, [])
+    try:
+        where = ""
+        params: list = []
+        if active_only:
+            placeholders = ",".join("?" for _ in BACKEND_JOB_ACTIVE_STATES)
+            where = f"WHERE state IN ({placeholders})"
+            params = list(BACKEND_JOB_ACTIVE_STATES)
+        with _lock, _connect() as conn:
+            total = conn.execute(
+                f"SELECT COUNT(*) FROM backend_jobs {where}", params
+            ).fetchone()[0]
+            rows = conn.execute(
+                f"""
+                SELECT * FROM backend_jobs {where}
+                ORDER BY updated_at DESC
+                LIMIT ? OFFSET ?
+                """,
+                params + [int(limit), int(offset)],
+            ).fetchall()
+            return (int(total), [_backend_job_row(r) for r in rows])
+    except Exception:
+        log.exception("state_db.list_backend_jobs failed")
+        return (0, [])
+
+
+def list_active_backend_jobs() -> list[dict]:
+    """Return all non-terminal backend jobs for restart reconciliation."""
+    return list_backend_jobs(active_only=True, limit=10_000)[1]
 
 
 # ============================================================================

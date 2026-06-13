@@ -681,3 +681,53 @@ Cleanup:
 Verdict: **review-hold path passes**. A larger deluxe edition is held for human
 review, visible to Lidarr as paused, and cleaned/blocklisted correctly when
 discarded.
+
+### 2026-06-13 — Lidarr remove/blocklist cancel propagation (Codex)
+
+Ran one controlled cancel-propagation dogfood to validate that a Lidarr
+"remove from download client + blocklist" action stops the active Mintarr worker
+before QC/import.
+
+Candidate:
+
+- Lidarr action: interactive release grab through Lidarr `/release`.
+- Source/indexer: Mintarr/TidalHires.
+- Album: Hank Williams — *The Original Singles Collection . . . Plus* (album id
+  `857`).
+- Candidate title:
+  `Hank Williams - The Original Singles Collection . . . Plus (1992) [TIDAL] [FLAC 24bit]`.
+- First JID/downloadId: `8a507b46b060`.
+
+Result:
+
+- Lidarr queued the TIDAL grab and Mintarr started `tidal_grab`.
+- Operator cancel was issued via Lidarr queue delete with `removeFromClient=true`
+  and `blocklist=true`.
+- Mintarr received the SAB delete shapes (`mode=queue&name=delete` and
+  `mode=history&name=delete`) and set `cancel_requested`.
+- Worker job `71` terminalized as `cancelled` / `cancelled`.
+- No verification record was created and no `ManualImport` happened.
+
+Follow-up observation:
+
+- After the first exact release was cancelled/blocklisted, Lidarr immediately
+  searched again and grabbed a second candidate for the same wanted album from
+  Soulseek.
+- Second JID/downloadId: `9e6d2631f136`.
+- The second job was also cancelled via the same Lidarr delete path and
+  terminalized as `cancelled` / `cancelled`.
+- After a short hold check, Lidarr queue was `0` and no third candidate was
+  grabbed.
+
+Verdict: **per-release cancel propagation passes**. Mintarr stops active workers
+before QC/import when Lidarr removes a queued download.
+
+Product gap:
+
+- The operator intent may be album-level ("stop trying this album now"), but
+  Lidarr's remove/blocklist semantics are release-level. After one release is
+  cancelled/blocklisted, Lidarr may immediately try the next candidate for the
+  same monitored/wanted album.
+- This should be handled as a separate album-level cancel/hold design rather
+  than by weakening per-release blocklist behavior. Follow-up:
+  [#160](https://github.com/eivindsjursen-lab/mintarr/issues/160).

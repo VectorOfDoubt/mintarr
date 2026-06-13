@@ -141,6 +141,25 @@ CREATE TABLE IF NOT EXISTS library_scan_items (
 CREATE INDEX IF NOT EXISTS idx_library_scan_items_state ON library_scan_items(run_id, state);
 CREATE INDEX IF NOT EXISTS idx_library_scan_items_album ON library_scan_items(album_id);
 
+-- #160: album-level cancel/hold state. One hold suppresses Mintarr-offered
+-- candidates for a Lidarr album after an operator cancels an active grab.
+CREATE TABLE IF NOT EXISTS album_holds (
+    album_id INTEGER PRIMARY KEY,
+    reason TEXT NOT NULL,
+    created_at REAL NOT NULL,
+    updated_at REAL NOT NULL,
+    expires_at REAL NOT NULL,
+    source_jid TEXT,
+    source_type TEXT,
+    source_id TEXT,
+    actor TEXT,
+    cleared_at REAL,
+    cleared_by TEXT,
+    details_json TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_album_holds_active ON album_holds(cleared_at, expires_at);
+CREATE INDEX IF NOT EXISTS idx_album_holds_updated ON album_holds(updated_at DESC);
+
 CREATE TABLE IF NOT EXISTS actions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     jid TEXT,
@@ -207,6 +226,7 @@ LIBRARY_SCAN_JOB_TYPE = "library_scan"
 LIBRARY_SCAN_DEDUPE_KEY = "library_scan"
 LIBRARY_SCAN_PRIORITY = 50
 LIBRARY_SCAN_MAX_ATTEMPTS = 1
+DEFAULT_ALBUM_HOLD_TTL_SEC = 3600.0
 
 
 def _connect() -> sqlite3.Connection:
@@ -1607,6 +1627,218 @@ def get_active_job_by_jid(jid: str) -> dict | None:
     except Exception:
         log.exception("state_db.get_active_job_by_jid failed jid=%s", jid)
         return None
+
+
+# ============================================================================
+# #160: album-level cancel/hold state
+# ============================================================================
+
+
+def _album_hold_row(row: sqlite3.Row | dict) -> dict:
+    data = dict(row)
+    raw_details = data.get("details_json")
+    if isinstance(raw_details, str) and raw_details.strip():
+        try:
+            details = json.loads(raw_details)
+        except Exception:
+            details = {}
+    else:
+        details = {}
+    data["details"] = details if isinstance(details, dict) else {}
+    return data
+
+
+def create_album_hold(
+    album_id: int,
+    *,
+    reason: str,
+    expires_at: float | None = None,
+    ttl_seconds: float | None = None,
+    source_jid: str | None = None,
+    source_type: str | None = None,
+    source_id: str | None = None,
+    actor: str | None = None,
+    details: dict | None = None,
+    now: float | None = None,
+) -> dict | None:
+    """Create or replace an album-level hold.
+
+    The hold is album-scoped state, not sidecar state: it can affect future
+    searches for the same Lidarr album after the triggering download is gone.
+    This helper only persists state. Search suppression and cancel integration
+    are wired in later slices.
+    """
+    if not _ensure_initialized():
+        return None
+    try:
+        album_id_int = int(album_id)
+        if album_id_int <= 0:
+            return None
+        now_value = float(now if now is not None else time.time())
+        if expires_at is None:
+            ttl = DEFAULT_ALBUM_HOLD_TTL_SEC if ttl_seconds is None else ttl_seconds
+            expires_at = now_value + max(float(ttl), 0.0)
+        reason_text = str(reason or "").strip()
+        if not reason_text:
+            return None
+        details_json = json.dumps(details or {}, sort_keys=True)
+        with _lock, _connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO album_holds (
+                  album_id, reason, created_at, updated_at, expires_at, source_jid,
+                  source_type, source_id, actor, cleared_at, cleared_by, details_json
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?)
+                ON CONFLICT(album_id) DO UPDATE SET
+                  reason=excluded.reason,
+                  updated_at=excluded.updated_at,
+                  expires_at=excluded.expires_at,
+                  source_jid=excluded.source_jid,
+                  source_type=excluded.source_type,
+                  source_id=excluded.source_id,
+                  actor=excluded.actor,
+                  cleared_at=NULL,
+                  cleared_by=NULL,
+                  details_json=excluded.details_json
+                """,
+                (
+                    album_id_int,
+                    reason_text,
+                    now_value,
+                    now_value,
+                    float(expires_at),
+                    source_jid,
+                    source_type,
+                    source_id,
+                    actor,
+                    details_json,
+                ),
+            )
+            row = conn.execute(
+                "SELECT * FROM album_holds WHERE album_id = ?", (album_id_int,)
+            ).fetchone()
+            return _album_hold_row(row) if row else None
+    except Exception:
+        log.exception("state_db.create_album_hold failed album_id=%s", album_id)
+        return None
+
+
+def get_album_hold(
+    album_id: int, *, include_inactive: bool = False, now: float | None = None
+) -> dict | None:
+    """Return one album hold.
+
+    By default only active holds are returned. Expired and cleared holds remain
+    queryable for operator history with ``include_inactive=True``.
+    """
+    if not _ensure_initialized():
+        return None
+    try:
+        album_id_int = int(album_id)
+        now_value = float(now if now is not None else time.time())
+        with _lock, _connect() as conn:
+            if include_inactive:
+                row = conn.execute(
+                    "SELECT * FROM album_holds WHERE album_id = ?",
+                    (album_id_int,),
+                ).fetchone()
+            else:
+                row = conn.execute(
+                    """
+                    SELECT * FROM album_holds
+                    WHERE album_id = ?
+                      AND cleared_at IS NULL
+                      AND expires_at > ?
+                    """,
+                    (album_id_int, now_value),
+                ).fetchone()
+            return _album_hold_row(row) if row else None
+    except Exception:
+        log.exception("state_db.get_album_hold failed album_id=%s", album_id)
+        return None
+
+
+def is_album_held(album_id: int, *, now: float | None = None) -> bool:
+    """Return True when the album currently has an active hold."""
+    return get_album_hold(album_id, now=now) is not None
+
+
+def list_album_holds(
+    *,
+    active_only: bool = True,
+    limit: int = 100,
+    offset: int = 0,
+    now: float | None = None,
+) -> tuple[int, list[dict]]:
+    """List album holds for future dashboard/status surfaces."""
+    if not _ensure_initialized():
+        return (0, [])
+    try:
+        now_value = float(now if now is not None else time.time())
+        where = "WHERE cleared_at IS NULL AND expires_at > ?" if active_only else ""
+        params: list = [now_value] if active_only else []
+        with _lock, _connect() as conn:
+            total = conn.execute(
+                f"SELECT COUNT(*) FROM album_holds {where}", params
+            ).fetchone()[0]
+            rows = conn.execute(
+                f"""
+                SELECT * FROM album_holds {where}
+                ORDER BY updated_at DESC
+                LIMIT ? OFFSET ?
+                """,
+                params + [int(limit), int(offset)],
+            ).fetchall()
+            return (int(total), [_album_hold_row(r) for r in rows])
+    except Exception:
+        log.exception("state_db.list_album_holds failed")
+        return (0, [])
+
+
+def clear_album_hold(
+    album_id: int, *, actor: str | None = None, now: float | None = None
+) -> bool:
+    """Clear an album hold cooperatively. Returns True if a live hold changed."""
+    if not _ensure_initialized():
+        return False
+    try:
+        album_id_int = int(album_id)
+        now_value = float(now if now is not None else time.time())
+        with _lock, _connect() as conn:
+            cur = conn.execute(
+                """
+                UPDATE album_holds
+                SET cleared_at = ?, cleared_by = ?, updated_at = ?
+                WHERE album_id = ? AND cleared_at IS NULL
+                """,
+                (now_value, actor, now_value, album_id_int),
+            )
+            return int(cur.rowcount or 0) > 0
+    except Exception:
+        log.exception("state_db.clear_album_hold failed album_id=%s", album_id)
+        return False
+
+
+def expire_album_holds(*, now: float | None = None) -> int:
+    """Mark expired active holds as cleared by the expiry sweeper."""
+    if not _ensure_initialized():
+        return 0
+    try:
+        now_value = float(now if now is not None else time.time())
+        with _lock, _connect() as conn:
+            cur = conn.execute(
+                """
+                UPDATE album_holds
+                SET cleared_at = ?, cleared_by = 'auto_expire', updated_at = ?
+                WHERE cleared_at IS NULL AND expires_at <= ?
+                """,
+                (now_value, now_value, now_value),
+            )
+            return int(cur.rowcount or 0)
+    except Exception:
+        log.exception("state_db.expire_album_holds failed")
+        return 0
 
 
 # ============================================================================

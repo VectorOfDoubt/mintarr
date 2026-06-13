@@ -123,16 +123,31 @@ diagnosed.
 Before a hold can be created, Mintarr needs a trustworthy Lidarr `albumId`.
 Resolution should be conservative:
 
-1. Prefer a `target_album_id` captured on the worker job when the grab was
-   first enqueued.
-2. If absent, infer from Lidarr queue/history while the row is still visible.
+1. Prefer a `target_album_id` captured on the worker job when the grab is first
+   visible in Lidarr's queue.
+2. If absent at cancel time, infer from Lidarr queue/history while the row is
+   still visible.
 3. If still absent, do not create an album hold.
 
-V1 should add `target_album_id` to queued jobs as early as possible. The cancel
-event can arrive while the download is still active, before any verification
-record exists, so sidecar/record metadata is too late for this feature. Guessing
-from release title is not acceptable; a broad or wrong hold is worse than no
-hold.
+V1 should add `target_album_id` to queued jobs as early as possible, but the
+mechanism matters:
+
+- The Newznab/SAB addurl request from Lidarr does **not** carry Lidarr's
+  internal `albumId`; it carries the release payload/download URL.
+- Once Mintarr has returned a `downloadId`/JID and Lidarr has a queue row, Mintarr
+  can query Lidarr's queue for that JID and snapshot the target `albumId` onto
+  the worker job.
+- At cancel time, Mintarr should try the same queue lookup before the row
+  disappears. This is a race-sensitive fallback, not the primary plan.
+- Import-time helpers such as `_infer_lidarr_target_album_id` are too late for
+  this feature; cancel can happen before any sidecar/record exists.
+
+Guessing from release title is not acceptable; a broad or wrong hold is worse
+than no hold.
+
+When a hold is created, snapshot display metadata (`artist`, `album_title`, and
+optionally Lidarr album URL/path details) into `details_json`. Dashboard renders
+should use that snapshot instead of making live Lidarr calls per hold row.
 
 The hold should apply where Mintarr exposes candidates to Lidarr:
 
@@ -192,7 +207,7 @@ search exposure, not one verification record.
 Dashboard should show:
 
 - active album holds;
-- album id and best-known artist/album title;
+- album id and snapshotted artist/album title;
 - reason;
 - source JID that created the hold;
 - expiry time;
@@ -207,7 +222,9 @@ POST   /album-holds/<album_id>
 ```
 
 Manual creation is useful when an operator knows they want to pause attempts for
-an album without waiting for a cancel event.
+an album without waiting for a cancel event. Manual creation must validate the
+album id against Lidarr before writing the hold. A typo must not create a
+phantom hold for a non-existent album.
 
 ## 8. Safety Rules
 
@@ -234,14 +251,17 @@ operator cancel/hold intent.
 
 If the operator discards a review, exact-release blocklisting remains enough in
 v1. A future option may offer "discard and pause album" as an explicit dashboard
-action.
+action. That is the same operator-intent class as cancel: "I do not want Mintarr
+to try another candidate for this album right now." Keep it explicit so a normal
+discard still means "reject this release" rather than "pause the album."
 
 ## 10. Rollout Plan
 
 1. **State slice:** album hold table + pure helpers (`create`, `active`,
    `clear`, `expire`) with tests. No search effect.
 2. **Cancel integration slice:** create hold when Lidarr remove/blocklist
-   cancels an active job and target `albumId` is known. Dashboard read-only
+   cancels an active job and target `albumId` is known. Include JID -> Lidarr
+   queue albumId capture and snapshotted display metadata. Dashboard read-only
    visibility.
 3. **Search filter slice:** suppress held-album candidates in Newznab results.
 4. **Dashboard control slice:** clear/create hold actions.
@@ -254,5 +274,5 @@ action.
 - Should a dashboard discard offer a second button: "discard and pause album"?
 - Should holds suppress RSS results as well as interactive search? V1 should do
   both if they share the Newznab aggregation path.
-- How should Mintarr derive display names for held albums without adding
-  expensive Lidarr API calls to every dashboard render?
+- Should album-hold creation be automatic for every Lidarr cancel, or controlled
+  by a config flag / dashboard option once the mechanism is proven?

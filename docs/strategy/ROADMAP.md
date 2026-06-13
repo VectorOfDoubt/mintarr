@@ -169,6 +169,7 @@ Restore implementation follows [Phase 3 restore endpoint design](../design/PHASE
 **Scope:**
 
 - Pre-import webhook PR to Lidarr upstream (if upstream maintainers are receptive)
+- Lidarr-native integration / plugin RFC: pass explicit `albumId`, release context, and operator intent into Mintarr at search/grab/import boundaries so Mintarr can avoid text-based album resolvers for album-holds and QC routing. This is the ideal long-term integration, but it must not block the v1-compatible Newznab/SAB path for unmodified Lidarr installs.
 - Lidarr v4 client implementation alongside v3 client (capability-detection at boot)
 - Coordination with Lidarr maintainers on Custom Format conventions for `[TIDAL]`, `[Local]`, `[Soulseek]` source tags
 

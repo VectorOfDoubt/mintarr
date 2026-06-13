@@ -113,6 +113,38 @@ Deferred but not rejected. A small upstream PR adding a pre-import event hook wo
 
 Partially adopted. The Connector architecture (Codex's `CONNECTOR_PLUGIN_ARCHITECTURE.md`) already treats `lidarr_manual_import` as one OutputConnector among potential others (`plex_direct`, `jellyfin_direct`, `library_filesystem_only`). This is a future feature path, not a replacement for the companion model.
 
+### Alternative 5: Integrated app / Lidarr replacement
+
+Strategic option only, not adopted.
+
+The long-term ideal product might be a single application where Lidarr's
+library-management model and Mintarr's quality-evidence model are integrated in
+one coherent workflow. That could be a Lidarr fork, a Lidarr-native plugin model,
+or a new application that reuses none of Lidarr's implementation language or UI.
+It could also address Lidarr's "multiple releases of the same album" weakness at
+the correct layer: the same component that chooses the target release/edition
+would also own the quality decision and import, instead of Mintarr having to
+infer or temporarily switch Lidarr state from the outside.
+
+This remains a future ADR, not a Phase 0-7 commitment, because it changes the
+product category. Mintarr would stop being only a QC gate and would become a
+music library manager. That implies owning wanted/missing state, MusicBrainz
+metadata, release selection, download-client coordination, imports, rescans,
+library migrations, API compatibility, and a substantially larger UI.
+
+The current companion architecture should therefore be pushed to its natural
+limit first. If the Newznab/SAB/API surfaces prove unable to provide the safety
+guarantees Mintarr needs, the next escalation is:
+
+1. upstream Lidarr hooks or a Lidarr-native plugin/RFC;
+2. a narrow integration layer that passes explicit `albumId`, release context,
+   and operator intent to Mintarr;
+3. only then a separate ADR evaluating an integrated app, fork, or replacement.
+
+Evidence for that ADR must be concrete: recurring production failures that
+cannot be made safe with the companion model, rejected upstream/plugin paths, and
+enough adoption to justify owning a full library manager.
+
 ## Re-evaluation triggers
 
 This ADR is durable. It is re-opened only if one of the following occurs:
@@ -120,6 +152,7 @@ This ADR is durable. It is re-opened only if one of the following occurs:
 1. **Lidarr becomes formally unmaintained.** Concretely: no commit on `Lidarr/Lidarr` main branch for 12 consecutive months, OR the maintainer team publicly archives the repository.
 2. **Mintarr reaches scale where ownership of the full stack is necessary.** Concretely: >10,000 active installs and consistent user demand that requires library-management features Mintarr cannot deliver as a companion.
 3. **Lidarr maintainers reject the pre-import webhook PR (when filed) AND a follow-up RFC is also rejected**, AND the rejection rationale makes Mintarr's companion model untenable in practice.
+4. **The companion model repeatedly fails hard safety guarantees even with conservative resolvers and holds.** Concretely: production dogfood shows that "everything through Mintarr's QC gate" cannot be made reliable through Newznab/SAB/API integration without native Lidarr context such as `albumId`.
 
 Until then, ADR-0007 stands. Any contribution proposing fork-shaped scope expansion should be closed with a reference to this ADR.
 

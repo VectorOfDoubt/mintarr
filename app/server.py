@@ -63,6 +63,7 @@ from release_family import (
     score_lidarr_release_match as _release_family_score_lidarr_release,
     track_title_names as _release_family_track_title_names,
 )
+from lidarr_album_resolver import build_catalogue, resolve_album_id
 from release_metadata import collect_observed_release
 from sensor_registry import default_registry
 from verification import (
@@ -716,6 +717,127 @@ def _newznab_feed(items_xml: str, total: int = 0) -> str:
 # are re-exported above from adapters.tidal — see F3.1 hardening notes.
 
 
+# ---- Album-level cancel hold: search suppression (#160 slice 3) ----
+# When a search resolves to exactly one trusted Lidarr albumId that has an
+# active hold, Mintarr suppresses its own Newznab feed for that album so Lidarr
+# does not immediately re-grab the same album after an operator cancel. This is
+# deliberately conservative: it abstains (no suppression) on any zero/multiple/
+# low-confidence resolution, never blocks/mutates Lidarr, only affects Mintarr's
+# own feed, and fails open (any error → normal results).
+
+_ALBUM_CATALOGUE_CACHE: tuple[float, list] | None = None
+_ALBUM_CATALOGUE_TTL_SEC = 300.0
+
+
+def _lidarr_album_db_path() -> Path:
+    # Honor the shared Mintarr contract: an explicit MINTARR_LIDARR_DB_PATH wins,
+    # else fall back to the LIDARR_CONFIG_XML sibling. Reuse the F5.4 resolver so
+    # suppression never silently diverges from inventory/dashboard on installs
+    # that configure the DB path explicitly.
+    from library_scan_worker import _lidarr_db_path as _resolve_lidarr_db_path
+
+    return _resolve_lidarr_db_path()
+
+
+def _read_lidarr_album_rows() -> list[tuple[int, str, str]]:
+    """Read ``(album_id, artist, album)`` for every album in Lidarr's catalogue.
+
+    Read-only (``mode=ro``). Returns ``[]`` on any failure so resolution — and
+    therefore suppression — fails open to normal search results.
+    """
+    import sqlite3
+
+    db_path = _lidarr_album_db_path()
+    if not db_path.exists():
+        return []
+    rows: list[tuple[int, str, str]] = []
+    try:
+        with sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=5) as conn:
+            conn.row_factory = sqlite3.Row
+            for row in conn.execute(
+                """
+                SELECT Albums.Id AS album_id, Albums.Title AS album_title,
+                       ArtistMetadata.Name AS artist_name
+                FROM Albums
+                LEFT JOIN ArtistMetadata
+                  ON ArtistMetadata.Id = Albums.ArtistMetadataId
+                """
+            ):
+                rows.append(
+                    (
+                        row["album_id"],
+                        row["artist_name"] or "",
+                        row["album_title"] or "",
+                    )
+                )
+    except Exception:
+        log.exception("[album-hold] failed reading Lidarr album catalogue")
+        return []
+    return rows
+
+
+def _get_album_catalogue(*, force: bool = False) -> list:
+    """Return the cached, normalized Lidarr album catalogue (TTL-bound).
+
+    The catalogue is large and changes slowly, so it is cached for
+    ``_ALBUM_CATALOGUE_TTL_SEC`` to avoid a DB read on every search.
+    """
+    global _ALBUM_CATALOGUE_CACHE
+    now = time.time()
+    if not force and _ALBUM_CATALOGUE_CACHE is not None:
+        ts, cached = _ALBUM_CATALOGUE_CACHE
+        if now - ts < _ALBUM_CATALOGUE_TTL_SEC:
+            return cached
+    catalogue = build_catalogue(_read_lidarr_album_rows())
+    _ALBUM_CATALOGUE_CACHE = (now, catalogue)
+    return catalogue
+
+
+def _album_hold_suppressed_album_id(
+    *, artist: str = "", album: str = "", q: str = ""
+) -> int | None:
+    """Return a held Lidarr ``albumId`` iff this search resolves to exactly one
+    trusted album that currently has an active hold; otherwise ``None``.
+
+    Conservative and fail-open: any resolver abstention (zero/multiple matches,
+    missing fields) or any error returns ``None`` so the normal candidate flow
+    proceeds. The optional q-only fallback is gated behind
+    ``MINTARR_ALBUM_HOLD_Q_RESOLVE`` and defaults OFF.
+    """
+    try:
+        catalogue = _get_album_catalogue()
+        if not catalogue:
+            return None
+        allow_q = _env_bool("MINTARR_ALBUM_HOLD_Q_RESOLVE", False)
+        match = resolve_album_id(
+            catalogue, artist=artist, album=album, q=q, allow_q_fallback=allow_q
+        )
+        if match.album_id is None:
+            return None
+        import state_db
+
+        hold = state_db.get_album_hold(match.album_id)
+        if hold is None:
+            return None
+        log.info(
+            "[album-hold] active hold matched album_id=%s method=%s "
+            "hold_reason=%s expires_at=%s (artist=%r album=%r q=%r)",
+            match.album_id,
+            match.method,
+            hold.get("reason"),
+            hold.get("expires_at"),
+            artist,
+            album,
+            q,
+        )
+        return match.album_id
+    except Exception:
+        log.exception(
+            "[album-hold] suppression check failed — returning normal results"
+        )
+        return None
+
+
 # ---- Auth ----
 def require_apikey_check():
     """Return 401-response if apikey is missing/wrong, None if OK.
@@ -772,6 +894,27 @@ def newznab():
         empty_query = not (q or artist or album)
         if empty_query:
             q = "Daft Punk Random Access Memories"
+
+        # #160 slice 3: album-level cancel hold. If this real search resolves to
+        # exactly one trusted Lidarr albumId with an active hold, suppress the
+        # feed (return zero candidates) so Lidarr does not immediately re-grab the
+        # same album after an operator cancel. Skipped for the empty indexer-test
+        # query; abstains/fails open to normal results otherwise.
+        if not empty_query:
+            held_album_id = _album_hold_suppressed_album_id(
+                artist=artist, album=album, q=q
+            )
+            if held_album_id is not None:
+                log.info(
+                    "[album-hold] suppressed Newznab search t=%s album_id=%s "
+                    "(artist=%r album=%r q=%r) — returning empty feed",
+                    t,
+                    held_album_id,
+                    artist,
+                    album,
+                    q,
+                )
+                return Response(_newznab_feed("", 0), mimetype="application/xml")
 
         base = os.environ.get("BASE_URL") or request.host_url.rstrip("/")
         all_candidates = []

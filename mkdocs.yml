@@ -131,6 +131,7 @@ nav:
           - "ADR-0011 Frontend framework": architecture/adr/0011-frontend-framework.md
           - "ADR-0012 QC import-gate scope": architecture/adr/0012-qc-import-gate-scope.md
           - "ADR-0013 Release-family identity policy": architecture/adr/0013-release-family-identity-policy.md
+          - "ADR-0014 Mintarr-managed download backend": architecture/adr/0014-mintarr-managed-download-backend.md
 
   - Specs:
       - "Adapter Protocol v1": specs/ADAPTER_PROTOCOL_v1.md

@@ -321,9 +321,12 @@ It must not say:
 3. Should one backend category (`mintarr-music`) cover all Mintarr-routed music,
    or should categories be source-specific?
 4. How much backend cleanup should Mintarr perform by default for qBittorrent?
-5. Should this successor design eventually become an ADR amendment to
+5. ~~Should this successor design eventually become an ADR amendment to
    [ADR-0012](../architecture/adr/0012-qc-import-gate-scope.md), or stay a
-   Phase 4 design until dogfooded?
+   Phase 4 design until dogfooded?~~ **Resolved:** the boundary is locked
+   before backend-client code in
+   [ADR-0014](../architecture/adr/0014-mintarr-managed-download-backend.md)
+   (the scoped successor ADR-0012's re-evaluation trigger #3 anticipated).
 
 ## 12. Review focus
 

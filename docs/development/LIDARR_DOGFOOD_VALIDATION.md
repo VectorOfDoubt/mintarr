@@ -632,3 +632,52 @@ Product observation:
   real example for the proposed edition-preference policy: minor bonus tracks
   should be configurable as part of the deluxe/remaster/expanded edition policy,
   not as a separate quality setting.
+
+### 2026-06-13 — review-hold deluxe edition validation (Codex)
+
+Ran one controlled interactive Lidarr grab specifically to validate the
+review-hold invariant from the review-hold fix: a `REVIEW_REQUIRED` item should
+remain visible to Lidarr as a paused download while the operator decides, so
+Lidarr does not immediately re-grab the same wanted album.
+
+Candidate:
+
+- Lidarr action: interactive release grab through Lidarr `/release`.
+- Source/indexer: Mintarr/TidalHires.
+- Album: 3 Doors Down — *Away From The Sun* (album id `7`).
+- Existing library evidence: 12 measured lossy trackfiles.
+- Candidate title:
+  `3 Doors Down - Away From The Sun (Deluxe) (2002) [TIDAL] [FLAC 24bit]`.
+- JID/downloadId: `448c38bea957`.
+
+Result:
+
+- Mintarr completed the download and QC path.
+- Candidate contained 22 FLAC files for a tracked/existing 12-track album.
+- FLAC Detective completed before policy was applied.
+- Decision: `REVIEW_REQUIRED`.
+- Reason: edition/tracklist mismatch; candidate has many more tracks than the
+  tracked release, likely a different edition.
+- Import outcome remained `PENDING`; no `ManualImport` was called.
+- Mintarr SAB emulation exposed the held item as:
+
+  ```text
+  nzo_id=448c38bea957
+  status=Paused
+  mbleft=0
+  percentage=100
+  ```
+
+- Lidarr continued to show exactly one queue row for the same download id. After
+  a one-minute hold check it reported the row as `paused`; no re-grab occurred.
+
+Cleanup:
+
+- Operator discard was executed through `POST /verification/448c38bea957/discard`.
+- Lifecycle moved to `discarded`, `blocklist_status=done`.
+- Mintarr SAB queue became empty.
+- Lidarr queue became `0`.
+
+Verdict: **review-hold path passes**. A larger deluxe edition is held for human
+review, visible to Lidarr as paused, and cleaned/blocklisted correctly when
+discarded.

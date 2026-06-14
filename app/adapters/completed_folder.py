@@ -262,3 +262,22 @@ class QBittorrentCompletedAdapter(CompletedFolderAdapter):
     display_name = "qBittorrent"
     source_label = "qbittorrent_torrent"
     env_prefix = "QBITTORRENT_TORRENT"
+
+
+class BackendCompletedAdapter(CompletedFolderAdapter):
+    """Ingest for a Mintarr-managed backend download (ADR-0014 slice 5).
+
+    Distinct source_type from the operator-routed completed-folder adapters: a
+    release here was *created and tracked by Mintarr's own backend lane*, not
+    dropped into a folder by the operator. The candidate_id is the completed
+    path relative to the backend download root, so resolve_source_dir
+    re-validates containment (root-relative, no symlink/traversal, settled, no
+    partial markers) right before the copy. Copy-not-move keeps qBit seeding
+    intact; backend cleanup is a later slice.
+    """
+
+    name = "backend_completed"
+    source_type = "backend_completed"
+    display_name = "Mintarr backend"
+    source_label = "backend_completed"
+    env_prefix = "MINTARR_SAB_BACKEND"

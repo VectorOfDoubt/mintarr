@@ -1090,6 +1090,11 @@ def _reconcile_backend_jobs() -> None:
         source_type = str(job.get("source_type") or "")
         if not (jid and backend_id):
             continue
+        # Once ingest has started (slice 5), the worker job owns the lifecycle
+        # and the _jobs projection — the reconciler must not touch it. review is
+        # likewise worker/operator-owned (the transfer is already done).
+        if job.get("state") in ("importing", "review"):
+            continue
         client = _backend_client_for_source(source_type)
         if client is None:
             continue
@@ -1148,6 +1153,74 @@ def _reconcile_backend_jobs() -> None:
             proj["percent"] = max(0, min(100, int(status.progress)))
             if state_changed:
                 _save_jobs()
+
+        # Slice 5: a completed download with a contained path is handed to the
+        # normal QC/import pipeline. _start_backend_ingest transitions the job to
+        # importing (durable-first) and enqueues the copy job; from then on the
+        # worker owns it (skipped at the top of the next pass).
+        if new_state == "completed" and status.completed_path:
+            _start_backend_ingest(jid, job, status.completed_path, client)
+
+
+def _start_backend_ingest(jid: str, job: dict, completed_path: str, client) -> None:
+    """Hand a completed+contained backend download to the QC pipeline (slice 5).
+
+    Durable-first: persist completed→importing *before* enqueuing the copy job,
+    so a failure can never leave Lidarr/projection believing an import is running
+    without a durable importing row. Passes the path *relative to the backend
+    download root*, so BackendCompletedAdapter re-validates containment (root-
+    relative, no symlink/traversal, settled) right before it copies. Never raises;
+    a later reconcile retries. No direct ManualImport — the pipeline owns import.
+    """
+    import state_db
+
+    root = getattr(client, "download_root", "") or ""
+    if not root:
+        log.warning(
+            "[backend-lane] ingest skipped: no backend download root jid=%s", jid
+        )
+        return
+    try:
+        rel = os.path.relpath(completed_path, root)
+    except (ValueError, TypeError):
+        rel = ""
+    if not rel or rel.startswith("..") or os.path.isabs(rel):
+        log.warning("[backend-lane] ingest skipped: path not under root jid=%s", jid)
+        return
+
+    # durable-first: completed → importing, and only enqueue if it persisted.
+    if state_db.update_backend_job(jid, state="importing") is None:
+        log.warning(
+            "[backend-lane] could not persist importing; not enqueuing jid=%s", jid
+        )
+        return
+    enqueued = None
+    try:
+        enqueued = state_db.enqueue_job(
+            jid=jid,
+            type="backend_completed_grab",
+            payload={
+                "source_id": rel,
+                "title": job.get("release_title") or jid,
+                "category": job.get("category"),
+            },
+            dedupe_key=f"backend:{jid}",
+            source_type="backend_completed",
+            source_id=rel,
+        )
+    except Exception:
+        log.exception("[backend-lane] ingest enqueue failed jid=%s", jid)
+    if not enqueued:
+        # No worker job was created — never leave the row stuck in importing with
+        # no worker (the reconciler skips importing). Revert so a later reconcile
+        # retries.
+        log.warning(
+            "[backend-lane] ingest enqueue did not create a job; reverting jid=%s",
+            jid,
+        )
+        state_db.update_backend_job(jid, state="completed")
+        return
+    log.info("[backend-lane] ingest enqueued jid=%s rel=%s", jid, rel)
 
 
 # ---- SAB endpoint (Lidarr ser oss som SAB-DLclient) ----
@@ -2038,6 +2111,65 @@ def _execute_qbittorrent_torrent_grab_job(
 ) -> tuple[str | None, dict | None]:
     """Thin wrapper around generic source-grab executor for qBittorrent folders."""
     return _execute_source_grab_job(job, "qbittorrent_torrent")
+
+
+def _backend_ingest_outcome(jid: str | None) -> str:
+    """Map the post-pipeline _jobs projection to a terminal backend-job state.
+
+    A BLOCK/SKIPPED business outcome sets the projection status to ``failed``; a
+    review sets ``review_required``/``lidarr_hold``; a clean import sets
+    ``completed``. The executor only returns here after the (synchronous)
+    pipeline finished, so the status is terminal — default to ``imported``.
+    """
+    if not jid:
+        return "imported"
+    with _jobs_lock:
+        proj = dict(_jobs.get(jid, {}))
+    if proj.get("lidarr_hold") or proj.get("status") == "review_required":
+        return "review"
+    if proj.get("status") == "failed":
+        return "failed"
+    return "imported"
+
+
+def _mirror_backend_ingest_outcome(jid: str | None, state: str) -> None:
+    """Mirror a pipeline outcome onto the backend job, if it is still importing."""
+    if not jid:
+        return
+    try:
+        import state_db
+
+        job = state_db.get_backend_job(jid)
+        if job is None or job.get("state") != "importing":
+            return
+        state_db.update_backend_job(
+            jid,
+            state=state,
+            finished=state in state_db.BACKEND_JOB_TERMINAL_STATES or None,
+        )
+        log.info("[backend-lane] ingest outcome jid=%s -> %s", jid, state)
+    except Exception:
+        log.exception("[backend-lane] mirror ingest outcome failed jid=%s", jid)
+
+
+def _execute_backend_completed_grab_job(
+    job: dict,
+) -> tuple[str | None, dict | None]:
+    """Generic source-grab executor for the backend lane, mirroring the outcome.
+
+    After the pipeline runs, the terminal business outcome (imported / review /
+    failed) is mirrored back onto the durable backend_jobs row so it never stays
+    stuck in ``importing``. A raised pipeline failure mirrors ``failed`` before
+    re-raising (the F2 worker still owns retry/lease).
+    """
+    jid = job.get("jid")
+    try:
+        result = _execute_source_grab_job(job, "backend_completed")
+    except Exception:
+        _mirror_backend_ingest_outcome(jid, "failed")
+        raise
+    _mirror_backend_ingest_outcome(jid, _backend_ingest_outcome(jid))
+    return result
 
 
 def _run_download_job(jid: str, album_id: int, worker_job_id: int | None = None):
@@ -7348,6 +7480,7 @@ except Exception:
 try:
     import adapters
     from adapters.completed_folder import (
+        BackendCompletedAdapter,
         QBittorrentCompletedAdapter,
         SabUsenetCompletedAdapter,
     )
@@ -7365,6 +7498,8 @@ try:
         adapters.register(SabUsenetCompletedAdapter())
     if adapters.get_adapter("qbittorrent_torrent") is None:
         adapters.register(QBittorrentCompletedAdapter())
+    if adapters.get_adapter("backend_completed") is None:
+        adapters.register(BackendCompletedAdapter())
 except Exception:
     log.exception("adapter registration failed — source grabs may not work")
 
@@ -7395,6 +7530,9 @@ if _restore_start_workers and not (
         worker.register_executor("sab_usenet_grab", _execute_sab_usenet_grab_job)
         worker.register_executor(
             "qbittorrent_torrent_grab", _execute_qbittorrent_torrent_grab_job
+        )
+        worker.register_executor(
+            "backend_completed_grab", _execute_backend_completed_grab_job
         )
         worker.register_executor("promote_import", _execute_promote_import_job)
         worker.register_executor("retry_import", _execute_retry_import_job)

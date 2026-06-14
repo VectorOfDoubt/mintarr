@@ -139,17 +139,18 @@ def test_update_patches_only_given_fields(tmp_path):
     assert updated["category"] == "c"
 
 
-def test_create_does_not_reopen_terminal_job(tmp_path):
+@pytest.mark.parametrize("terminal", sorted(state_db.BACKEND_JOB_TERMINAL_STATES))
+def test_create_does_not_reopen_terminal_job(tmp_path, terminal):
     _fresh_db(tmp_path)
     state_db.create_backend_job("jid-1", source_type="s", category="c")
-    state_db.update_backend_job("jid-1", state="failed")
-    # an upsert must not resurrect a terminal job (the reconciler invariant must
-    # not be bypassable through create)
+    state_db.update_backend_job("jid-1", state=terminal)
+    # an upsert must not resurrect ANY terminal job (imported/failed/cancelled);
+    # the guard is built from BACKEND_JOB_TERMINAL_STATES so it cannot drift.
     again = state_db.create_backend_job(
         "jid-1", source_type="s", category="c", state="queued"
     )
-    assert again["state"] == "failed"
-    assert state_db.get_backend_job("jid-1")["state"] == "failed"
+    assert again["state"] == terminal
+    assert state_db.get_backend_job("jid-1")["state"] == terminal
 
 
 def test_update_rejects_bad_state_and_missing_jid(tmp_path):

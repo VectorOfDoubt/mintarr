@@ -1876,10 +1876,12 @@ BACKEND_JOB_STATES = (
     "completed",
     "importing",
     "review",
+    "imported",
     "failed",
     "cancelled",
 )
-BACKEND_JOB_TERMINAL_STATES = frozenset({"failed", "cancelled"})
+# "imported" is the terminal success state, mirrored back from the QC pipeline.
+BACKEND_JOB_TERMINAL_STATES = frozenset({"imported", "failed", "cancelled"})
 # "completed" is not terminal here: the worker still has to import it. Active =
 # anything the reconciler should keep polling/advancing.
 BACKEND_JOB_ACTIVE_STATES = tuple(
@@ -1957,8 +1959,13 @@ def create_backend_job(
         now_value = float(now if now is not None else time.time())
         details_json = json.dumps(details or {}, sort_keys=True)
         with _lock, _connect() as conn:
+            # Built from the constant so the upsert guard cannot drift from the
+            # terminal-state set (these are code literals, not user input).
+            terminal_in = ", ".join(
+                f"'{s}'" for s in sorted(BACKEND_JOB_TERMINAL_STATES)
+            )
             conn.execute(
-                """
+                f"""
                 INSERT INTO backend_jobs (
                   jid, source_type, backend_job_id, category, state,
                   target_album_id, release_title, backend_path, error_text,
@@ -1974,7 +1981,7 @@ def create_backend_job(
                   release_title=excluded.release_title,
                   updated_at=excluded.updated_at,
                   details_json=excluded.details_json
-                WHERE backend_jobs.state NOT IN ('failed', 'cancelled')
+                WHERE backend_jobs.state NOT IN ({terminal_in})
                 """,
                 (
                     jid_text,

@@ -259,6 +259,33 @@ def test_execute_source_grab_threads_target_album_id(pipeline_env, monkeypatch):
     assert seen == {"jid": jid, "target_album_id": 9829}
 
 
+def test_normalize_audio_checks_flac_extension_case_insensitive(
+    pipeline_env,
+    tmp_path,
+    monkeypatch,
+):
+    _server, pipeline = pipeline_env
+    raw = tmp_path / "raw"
+    raw.mkdir()
+    mixed_case = raw / "Track01.Flac"
+    mixed_case.write_bytes(b"FAKEFLAC" + bytes(2048))
+    ctx = _FakeContext(jid="case-flac", raw_dir=raw, output_dir=tmp_path / "out")
+    calls = []
+
+    def _capture_run(argv, **kwargs):
+        calls.append(list(argv))
+        return _FakeCompleted(returncode=0)
+
+    monkeypatch.setattr(subprocess, "run", _capture_run)
+
+    pipeline.normalize_audio(raw, ctx)
+
+    assert any(
+        call[:3] == ["flac", "-t", "-s"] and call[-1].endswith("Track01.Flac")
+        for call in calls
+    )
+
+
 def test_prepare_output_directory_uses_ctx_output_dir(pipeline_env, tmp_path):
     """prepare_output_directory must respect ctx.output_dir, not hardcoded OUTPUT_BASE."""
     server, pipeline = pipeline_env
@@ -273,6 +300,23 @@ def test_prepare_output_directory_uses_ctx_output_dir(pipeline_env, tmp_path):
 
     assert result.output_dir == custom_out
     assert (custom_out / "track.flac").exists()
+
+
+def test_prepare_output_directory_normalizes_flac_suffix(pipeline_env, tmp_path):
+    """Downstream tools expect lowercase .flac even when sources use .Flac."""
+    _server, pipeline = pipeline_env
+    jid = "case-output"
+    custom_out = tmp_path / "custom" / jid
+    raw = tmp_path / "raw" / jid
+    raw.mkdir(parents=True)
+    (raw / "Track01.Flac").write_bytes(b"flac")
+    ctx = _FakeContext(jid=jid, raw_dir=raw, output_dir=custom_out)
+
+    result = pipeline.prepare_output_directory(raw, ctx)
+
+    assert result.output_dir == custom_out
+    assert not (custom_out / "Track01.Flac").exists()
+    assert (custom_out / "Track01.flac").exists()
 
 
 def test_pipeline_success_sets_download_exit_code(pipeline_env):

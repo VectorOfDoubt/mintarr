@@ -42,6 +42,36 @@ class PreparedOutput:
     total_bytes: int
 
 
+def _files_with_suffix(root: Path, suffix: str) -> list[Path]:
+    """Return files with a suffix match, case-insensitive.
+
+    Real libraries contain extensions like ``.Flac``; treating those as
+    non-FLAC lets files bypass flac -t and later confuses FLAC Detective.
+    """
+    wanted = suffix.lower()
+    return [f for f in root.rglob("*") if f.is_file() and f.suffix.lower() == wanted]
+
+
+def _normalize_flac_extensions(root: Path) -> None:
+    """Rename FLAC files to a canonical ``.flac`` suffix.
+
+    Linux treats ``.Flac`` and ``.flac`` as different suffixes, while several
+    downstream tools assume lowercase FLAC extensions. Normalize once after the
+    managed output directory is prepared so every later phase sees the same
+    surface.
+    """
+    for path in _files_with_suffix(root, ".flac"):
+        if path.suffix == ".flac":
+            continue
+        target = path.with_suffix(".flac")
+        if target.exists() and target != path:
+            log.warning(
+                "Skipping FLAC suffix normalization for %s: target exists", path
+            )
+            continue
+        path.rename(target)
+
+
 def execute_source_grab(
     job: dict,
     adapter: SourceAdapter,
@@ -165,8 +195,8 @@ def normalize_audio(raw_dir: Path, ctx: PipelineContext) -> NormalizeStats:
     that's how the current pipeline runs (avoids creating fake AAC-in-FLAC
     files). A cleaner split is F3.4+ work when LocalFolderAdapter lands.
     """
-    m4a_files = list(raw_dir.rglob("*.m4a"))
-    direct_flac_files = list(raw_dir.rglob("*.flac"))
+    m4a_files = _files_with_suffix(raw_dir, ".m4a")
+    direct_flac_files = _files_with_suffix(raw_dir, ".flac")
     log.info(
         "[%s] Normalize start: %d .m4a + %d .flac",
         ctx.jid,
@@ -290,7 +320,7 @@ def normalize_audio(raw_dir: Path, ctx: PipelineContext) -> NormalizeStats:
 
     # Test integrity for .flac files the adapter delivered directly
     # (e.g., 16/44 streams that didn't go through .m4a container).
-    for f in list(raw_dir.rglob("*.flac")):
+    for f in _files_with_suffix(raw_dir, ".flac"):
         ctx.check_cancelled()
         try:
             test = subprocess.run(
@@ -332,6 +362,7 @@ def prepare_output_directory(
         log.exception("[%s] Move to output failed", ctx.jid)
         output_dir = raw_dir
 
+    _normalize_flac_extensions(output_dir)
     total_bytes = sum(f.stat().st_size for f in output_dir.rglob("*") if f.is_file())
     file_count = sum(1 for f in output_dir.rglob("*") if f.is_file())
     return PreparedOutput(

@@ -98,6 +98,16 @@ def test_reconstruct_per_track_from_sample_counts(tmp_path):
     assert toc.leadout_frames == 350
 
 
+def test_reconstruct_per_track_accepts_mixed_case_flac_suffix(tmp_path):
+    (tmp_path / "01 track.Flac").write_bytes(b"x")
+    (tmp_path / "02 track.flac").write_bytes(b"x")
+    lengths = {"01 track.Flac": 100 * F, "02 track.flac": 200 * F}
+    toc = cd_toc.reconstruct_toc(tmp_path, flac_samples=lambda p: lengths[p.name])
+    assert toc is not None
+    assert toc.track_offsets_frames == (0, 100)
+    assert toc.leadout_frames == 300
+
+
 def test_reconstruct_rejects_non_frame_aligned(tmp_path):
     (tmp_path / "01 track.flac").write_bytes(b"x")
     (tmp_path / "02 track.flac").write_bytes(b"x")

@@ -319,6 +319,69 @@ def test_prepare_output_directory_normalizes_flac_suffix(pipeline_env, tmp_path)
     assert (custom_out / "Track01.flac").exists()
 
 
+def test_normalize_flac_extensions_handles_case_only_rename_on_ci_mount(
+    pipeline_env,
+    tmp_path,
+    monkeypatch,
+):
+    """Windows/SMB-style mounts can report Track01.flac as already existing.
+
+    In that case the file must hop through a temporary name, otherwise the
+    visible directory entry stays as Track01.Flac and lowercase-only tools miss
+    it.
+    """
+    _server, pipeline = pipeline_env
+    raw = tmp_path / "raw"
+    raw.mkdir()
+    mixed_case = raw / "Track01.Flac"
+    mixed_case.write_bytes(b"flac")
+    rename_calls: list[tuple[str, str]] = []
+    original_exists = Path.exists
+
+    def _exists(path: Path) -> bool:
+        if path.name == "Track01.flac":
+            return True
+        if ".mintarr-rename-tmp-" in path.name:
+            return False
+        return original_exists(path)
+
+    def _samefile(path: Path, other: Path) -> bool:
+        return path.name == "Track01.Flac" and other.name == "Track01.flac"
+
+    def _rename(path: Path, target: Path) -> Path:
+        rename_calls.append((path.name, Path(target).name))
+        return target
+
+    monkeypatch.setattr(Path, "exists", _exists)
+    monkeypatch.setattr(Path, "samefile", _samefile)
+    monkeypatch.setattr(Path, "rename", _rename)
+
+    pipeline._normalize_flac_extensions(raw)
+
+    assert len(rename_calls) == 2
+    assert rename_calls[0][0] == "Track01.Flac"
+    assert ".mintarr-rename-tmp-" in rename_calls[0][1]
+    assert rename_calls[1][1] == "Track01.flac"
+
+
+def test_normalize_flac_extensions_does_not_clobber_distinct_lowercase_file(
+    pipeline_env,
+    tmp_path,
+):
+    _server, pipeline = pipeline_env
+    raw = tmp_path / "raw"
+    raw.mkdir()
+    mixed_case = raw / "Track01.Flac"
+    lowercase = raw / "Track01.flac"
+    mixed_case.write_bytes(b"mixed")
+    lowercase.write_bytes(b"lower")
+
+    pipeline._normalize_flac_extensions(raw)
+
+    assert mixed_case.read_bytes() == b"mixed"
+    assert lowercase.read_bytes() == b"lower"
+
+
 def test_pipeline_success_sets_download_exit_code(pipeline_env):
     """download_exit_code=0 must appear on _jobs after a successful run
     (audit consumers depend on the field being present)."""

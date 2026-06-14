@@ -65,6 +65,21 @@ def _normalize_flac_extensions(root: Path) -> None:
             continue
         target = path.with_suffix(".flac")
         if target.exists() and target != path:
+            try:
+                same_file = path.samefile(target)
+            except OSError:
+                same_file = False
+            if same_file:
+                # Case-insensitive mounts (Windows/WSL/SMB) report the lowercase
+                # target as already existing for a case-only rename. Hop through
+                # a temporary sibling so the directory entry's spelling actually
+                # changes for tools that only glob lowercase *.flac.
+                tmp = path.with_name(
+                    f".{path.name}.mintarr-rename-tmp-{time.time_ns()}"
+                )
+                path.rename(tmp)
+                tmp.rename(target)
+                continue
             log.warning(
                 "Skipping FLAC suffix normalization for %s: target exists", path
             )

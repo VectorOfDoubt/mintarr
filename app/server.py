@@ -1223,6 +1223,21 @@ def _start_backend_ingest(jid: str, job: dict, completed_path: str, client) -> N
     log.info("[backend-lane] ingest enqueued jid=%s rel=%s", jid, rel)
 
 
+def _sab_category_names() -> list[str]:
+    """SAB-compat category names Mintarr advertises to Lidarr.
+
+    Includes the dedicated backend category when the lane is enabled, so Lidarr
+    will accept a download client configured for it (ADR-0014) — Lidarr rejects
+    a SAB client whose category the backend does not advertise.
+    """
+    cats = ["*", "music"]
+    if _env_bool("MINTARR_SAB_BACKEND_ENABLED", False):
+        backend = os.environ.get("MINTARR_SAB_BACKEND_CATEGORY", "").strip()
+        if backend and backend not in cats:
+            cats.append(backend)
+    return cats
+
+
 # ---- SAB endpoint (Lidarr ser oss som SAB-DLclient) ----
 @app.route("/sabnzbd/api", methods=["GET", "POST"])
 @app.route("/api", methods=["POST"])  # fallback hvis Lidarr POSTer hit
@@ -1251,27 +1266,20 @@ def sab():
                     },
                     "categories": [
                         {
-                            "name": "*",
+                            "name": name,
                             "dir": "",
-                            "order": 0,
+                            "order": order,
                             "priority": -100,
                             "pp": 3,
                             "script": "None",
-                        },
-                        {
-                            "name": "music",
-                            "dir": "",
-                            "order": 1,
-                            "priority": -100,
-                            "pp": 3,
-                            "script": "None",
-                        },
+                        }
+                        for order, name in enumerate(_sab_category_names())
                     ],
                 }
             }
         )
     if mode == "get_cats":
-        return jsonify({"categories": ["*", "music"]})
+        return jsonify({"categories": _sab_category_names()})
     if mode == "fullstatus":
         return jsonify(
             {

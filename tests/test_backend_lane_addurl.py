@@ -65,6 +65,24 @@ def test_backend_lane_disabled_returns_none(backend_env, monkeypatch):
     assert server._backend_lane_for_category("mintarr-music") is None
 
 
+def test_get_cats_advertises_backend_category_when_enabled(backend_env):
+    import server
+
+    assert server._sab_category_names() == ["*", "music", "mintarr-music"]
+    # the SAB-compat endpoint Lidarr validates against
+    r = backend_env.get(f"/sabnzbd/api?mode=get_cats&apikey={_key()}")
+    assert "mintarr-music" in r.get_json()["categories"]
+
+
+def test_get_cats_omits_backend_category_when_disabled(backend_env, monkeypatch):
+    import server
+
+    monkeypatch.setenv("MINTARR_SAB_BACKEND_ENABLED", "false")
+    assert server._sab_category_names() == ["*", "music"]
+    r = backend_env.get(f"/sabnzbd/api?mode=get_cats&apikey={_key()}")
+    assert r.get_json()["categories"] == ["*", "music"]
+
+
 # ---- addurl integration --------------------------------------------------
 
 

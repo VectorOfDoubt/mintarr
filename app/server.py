@@ -3217,7 +3217,9 @@ def _build_sensor_results(
 ) -> list[dict]:
     codec_gate_skipped = int(job_quality.get("codec_gate_skipped") or 0)
     integrity_failed = int(job_quality.get("integrity_failed") or 0)
-    flac_count = sum(1 for f in output_dir.rglob("*.flac") if f.is_file())
+    flac_count = sum(
+        1 for f in output_dir.rglob("*") if f.is_file() and f.suffix.lower() == ".flac"
+    )
     fake_hi_res = _has_fake_hi_res_signal(detective_result)
 
     if no_audio_files and codec_gate_skipped > 0:

@@ -75,6 +75,30 @@ def test_compute_verification_accepts_complete_authentic_album(tmp_path):
     assert result.sensors[3]["evidence"]["identity_decision"] == "SAME_RELEASE"
 
 
+def test_build_sensor_results_counts_mixed_case_flac_suffix(tmp_path):
+    output_dir = tmp_path / "out"
+    output_dir.mkdir()
+    (output_dir / "Track01.Flac").write_bytes(b"flac")
+
+    sensors = server._build_sensor_results(
+        output_dir=output_dir,
+        audio_count=1,
+        has_flac=True,
+        no_audio_files=False,
+        codec_mismatch=False,
+        validator_error=False,
+        detective_error=None,
+        detective_result={"files": [], "file_count": 1},
+        normalized_verdict="AUTHENTIC",
+        job_quality={},
+    )
+
+    ffprobe = next(sensor for sensor in sensors if sensor["name"] == "ffprobe")
+    flac_t = next(sensor for sensor in sensors if sensor["name"] == "flac_t")
+    assert ffprobe["evidence"]["flac_count"] == 1
+    assert flac_t["evidence"]["flac_count"] == 1
+
+
 def test_compute_verification_reviews_fewer_tracks_than_complete_existing(tmp_path):
     jid = "under123"
     output_dir = tmp_path / jid

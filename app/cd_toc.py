@@ -125,7 +125,9 @@ def reconstruct_toc(
     root = Path(folder)
     if not root.is_dir():
         return None
-    flacs = sorted(p for p in root.rglob("*.flac") if p.is_file())
+    flacs = sorted(
+        p for p in root.rglob("*") if p.is_file() and p.suffix.lower() == ".flac"
+    )
     if not flacs:
         return None
 

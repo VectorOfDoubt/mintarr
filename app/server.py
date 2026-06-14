@@ -943,8 +943,9 @@ def _backend_lane_for_category(cat: str):
     backend lane).
     """
     # NOTE: do not enable this lane in production (MINTARR_SAB_BACKEND_ENABLED)
-    # until cancel/remove propagation lands in slice 4c — until then a Lidarr
-    # cancel cannot stop the backend job.
+    # until completion ingest lands in slice 5. addurl/monitor/cancel (4a/4b/4c)
+    # work, but a completed backend download is held as "Verifying" and is never
+    # QC'd or imported until slice 5, so the lane is not yet end-to-end useful.
     if not _env_bool("MINTARR_SAB_BACKEND_ENABLED", False):
         return None
     from download_backend import SabBackendClient
@@ -4558,6 +4559,59 @@ def _create_album_hold_for_cancel(value: str, job: dict) -> None:
         log.exception("[%s] album hold creation failed after SAB delete", value)
 
 
+def _cancel_backend_job_if_any(jid: str) -> bool | None:
+    """Propagate a Lidarr remove/blocklist to the backend lane (ADR-0014 slice 4c).
+
+    A backend job is not in the worker ``jobs`` table, so the worker-cancel path
+    never touches it — without this, hiding it from Lidarr would leave the SAB/qBit
+    transfer running.
+
+    Returns: ``None`` if ``jid`` is not a backend job (caller hides as usual);
+    ``True`` if the durable cancel intent is recorded (safe to hide); ``False`` if
+    the durable cancel did **not** persist — the caller must keep the job visible
+    so Lidarr and Mintarr never disagree about whether it is cancelled, and so the
+    still-active durable row is not later imported/resurrected.
+
+    Order matters: the durable ``cancelled`` state is what stops the job from
+    being imported, so it is persisted *first* and its result checked. The backend
+    ``client.cancel`` (non-destructive — leave data/seeding) is best-effort after;
+    if it fails the job is still marked cancelled and will not be imported.
+    Lidarr's exact-release blocklist is untouched. Never raises.
+    """
+    import state_db
+
+    job = state_db.get_backend_job(jid)
+    if job is None:
+        return None
+    if job.get("state") in state_db.BACKEND_JOB_TERMINAL_STATES:
+        return True  # already terminal — safe to hide, won't import
+
+    updated = state_db.update_backend_job(jid, state="cancelled", finished=True)
+    if updated is None:
+        log.warning(
+            "[backend-lane] durable cancel did not persist; keeping job visible jid=%s",
+            jid,
+        )
+        return False
+
+    backend_id = job.get("backend_job_id")
+    client = _backend_client_for_source(str(job.get("source_type") or ""))
+    if client is not None and backend_id:
+        try:
+            client.cancel(backend_id, delete_files=False)
+            log.info(
+                "[backend-lane] SAB delete → backend cancel jid=%s backend_id=%s",
+                jid,
+                backend_id,
+            )
+        except Exception:
+            log.exception(
+                "[backend-lane] backend cancel failed (already marked cancelled) jid=%s",
+                jid,
+            )
+    return True
+
+
 def _cancel_and_hide_job(value: str | None) -> None:
     """Honor a Lidarr remove/blocklist (SAB delete): cancel the worker job, then hide.
 
@@ -4570,6 +4624,7 @@ def _cancel_and_hide_job(value: str | None) -> None:
     """
     if not value:
         return
+    hide = True
     try:
         import state_db
 
@@ -4582,9 +4637,14 @@ def _cancel_and_hide_job(value: str | None) -> None:
                     job["id"],
                 )
                 _create_album_hold_for_cancel(value, job)
+        elif _cancel_backend_job_if_any(value) is False:
+            # Durable backend cancel did not persist — keep the job visible so
+            # Lidarr and Mintarr do not disagree about whether it is cancelled.
+            hide = False
     except Exception:
         log.exception("[%s] SAB delete cancel-request failed (continuing)", value)
-    _hide_from_lidarr(value)
+    if hide:
+        _hide_from_lidarr(value)
 
 
 def _create_review_required(

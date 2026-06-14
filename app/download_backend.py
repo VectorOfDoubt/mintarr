@@ -140,6 +140,53 @@ def contained_path(
     return candidate_resolved
 
 
+# ---- Remote path mapping -------------------------------------------------
+# A Windows-native backend (SABnzbd/qBittorrent on Windows) reports completed
+# paths in its own namespace (e.g. ``H:\Nedlasting\sabnzbd\complete\...``) while
+# Mintarr runs in a Linux container that sees the same files at a mount path
+# (e.g. ``/sab-backend-complete/...``). This rewrites the backend-reported path
+# string into the container's view before containment — it moves no files.
+
+
+def parse_path_map(raw: str | None) -> list[tuple[str, str]]:
+    """Parse ``from=>to[;from=>to...]`` into normalized prefix pairs.
+
+    Both sides are backslash-normalized and trailing-slash-stripped. Empty or
+    malformed entries are skipped, so an unset/blank map yields ``[]`` (no-op).
+    """
+    pairs: list[tuple[str, str]] = []
+    for entry in (raw or "").split(";"):
+        entry = entry.strip()
+        if "=>" not in entry:
+            continue
+        src, dst = entry.split("=>", 1)
+        src = src.strip().replace("\\", "/").rstrip("/")
+        dst = dst.strip().replace("\\", "/").rstrip("/")
+        if src and dst:
+            pairs.append((src, dst))
+    return pairs
+
+
+def apply_path_map(path: str, pairs: list[tuple[str, str]]) -> str:
+    """Rewrite ``path`` by the first matching prefix pair, else return it as-is.
+
+    Backend paths are compared backslash-insensitive and case-insensitive
+    (Windows paths are both). With no pairs (the containerized-backend case) the
+    path is returned unchanged, so this is backward compatible.
+    """
+    if not path or not pairs:
+        return path
+    norm = path.replace("\\", "/")
+    lowered = norm.lower()
+    for src, dst in pairs:
+        src_l = src.lower()
+        if lowered == src_l:
+            return dst
+        if lowered.startswith(src_l + "/"):
+            return dst + norm[len(src) :]
+    return path
+
+
 # ---- Backend protocol ----------------------------------------------------
 
 
@@ -182,6 +229,7 @@ class SabBackendClient:
         api_key: str | None = None,
         category: str | None = None,
         download_root: str | None = None,
+        path_map: str | None = None,
         timeout: int | None = None,
         request: Callable[..., Any] | None = None,
     ) -> None:
@@ -189,8 +237,16 @@ class SabBackendClient:
         self._api_key = api_key
         self._category = category
         self._download_root = download_root
+        self._path_map = path_map
         self._timeout = timeout
         self._request = request or requests.get
+
+    @property
+    def path_map(self) -> list[tuple[str, str]]:
+        """Backend→container path-prefix rewrites (for a Windows-native SAB)."""
+        return parse_path_map(
+            self._path_map or os.environ.get("MINTARR_SAB_BACKEND_PATH_MAP", "")
+        )
 
     @property
     def api_url(self) -> str:
@@ -292,7 +348,10 @@ class SabBackendClient:
         # ingest from an uncontained/unknown path.
         completed = None
         if self.download_root:
-            completed_path = contained_path(self.download_root, slot.get("storage", ""))
+            # Translate the backend-reported (possibly Windows) path into the
+            # container's view before the containment check.
+            storage = apply_path_map(str(slot.get("storage", "")), self.path_map)
+            completed_path = contained_path(self.download_root, storage)
             completed = str(completed_path) if completed_path else None
         return BackendJobStatus(jid, BackendState.COMPLETED, 100.0, completed, raw)
 

@@ -15,11 +15,13 @@ from download_backend import (
     DownloadBackend,
     QbitBackendClient,
     SabBackendClient,
+    apply_path_map,
     contained_path,
     ensure_category,
     is_generic_category,
     magnet_btih,
     map_qbit_state,
+    parse_path_map,
     redact,
     redact_params,
 )
@@ -109,6 +111,69 @@ def test_contained_path_rejects_outside_and_traversal(tmp_path):
     assert contained_path(root, outside) is None
     assert contained_path(root, root / ".." / "other") is None
     assert contained_path(root, root) is None  # the root itself is not a job dir
+
+
+# ---- remote path mapping -------------------------------------------------
+
+
+def test_parse_path_map():
+    pairs = parse_path_map(r"H:\Nedlasting\sabnzbd\complete=>/sab-backend-complete")
+    assert pairs == [("H:/Nedlasting/sabnzbd/complete", "/sab-backend-complete")]
+    # multiple, trailing slashes stripped, blanks/malformed skipped
+    assert parse_path_map("a=>/x/ ; bad ; ;c\\d=>/y") == [
+        ("a", "/x"),
+        ("c/d", "/y"),
+    ]
+    assert parse_path_map("") == []
+    assert parse_path_map(None) == []
+
+
+def test_apply_path_map_translates_windows_to_container():
+    pairs = parse_path_map(r"H:\Nedlasting\sabnzbd\complete=>/sab-backend-complete")
+    assert (
+        apply_path_map(r"H:\Nedlasting\sabnzbd\complete\mintarr-music\Album", pairs)
+        == "/sab-backend-complete/mintarr-music/Album"
+    )
+    # case-insensitive (Windows paths are)
+    assert (
+        apply_path_map(r"h:\nedlasting\sabnzbd\complete\X", pairs)
+        == "/sab-backend-complete/X"
+    )
+
+
+def test_apply_path_map_passthrough_without_match_or_pairs():
+    pairs = parse_path_map("H:/a=>/b")
+    assert apply_path_map("/already/container/path", pairs) == "/already/container/path"
+    assert apply_path_map("/x", []) == "/x"  # no pairs → unchanged (containerized)
+
+
+def test_sab_status_completed_uses_path_map(tmp_path):
+    # SAB (Windows) reports a backslash path; the container sees it under root.
+    album = tmp_path / "mintarr-music" / "Album"
+    album.mkdir(parents=True)
+    win = r"H:\Nedlasting\sabnzbd\complete\mintarr-music\Album"
+    client = SabBackendClient(
+        url="http://sab",
+        api_key="KEY",
+        category="mintarr-music",
+        download_root=str(tmp_path),
+        path_map=f"H:\\Nedlasting\\sabnzbd\\complete=>{tmp_path}",
+        request=_recorder(
+            {
+                "queue": {"queue": {"slots": []}},
+                "history": {
+                    "history": {
+                        "slots": [
+                            {"nzo_id": "NZO-1", "status": "Completed", "storage": win}
+                        ]
+                    }
+                },
+            }
+        ),
+    )
+    st = client.status("NZO-1")
+    assert st.state is BackendState.COMPLETED
+    assert st.completed_path == str(album.resolve())
 
 
 # ---- SAB client: config / enablement -------------------------------------

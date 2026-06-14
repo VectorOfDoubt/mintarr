@@ -1196,14 +1196,17 @@ def _start_backend_ingest(jid: str, job: dict, completed_path: str, client) -> N
         return
     enqueued = None
     try:
+        payload = {
+            "source_id": rel,
+            "title": job.get("release_title") or jid,
+            "category": job.get("category"),
+        }
+        if job.get("target_album_id") not in (None, ""):
+            payload["target_album_id"] = job.get("target_album_id")
         enqueued = state_db.enqueue_job(
             jid=jid,
             type="backend_completed_grab",
-            payload={
-                "source_id": rel,
-                "title": job.get("release_title") or jid,
-                "category": job.get("category"),
-            },
+            payload=payload,
             dedupe_key=f"backend:{jid}",
             source_type="backend_completed",
             source_id=rel,

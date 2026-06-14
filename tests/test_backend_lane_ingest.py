@@ -109,6 +109,7 @@ def _seed_completed(server, root):
         backend_job_id="NZO-1",
         state="completed",
         release_title="Artist - Album",
+        target_album_id=1234,
     )
 
 
@@ -132,6 +133,7 @@ def test_start_ingest_persists_importing_then_enqueues(ingest_env, monkeypatch):
     assert enq[0]["type"] == "backend_completed_grab"
     assert enq[0]["source_type"] == "backend_completed"
     assert enq[0]["source_id"] == "Artist/Album"  # relative to the root
+    assert enq[0]["payload"]["target_album_id"] == 1234
 
 
 def test_start_ingest_no_enqueue_when_importing_not_persisted(ingest_env, monkeypatch):

@@ -731,3 +731,155 @@ Product gap:
 - This should be handled as a separate album-level cancel/hold design rather
   than by weakening per-release blocklist behavior. Follow-up:
   [#160](https://github.com/eivindsjursen-lab/mintarr/issues/160).
+
+### 2026-06-15 — Mintarr-managed SAB backend lane live validation (Codex)
+
+Redeployed the ADR-0014 Mintarr-managed SAB backend lane with:
+
+```text
+MINTARR_SAB_BACKEND_ENABLED=true
+MINTARR_SAB_BACKEND_CATEGORY=mintarr-music
+MINTARR_SAB_BACKEND_DOWNLOAD_ROOT=/sab-backend-complete
+MINTARR_SAB_BACKEND_PATH_MAP=<Windows SAB completed root>=>/sab-backend-complete
+```
+
+The Lidarr music path was configured so NZBgeek/Prowlarr usenet grabs route to
+Mintarr as the SAB-compatible download client, while Mintarr submits the actual
+transfer to SAB in the dedicated `mintarr-music` category. Direct Lidarr->SAB
+music import remained out of scope and disabled for the tested category.
+
+#### Review path: fake hi-res release held, no import
+
+Candidate:
+
+- Source/indexer: NZBgeek/Prowlarr through the Mintarr-managed SAB backend lane.
+- Album: Alicia Keys — *Songs in A Minor*.
+- Backend flow: Lidarr addfile -> Mintarr backend job -> SAB category
+  `mintarr-music` -> path-map -> copy -> QC.
+
+Result:
+
+- The release completed in SAB and entered Mintarr QC.
+- FLAC Detective produced hard fake-hi-res evidence (`FAKE_CERTAIN`).
+- Decision: `REVIEW_REQUIRED`.
+- No automatic Lidarr `ManualImport` happened.
+- The review-held backend row survived restart/redeploy hardening and was
+  exposed to Lidarr as `Paused` while review was pending.
+- Operator discard moved the record to `discarded`, terminalized the durable
+  backend row as `cancelled`, and removed the held Lidarr queue row.
+
+Verdict: **review path passes** for a real SAB/NZBgeek release. A bad release
+was downloaded, quality-gated, held, and then safely discarded without import or
+silent re-grab.
+
+#### Import path: full backend import, queue cleanup, audit sync
+
+Candidate:
+
+- Source/indexer: NZBgeek/Prowlarr through the Mintarr-managed SAB backend lane.
+- Album: Van Morrison — *Somebody Tried To Sell Me A Bridge*.
+- Candidate: 20 FLAC 24bit tracks.
+
+Result:
+
+- Backend job reached `imported`.
+- Lidarr imported `20/20` trackfiles.
+- Mintarr cleaned the Lidarr queue row after import.
+- Dogfood exposed an audit nuance: Mintarr initially observed a partial
+  `ManualImport` confirmation before Lidarr finished registering all files.
+  Follow-up hardening now requires full submitted-file accounting on both the
+  initial wait path and the pending-import reconcile path before recording
+  `MANUAL_IMPORTED`.
+
+Verdict: **import path passes**, and the success signal was hardened so
+`MANUAL_IMPORTED` means the submitted audio set has been accounted for, not just
+that Lidarr imported at least one file.
+
+#### Import path after full-file confirmation hardening
+
+Candidate:
+
+- Source/indexer: NZBgeek/Prowlarr through the Mintarr-managed SAB backend lane.
+- Album: Lionel Richie — *Renaissance* (album id `7792`).
+- Candidate: `Lionel Richie-Renaissance-CD-FLAC-2000-NBFLAC`.
+- JID/downloadId: `4d51b39b1908`.
+
+Result:
+
+- Lidarr release grab was accepted and routed to Mintarr's backend lane.
+- Durable backend row captured `target_album_id=7792` before ingest.
+- Backend state progressed `downloading -> importing -> imported`.
+- Path-map resolved the SAB completed path to a contained
+  `/sab-backend-complete/mintarr-music/...` path.
+- Mintarr copied the completed files into its managed work area and ran the
+  normal QC/import pipeline.
+- QC processed 13 FLAC files; FLAC Detective verdict was `AUTHENTIC`.
+- Decision: `ACCEPT`.
+- Import outcome: `MANUAL_IMPORTED`.
+- Derived status: `imported`.
+- Lidarr imported `13/13` FLAC trackfiles for album `7792`
+  (`percentOfTracks=100`).
+- Lidarr queue ended at `0`.
+- Mintarr output work dir was drained/removed; `audio_left=0`.
+
+Verdict: **happy path passes after the full-file confirmation fix**. This is the
+cleanest current proof that the SAB backend lane works end-to-end:
+
+```text
+Lidarr search/grab
+  -> Mintarr SAB-compatible addfile
+  -> SAB backend transfer in mintarr-music
+  -> path-map + containment
+  -> copy into Mintarr work dir
+  -> shared QC
+  -> Lidarr ManualImport
+  -> durable backend imported
+  -> audit MANUAL_IMPORTED
+  -> Lidarr queue empty
+```
+
+#### Dogfood bugs found and fixed before calling the lane valid
+
+The Windows SAB/Lidarr/NZBgeek dogfood found a set of integration bugs that
+unit tests did not expose:
+
+| Area | Finding |
+|---|---|
+| Path namespaces | Windows SAB paths needed explicit backend-path mapping into the Mintarr container. |
+| Lidarr validation | Mintarr had to advertise the backend category through `get_cats` or Lidarr refused the client. |
+| Album guard | Backend ingest needed to propagate `target_album_id` into the ManualImport guard. |
+| FLAC suffixes | Mixed-case `.Flac` files needed case-insensitive handling and case-only rename support on Windows mounts. |
+| Queue cleanup | Imported backend rows must hide stale `Verifying` rows from Lidarr. |
+| Audit sync | Imported backend records must be finalized from both immediate and restart/reconcile paths. |
+| Addfile | Real NZBgeek/Prowlarr grabs use SAB `addfile` multipart, not only `addurl`. |
+| Review recovery | Durable backend review state must rebuild/hold the paused Lidarr queue row after restart until the review is closed. |
+| Discard sync | Discarding a backend-held review must terminalize the durable backend row. |
+| Import confirmation | `MANUAL_IMPORTED` must wait for all submitted files to be accounted for or the output dir to be drained. |
+
+Verdict: **ADR-0014 SAB backend lane is live-validated for SAB/usenet**. qBit
+backend client primitives exist, but qBit is not yet live-wired/dogfooded as an
+end-to-end lane.
+
+### 2026-06-15 — Lidarr `RescanFolders` operational note (Codex)
+
+During the SAB dogfood a long Lidarr library rescan blocked release searches and
+queued import processing. Attempting `DELETE /api/v1/command/<id>` against the
+started `RescanFolders` command returned `409 Conflict`.
+
+Source review confirmed this is expected Lidarr behaviour: `CommandQueueManager`
+only cancels queued commands (`RemoveIfQueued`). A command that has already
+started is not cooperatively cancellable through Lidarr's public command API.
+
+Operational rule:
+
+- If `RescanFolders` is still queued, `DELETE /api/v1/command/<id>` can cancel
+  it.
+- If `RescanFolders` is already `started`, the supported API returns `409`.
+  The practical interruption mechanism is a controlled Lidarr restart, followed
+  by verification that `/api/v1/command` has no active `RescanFolders`.
+- Do not edit Lidarr's command table directly. Restart is safer than mutating
+  the SQLite command state under a running Lidarr process.
+
+The controlled restart cleared the rescan and allowed the SAB dogfood to
+continue. This is an operational workaround for Lidarr task semantics, not a
+Mintarr import-policy issue.

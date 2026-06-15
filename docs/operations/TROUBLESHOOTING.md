@@ -100,6 +100,39 @@ If Mintarr has no active jobs but Lidarr still has queue rows, the issue is in
 Lidarr's tracked-download state. Do not remove rows blindly if an import is
 still running.
 
+### Lidarr `RescanFolders` blocks searches or imports
+
+Symptom:
+
+- Mintarr has no active import problem, but Lidarr release searches return
+  errors or time out.
+- `/dashboard/v1/summary` reports a started `RescanFolders` command.
+- Lidarr shows messages such as `Importing N tracks` or `Identifying album
+  N/M`.
+- `ManualImport` or `ProcessMonitoredDownloads` commands are queued behind the
+  rescan.
+
+Important Lidarr behaviour:
+
+- `DELETE /api/v1/command/<id>` can cancel queued commands.
+- It cannot cancel a command that is already `started`; Lidarr returns
+  `409 Conflict`.
+
+This is not a Mintarr queue bug. Lidarr's command queue only removes queued
+commands through that API. A running `RescanFolders` has no public cooperative
+cancel endpoint.
+
+Safe operator options:
+
+1. If the command is queued, cancel it with Lidarr's API or UI.
+2. If it is already started, either wait for it to finish or do a controlled
+   Lidarr restart.
+3. After a restart, verify `/api/v1/command` has no active `RescanFolders`
+   before retrying release search or import dogfood.
+
+Do not edit Lidarr's SQLite command tables directly while Lidarr is running.
+Restarting Lidarr is safer than manually mutating command state.
+
 ## 5. Soulseek issues
 
 ### Soulseek download stays at N-1 files

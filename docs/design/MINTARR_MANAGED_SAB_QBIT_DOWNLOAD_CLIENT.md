@@ -1,8 +1,9 @@
 # Mintarr-managed SAB/qBittorrent download-client lane
 
 > **Type:** Design document
-> **Version:** 0.1 - 2026-06-13
-> **Status:** Proposed
+> **Version:** 0.2 - 2026-06-15
+> **Status:** SAB backend lane shipped and live-validated; qBittorrent backend
+> client primitives shipped, end-to-end qBit lane pending
 > **Related:** [ADR-0012 QC import-gate scope](../architecture/adr/0012-qc-import-gate-scope.md), [ADR-0008 strategic positioning](../architecture/adr/0008-strategic-positioning.md), [Download client category gate](DOWNLOAD_CLIENT_CATEGORY_GATE.md), [Phase 4 SAB/qBit completed ingest](PHASE4_SAB_QBIT_COMPLETED_INGEST.md), [Lidarr integration](../specs/LIDARR_INTEGRATION.md)
 
 ## 1. Problem
@@ -266,11 +267,16 @@ It must not say:
 - Decide whether SAB or qBittorrent is first. SAB is likely simpler because
   post-import cleanup is less constrained by seeding.
 
+**Status:** shipped. The boundary is locked in
+[ADR-0014](../architecture/adr/0014-mintarr-managed-download-backend.md).
+
 ### Slice 2 - Backend client abstraction
 
 - Add mockable SAB/qBit backend clients for submit/status/cancel.
 - No Lidarr exposure yet.
 - Unit-test category/path handling and secret redaction.
+
+**Status:** shipped for SAB and qBittorrent client primitives.
 
 ### Slice 3 - Mintarr-managed queue state
 
@@ -278,11 +284,16 @@ It must not say:
 - Add recovery/reconciliation.
 - Add queue/history presentation from Mintarr state.
 
+**Status:** shipped.
+
 ### Slice 4 - SAB-compatible addurl integration
 
 - Allow Lidarr AddUrl to create a Mintarr backend job.
 - Report backend progress through Mintarr's existing SAB-compatible endpoints.
 - Ensure cancel/remove/blocklist propagates to backend.
+
+**Status:** shipped for SAB. Real usenet dogfood also required SAB `addfile`
+multipart support, which is included.
 
 ### Slice 5 - Completion ingest
 
@@ -290,11 +301,17 @@ It must not say:
 - Copy through the shared completed-folder safety model.
 - Enqueue normal source-grab pipeline.
 
+**Status:** shipped for SAB. Windows SAB deployments also require
+`MINTARR_SAB_BACKEND_PATH_MAP` when SAB reports host-native paths that differ
+from Mintarr's container mount.
+
 ### Slice 6 - Dashboard onboarding and coverage display
 
 - Show enabled backend lanes, categories, path validation, and coverage
   semantics.
 - Make "direct Lidarr SAB/qBit imports are not gated" visible.
+
+**Status:** shipped for SAB readiness checks.
 
 ### Slice 7 - Dogfood
 
@@ -302,6 +319,15 @@ It must not say:
 - Disable direct Lidarr auto-import for that category.
 - Run one SAB/qBit music release end-to-end:
   search -> grab -> backend download -> QC -> review/import -> cleanup.
+
+**Status:** SAB lane live-validated against real Lidarr + SAB + NZBgeek/Prowlarr.
+The dogfood covered both review and import outcomes:
+
+- fake-hi-res release held for review and safely discarded;
+- clean FLAC release imported end-to-end with `MANUAL_IMPORTED`, no stale queue
+  row, and all submitted files accounted for.
+
+The qBittorrent end-to-end lane remains pending.
 
 ## 10. Non-goals
 

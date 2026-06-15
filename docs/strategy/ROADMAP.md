@@ -126,14 +126,24 @@ Restore implementation follows [Phase 3 restore endpoint design](../design/PHASE
 
 **Goal:** Mintarr supports the realistic source mix of a self-hosted music collector.
 
-**Status:** partial (TIDAL, LocalFolder, Soulseek, SAB completed-folder, and qBittorrent completed-folder shipped)
+**Status:** partial (TIDAL, LocalFolder, Soulseek, SAB completed-folder,
+qBittorrent completed-folder, and the Mintarr-managed SAB backend lane shipped)
 
 **Scope:**
 
 - **F3.5a Soulseek/slskd completed-folder ingest** — implemented ([F3.5a completed-folder ingest design](../design/F3.5_SOULSEEK_COMPLETED_INGEST.md))
 - **F3.5b Soulseek/slskd HTTP search and download** — implemented ([F3.5B Soulseek slskd trigger](../design/F3.5B_SOULSEEK_SLSKD_TRIGGER.md))
 - **SAB/qBit completed-category ingest** — implemented as `sab_usenet` and `qbittorrent_torrent` completed-folder source connectors ([Phase 4 SAB/qBit completed ingest](../design/PHASE4_SAB_QBIT_COMPLETED_INGEST.md)). Scope is locked by [ADR-0012](../architecture/adr/0012-qc-import-gate-scope.md): Mintarr gates operator-routed completed folders; it does not manage download clients, and the universal "QC everything Lidarr imports" gate is a deferred future phase.
-- **Mintarr-managed SAB/qBit music lane** — proposed future design for automatic Lidarr-triggered SAB/qBit music where Lidarr talks to Mintarr and Mintarr uses SAB/qBit only as backend transfer engines ([Mintarr-managed SAB/qBit download-client lane](../design/MINTARR_MANAGED_SAB_QBIT_DOWNLOAD_CLIENT.md)). This is the robust path for "all music via Mintarr" without watching shared TV/movie completed roots.
+- **Mintarr-managed SAB/qBit music lane** — SAB backend lane shipped and
+  live-validated for automatic Lidarr-triggered usenet music: Lidarr talks to
+  Mintarr as the SAB-compatible download client, Mintarr submits to SAB as a
+  backend transfer engine in a dedicated category, then copies through shared QC
+  before Lidarr ManualImport ([Mintarr-managed SAB/qBit download-client
+  lane](../design/MINTARR_MANAGED_SAB_QBIT_DOWNLOAD_CLIENT.md);
+  [ADR-0014](../architecture/adr/0014-mintarr-managed-download-backend.md)).
+  qBittorrent backend primitives exist, but the qBit end-to-end lane remains
+  pending live wiring/dogfood. This is the robust path for "all music via
+  Mintarr" without watching shared TV/movie completed roots.
 - **CD-rip / private-tracker torrent evidence lane** — design pending; depends on Phase 1 connector model
 - **YouTube fallback connector (Tubifarry-style)** — design pending; explicitly tagged as never-an-upgrade-source
 

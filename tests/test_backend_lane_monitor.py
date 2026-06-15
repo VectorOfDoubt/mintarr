@@ -296,6 +296,42 @@ def test_reconcile_restores_review_hold_with_hydrated_title(monitor_env, monkeyp
     assert server._jobs["jid-1"]["status"] == "review_required"
 
 
+def test_queue_poll_includes_durable_review_hold_after_restart(monitor_env):
+    import state_db
+
+    server = monitor_env
+    _seed(server, state="review", with_projection=False)
+
+    client = server.app.test_client()
+    q = client.get(f"/sabnzbd/api?mode=queue&apikey={_key()}").get_json()
+
+    slots = q["queue"]["slots"]
+    assert len(slots) == 1
+    assert slots[0]["nzo_id"] == "jid-1"
+    assert slots[0]["status"] == "Paused"
+    assert state_db.get_backend_job("jid-1")["state"] == "review"
+
+
+def test_queue_poll_does_not_resurrect_closed_backend_review(monitor_env):
+    import state_db
+
+    server = monitor_env
+    _seed(server, state="review", with_projection=False)
+    state_db.upsert_record(
+        {
+            "jid": "jid-1",
+            "title": "Artist - Album",
+            "lifecycle": {"state": "discarded"},
+        },
+        derived_status="discarded",
+    )
+
+    client = server.app.test_client()
+    q = client.get(f"/sabnzbd/api?mode=queue&apikey={_key()}").get_json()
+
+    assert q["queue"]["slots"] == []
+
+
 # ---- integration: queue poll drives reconcile ----------------------------
 
 

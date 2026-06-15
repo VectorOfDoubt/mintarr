@@ -197,6 +197,31 @@ def _visible_in_sab_queue(jid: str, job: dict) -> bool:
     )
 
 
+def _backend_review_row_visible(row: dict) -> bool:
+    """Return whether a durable backend review row still needs a Lidarr hold."""
+    try:
+        record = state_db.get_record(str(row.get("jid") or ""))
+    except Exception:
+        record = None
+    # If the record is gone or still actionable, keep the hold. If an operator
+    # has closed it (discard/promote/expire), do not resurrect a queue row from
+    # the stale durable backend review state.
+    return record is None or record.get("derived_status") == "needs_review"
+
+
+def _backend_review_queue_slot(row: dict) -> dict:
+    pseudo = {
+        "id": row.get("jid"),
+        "category": row.get("category"),
+        "status": "review_required",
+        "lidarr_hold": True,
+        "title": row.get("release_title") or row.get("jid"),
+        "size": 0,
+        "percent": 100,
+    }
+    return _sab_queue_slot(str(row.get("jid") or ""), pseudo)
+
+
 def _v2_verification_enabled() -> bool:
     return os.environ.get("V2_VERIFICATION_ENABLED", "false").lower() in (
         "1",
@@ -1184,7 +1209,8 @@ def _reconcile_backend_jobs() -> None:
             # Review is operator-owned, but the Lidarr-visible hold must survive
             # restart/redeploy; otherwise Lidarr sees an empty queue and can
             # re-grab while the review is still pending.
-            _restore_backend_review_projection(jid, job, source_type, backend_id)
+            if _backend_review_row_visible(job):
+                _restore_backend_review_projection(jid, job, source_type, backend_id)
             continue
         client = _backend_client_for_source(source_type)
         if client is None:
@@ -1412,6 +1438,7 @@ def sab():
         _reconcile_imported_backend_record_audits()
         with _jobs_lock:
             slots = []
+            visible_ids = set()
             for jid, j in _jobs.items():
                 # review_required jobs carry lidarr_hold=True so they stay visible to
                 # Lidarr as a paused download (review-hold invariant), preventing a
@@ -1420,6 +1447,24 @@ def sab():
                 # "Verifying" rows in Lidarr's queue.
                 if _visible_in_sab_queue(jid, j):
                     slots.append(_sab_queue_slot(jid, j))
+                    visible_ids.add(jid)
+        try:
+            import state_db as _state_db
+
+            for row in _state_db.list_active_backend_jobs():
+                jid = str(row.get("jid") or "")
+                if (
+                    jid
+                    and jid not in visible_ids
+                    and row.get("state") == "review"
+                    and _backend_review_row_visible(row)
+                ):
+                    slots.append(_backend_review_queue_slot(row))
+        except Exception:
+            log.debug(
+                "[backend-lane] durable review queue fallback failed", exc_info=True
+            )
+        with _jobs_lock:
             mb_total = sum(float(slot["mb"]) for slot in slots)
             mb_left = sum(float(slot["mbleft"]) for slot in slots)
             return jsonify(

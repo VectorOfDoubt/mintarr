@@ -1116,6 +1116,44 @@ def _generic_backend_release_title(title: str | None, backend_id: str | None) ->
     return bool(backend_id and title == f"backend release {backend_id}")
 
 
+def _restore_backend_review_projection(
+    jid: str, job: dict, source_type: str, backend_id: str
+) -> None:
+    """Rebuild Lidarr-visible review-hold projection after restart/redeploy."""
+    import state_db
+
+    client = _backend_client_for_source(source_type)
+    if client is not None and _generic_backend_release_title(
+        job.get("release_title"), backend_id
+    ):
+        try:
+            status = client.status(backend_id)
+            display_name = (getattr(status, "display_name", None) or "").strip()
+        except Exception:
+            display_name = ""
+        if display_name and display_name != job.get("release_title"):
+            updated = state_db.update_backend_job(jid, release_title=display_name)
+            if updated is not None:
+                job = updated
+
+    with _jobs_lock:
+        proj = _jobs.get(jid)
+        if proj is None:
+            proj = _jobs[jid] = {
+                "id": jid,
+                "category": job.get("category"),
+                "size": 0,
+                "source_type": source_type,
+                "source_id": backend_id,
+                "created_at": job.get("created_at") or time.time(),
+            }
+        proj["title"] = job.get("release_title") or jid
+        proj["status"] = "review_required"
+        proj["lidarr_hold"] = True
+        proj["percent"] = 100
+        _save_jobs()
+
+
 def _reconcile_backend_jobs() -> None:
     """Poll backend status for active backend jobs and reconcile state (4b).
 
@@ -1139,9 +1177,14 @@ def _reconcile_backend_jobs() -> None:
         if not (jid and backend_id):
             continue
         # Once ingest has started (slice 5), the worker job owns the lifecycle
-        # and the _jobs projection — the reconciler must not touch it. review is
-        # likewise worker/operator-owned (the transfer is already done).
-        if job.get("state") in ("importing", "review"):
+        # and the _jobs projection — the reconciler must not touch it.
+        if job.get("state") == "importing":
+            continue
+        if job.get("state") == "review":
+            # Review is operator-owned, but the Lidarr-visible hold must survive
+            # restart/redeploy; otherwise Lidarr sees an empty queue and can
+            # re-grab while the review is still pending.
+            _restore_backend_review_projection(jid, job, source_type, backend_id)
             continue
         client = _backend_client_for_source(source_type)
         if client is None:

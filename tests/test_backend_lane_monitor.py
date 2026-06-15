@@ -254,6 +254,48 @@ def test_reconcile_skips_projection_when_durable_update_raises(
     assert server._jobs["jid-1"]["status"] == "downloading"
 
 
+def test_reconcile_restores_review_hold_projection_after_restart(monitor_env):
+    import state_db
+
+    server = monitor_env
+    _seed(server, state="review", with_projection=False)
+    assert "jid-1" not in server._jobs
+
+    server._reconcile_backend_jobs()
+
+    assert state_db.get_backend_job("jid-1")["state"] == "review"
+    assert server._jobs["jid-1"]["status"] == "review_required"
+    assert server._jobs["jid-1"]["lidarr_hold"] is True
+    assert server._jobs["jid-1"]["percent"] == 100
+
+
+def test_reconcile_restores_review_hold_with_hydrated_title(monitor_env, monkeypatch):
+    import state_db
+    from download_backend import BackendState
+
+    server = monitor_env
+    state_db.create_backend_job(
+        "jid-1",
+        source_type="sab_usenet_backend",
+        category="mintarr-music",
+        backend_job_id="NZO-1",
+        state="review",
+        release_title="backend release NZO-1",
+    )
+    _stub_status(
+        monkeypatch,
+        BackendState.COMPLETED,
+        progress=100.0,
+        display_name="Artist - Album Proper",
+    )
+
+    server._reconcile_backend_jobs()
+
+    assert state_db.get_backend_job("jid-1")["release_title"] == "Artist - Album Proper"
+    assert server._jobs["jid-1"]["title"] == "Artist - Album Proper"
+    assert server._jobs["jid-1"]["status"] == "review_required"
+
+
 # ---- integration: queue poll drives reconcile ----------------------------
 
 

@@ -943,6 +943,37 @@ def get_record(jid: str) -> dict | None:
         return None
 
 
+def update_record_import_outcome(
+    jid: str, *, import_outcome: str, derived_status: str | None = None
+) -> dict | None:
+    """Patch a record's import outcome/status without needing a sidecar rewrite."""
+    if not _ensure_initialized():
+        return None
+    try:
+        jid_text = str(jid or "").strip()
+        outcome_text = str(import_outcome or "").strip()
+        if not (jid_text and outcome_text):
+            return None
+        with _lock, _connect() as conn:
+            cur = conn.execute(
+                """
+                UPDATE records
+                SET import_outcome = ?, derived_status = ?, updated_at = ?
+                WHERE jid = ?
+                """,
+                (outcome_text, derived_status, time.time(), jid_text),
+            )
+            if int(cur.rowcount or 0) == 0:
+                return None
+            row = conn.execute(
+                "SELECT * FROM records WHERE jid = ?", (jid_text,)
+            ).fetchone()
+            return dict(row) if row else None
+    except Exception:
+        log.exception("state_db.update_record_import_outcome failed jid=%s", jid)
+        return None
+
+
 def list_records(
     *,
     decision: list[str] | None = None,
@@ -2135,6 +2166,30 @@ def list_backend_jobs(
 def list_active_backend_jobs() -> list[dict]:
     """Return all non-terminal backend jobs for restart reconciliation."""
     return list_backend_jobs(active_only=True, limit=10_000)[1]
+
+
+def list_imported_backend_jobs_with_pending_records(limit: int = 1_000) -> list[dict]:
+    """Return imported backend jobs whose mirrored record still says PENDING."""
+    if not _ensure_initialized():
+        return []
+    try:
+        with _lock, _connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT bj.*
+                FROM backend_jobs bj
+                JOIN records r ON r.jid = bj.jid
+                WHERE bj.state = 'imported'
+                  AND r.import_outcome = 'PENDING'
+                ORDER BY bj.updated_at DESC
+                LIMIT ?
+                """,
+                (int(limit),),
+            ).fetchall()
+            return [_backend_job_row(r) for r in rows]
+    except Exception:
+        log.exception("state_db.list_imported_backend_jobs_with_pending_records failed")
+        return []
 
 
 # ============================================================================

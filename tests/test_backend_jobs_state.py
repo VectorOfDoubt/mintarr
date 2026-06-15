@@ -180,6 +180,59 @@ def test_list_orders_and_filters_active(tmp_path):
     assert [j["jid"] for j in state_db.list_active_backend_jobs()] == ["b"]
 
 
+def test_list_imported_backend_jobs_with_pending_records(tmp_path):
+    _fresh_db(tmp_path)
+    state_db.create_backend_job(
+        "imported-pending",
+        source_type="s",
+        category="c",
+        state="imported",
+        release_title="Imported Pending",
+    )
+    state_db.create_backend_job(
+        "imported-done",
+        source_type="s",
+        category="c",
+        state="imported",
+        release_title="Imported Done",
+    )
+    state_db.create_backend_job(
+        "active-pending",
+        source_type="s",
+        category="c",
+        state="completed",
+        release_title="Active Pending",
+    )
+    state_db.upsert_record(
+        {
+            "jid": "imported-pending",
+            "v2_import_outcome": "PENDING",
+            "v2_verification_decision": "ACCEPT",
+        },
+        derived_status="pending",
+    )
+    state_db.upsert_record(
+        {
+            "jid": "imported-done",
+            "v2_import_outcome": "MANUAL_IMPORTED",
+            "v2_verification_decision": "ACCEPT",
+        },
+        derived_status="imported",
+    )
+    state_db.upsert_record(
+        {
+            "jid": "active-pending",
+            "v2_import_outcome": "PENDING",
+            "v2_verification_decision": "ACCEPT",
+        },
+        derived_status="pending",
+    )
+
+    rows = state_db.list_imported_backend_jobs_with_pending_records()
+
+    assert [row["jid"] for row in rows] == ["imported-pending"]
+
+
 # ---- reconciliation mapping (pure) ---------------------------------------
 
 

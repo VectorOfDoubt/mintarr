@@ -1327,6 +1327,7 @@ def sab():
     if mode == "queue":
         _reconcile_pending_import_jobs()
         _reconcile_backend_jobs()
+        _reconcile_imported_backend_record_audits()
         with _jobs_lock:
             slots = []
             for jid, j in _jobs.items():
@@ -2169,14 +2170,72 @@ def _mirror_backend_ingest_outcome(jid: str | None, state: str) -> None:
         job = state_db.get_backend_job(jid)
         if job is None or job.get("state") != "importing":
             return
-        state_db.update_backend_job(
+        updated = state_db.update_backend_job(
             jid,
             state=state,
             finished=state in state_db.BACKEND_JOB_TERMINAL_STATES or None,
         )
+        if updated is None:
+            return
+        if state == "imported":
+            _finalize_imported_backend_record(jid)
         log.info("[backend-lane] ingest outcome jid=%s -> %s", jid, state)
     except Exception:
         log.exception("[backend-lane] mirror ingest outcome failed jid=%s", jid)
+
+
+def _finalize_imported_backend_record(jid: str | None) -> bool:
+    """Mirror durable backend imported-state into the record audit surface.
+
+    Lidarr ManualImport can return while Lidarr's command is still queued/started,
+    leaving the record as ``PENDING``. For backend-lane jobs the durable
+    ``backend_jobs.state=imported`` is the later truth that QC+ManualImport
+    completed, so the sidecar and DB record must be closed as imported too.
+    """
+    if not jid:
+        return False
+    path, record = _read_verification_sidecar(jid)
+    try:
+        import state_db
+        from dashboard import derive_status
+        from dashboard_cache import invalidate_prefix
+
+        if record is not None:
+            if record.get("v2_import_outcome") not in ("PENDING", "MANUAL_IMPORTED"):
+                return False
+            record["v2_import_outcome"] = "MANUAL_IMPORTED"
+            if path is not None:
+                _atomic_write_json(path, record)
+            state_db.upsert_from_sidecar(record, derived_status=derive_status(record))
+        else:
+            updated = state_db.update_record_import_outcome(
+                jid, import_outcome="MANUAL_IMPORTED", derived_status="imported"
+            )
+            if updated is None:
+                return False
+        with _jobs_lock:
+            output_dir_raw = _jobs.get(jid, {}).get("output_dir")
+        output_dir = Path(output_dir_raw or OUTPUT_BASE / jid)
+        _complete_lidarr_import_without_queue_delete(jid, output_dir)
+        invalidate_prefix("summary")
+        invalidate_prefix("records")
+        return True
+    except Exception:
+        log.exception("[backend-lane] finalize imported record failed jid=%s", jid)
+        return False
+
+
+def _reconcile_imported_backend_record_audits() -> None:
+    """Close PENDING records for durable imported backend jobs after restart/redeploy."""
+    try:
+        import state_db
+
+        rows = state_db.list_imported_backend_jobs_with_pending_records()
+    except Exception:
+        log.debug("[backend-lane] list imported pending records failed", exc_info=True)
+        return
+    for row in rows:
+        _finalize_imported_backend_record(row.get("jid"))
 
 
 def _execute_backend_completed_grab_job(

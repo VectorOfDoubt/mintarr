@@ -7,6 +7,7 @@ is persisted before the copy job is enqueued. No direct ManualImport here.
 
 from __future__ import annotations
 
+import json
 import os
 
 import pytest
@@ -87,14 +88,48 @@ def ingest_env(tmp_path, monkeypatch):
 
     root = tmp_path / "backend-complete"
     root.mkdir()
+    output = tmp_path / "output"
+    output.mkdir()
     monkeypatch.setenv("MINTARR_SAB_BACKEND_ENABLED", "true")
     monkeypatch.setenv("MINTARR_SAB_BACKEND_URL", "http://sab")
     monkeypatch.setenv("MINTARR_SAB_BACKEND_API_KEY", "KEY")
     monkeypatch.setenv("MINTARR_SAB_BACKEND_CATEGORY", "mintarr-music")
     monkeypatch.setenv("MINTARR_SAB_BACKEND_DOWNLOAD_ROOT", str(root))
+    monkeypatch.setattr(server, "OUTPUT_BASE", output)
     monkeypatch.setattr(server, "_jobs", {})
     monkeypatch.setattr(server, "_save_jobs", lambda: None)
     return server, root
+
+
+def _pending_sidecar(jid="jid-1"):
+    return {
+        "jid": jid,
+        "title": "Artist - Album",
+        "album_ids": [1234],
+        "ts": 1779600000.0,
+        "v2_verification_decision": "ACCEPT",
+        "v2_import_outcome": "PENDING",
+        "v2_score": 85,
+        "verdict": "AUTHENTIC",
+        "lifecycle": {
+            "state": "created",
+            "created_at": 1779600000.0,
+            "actor": None,
+        },
+        "source_type": "backend_completed",
+    }
+
+
+def _write_pending_sidecar(server, jid="jid-1"):
+    import state_db
+    from dashboard import derive_status
+
+    sidecar = _pending_sidecar(jid)
+    path = server.OUTPUT_BASE / jid / "verification.json"
+    path.parent.mkdir(parents=True)
+    path.write_text(json.dumps(sidecar))
+    state_db.upsert_from_sidecar(sidecar, derived_status=derive_status(sidecar))
+    return path
 
 
 def _client_with_root(root):
@@ -248,6 +283,66 @@ def test_ingest_outcome_mirrored_back(ingest_env, monkeypatch, proj, expected):
     server._execute_backend_completed_grab_job({"jid": "jid-1", "id": 1})
 
     assert state_db.get_backend_job("jid-1")["state"] == expected
+
+
+def test_imported_backend_ingest_closes_pending_record_audit(ingest_env, monkeypatch):
+    import state_db
+
+    server, _root = ingest_env
+    _seed_importing(server)
+    sidecar_path = _write_pending_sidecar(server)
+    server._jobs["jid-1"] = {
+        "id": "jid-1",
+        "status": "completed",
+        "output_dir": str(server.OUTPUT_BASE / "jid-1"),
+    }
+    monkeypatch.setattr(
+        server, "_execute_source_grab_job", lambda job, name: ("completed", {})
+    )
+
+    server._execute_backend_completed_grab_job({"jid": "jid-1", "id": 1})
+
+    assert state_db.get_backend_job("jid-1")["state"] == "imported"
+    assert (
+        json.loads(sidecar_path.read_text())["v2_import_outcome"] == "MANUAL_IMPORTED"
+    )
+    rec = state_db.get_record("jid-1")
+    assert rec["import_outcome"] == "MANUAL_IMPORTED"
+    assert rec["derived_status"] == "imported"
+    assert server._jobs["jid-1"]["hidden_from_lidarr"] is True
+
+
+def test_queue_poll_reconciles_imported_backend_pending_record_after_restart(
+    ingest_env,
+):
+    import state_db
+
+    server, _root = ingest_env
+    sidecar_path = _write_pending_sidecar(server)
+    state_db.create_backend_job(
+        "jid-1",
+        source_type="sab_usenet_backend",
+        category="mintarr-music",
+        backend_job_id="NZO-1",
+        state="imported",
+        release_title="Artist - Album",
+    )
+    # Simulate a redeploy/restart: durable state remains, in-memory projection is gone.
+    assert server._jobs == {}
+
+    q = (
+        server.app.test_client()
+        .get(f"/sabnzbd/api?mode=queue&apikey={os.environ['TIDALHIRES_API_KEY']}")
+        .get_json()
+    )
+
+    assert q["queue"]["slots"] == []
+    assert (
+        json.loads(sidecar_path.read_text())["v2_import_outcome"] == "MANUAL_IMPORTED"
+    )
+    rec = state_db.get_record("jid-1")
+    assert rec["import_outcome"] == "MANUAL_IMPORTED"
+    assert rec["derived_status"] == "imported"
 
 
 def test_imported_backend_job_is_not_left_visible_in_sab_queue(ingest_env):

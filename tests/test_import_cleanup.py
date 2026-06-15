@@ -194,6 +194,60 @@ def test_manualimport_success_does_not_delete_lidarr_queue(tmp_path, mocker):
     assert server._jobs[jid]["hidden_from_lidarr"] is True
 
 
+def test_wait_for_manualimport_progress_requires_every_submitted_file(mocker):
+    files = [
+        {"path": "/downloads/job/01.flac"},
+        {"path": "/downloads/job/02.flac"},
+        {"path": "/downloads/job/03.flac"},
+    ]
+    observed_required = []
+
+    def fake_count(jid, api, key, count_files, pre_counts, required_count, **kwargs):
+        observed_required.append(required_count)
+        return 2
+
+    mocker.patch.object(server, "_count_manualimport_progress", side_effect=fake_count)
+    sleep_mock = mocker.patch.object(server.time, "sleep")
+
+    imported_count, required_count = server._wait_for_manualimport_progress(
+        "jid-1",
+        "http://lidarr/api/v1",
+        "lidarr-key",
+        files,
+        {20: 0},
+        timeout_s=2,
+        interval_s=1,
+    )
+
+    assert required_count == 3
+    assert imported_count == 2
+    assert observed_required == [3, 3, 3]
+    assert sleep_mock.call_count == 2
+
+
+def test_wait_for_manualimport_progress_returns_when_all_files_accounted(mocker):
+    files = [
+        {"path": "/downloads/job/01.flac"},
+        {"path": "/downloads/job/02.flac"},
+        {"path": "/downloads/job/03.flac"},
+    ]
+    mocker.patch.object(server, "_count_manualimport_progress", side_effect=[2, 3])
+    sleep_mock = mocker.patch.object(server.time, "sleep")
+
+    imported_count, required_count = server._wait_for_manualimport_progress(
+        "jid-1",
+        "http://lidarr/api/v1",
+        "lidarr-key",
+        files,
+        {20: 0},
+        timeout_s=2,
+        interval_s=1,
+    )
+
+    assert (imported_count, required_count) == (3, 3)
+    sleep_mock.assert_called_once_with(1)
+
+
 def test_soulseek_album_title_guard_handles_year_suffix_and_scene_mismatch():
     assert server._soulseek_album_title_compatible(
         "Artist - Album (2024) [Soulseek] [FLAC]",

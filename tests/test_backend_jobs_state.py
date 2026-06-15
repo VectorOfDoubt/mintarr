@@ -130,10 +130,12 @@ def test_update_patches_only_given_fields(tmp_path):
         "jid-1",
         state="completed",
         backend_path="/backend/complete/Album",
+        target_album_id=9829,
         finished=True,
     )
     assert updated["state"] == "completed"
     assert updated["backend_path"] == "/backend/complete/Album"
+    assert updated["target_album_id"] == 9829
     assert updated["finished_at"] is not None
     # untouched fields preserved
     assert updated["category"] == "c"

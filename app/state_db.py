@@ -2088,6 +2088,7 @@ def update_backend_job(
     state: str | None = None,
     backend_job_id: str | None = None,
     backend_path: str | None = None,
+    target_album_id: int | None = None,
     release_title: str | None = None,
     error_text: str | None = None,
     finished: bool | None = None,
@@ -2111,6 +2112,9 @@ def update_backend_job(
         if backend_path is not None:
             sets.append("backend_path = ?")
             params.append(backend_path)
+        if target_album_id is not None:
+            sets.append("target_album_id = ?")
+            params.append(int(target_album_id))
         if release_title is not None:
             sets.append("release_title = ?")
             params.append(release_title)

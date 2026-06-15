@@ -116,6 +116,28 @@ def test_reconcile_downloading_updates_progress(monitor_env, monkeypatch):
     assert server._jobs["jid-1"]["percent"] == 42
 
 
+def test_reconcile_captures_target_album_id_from_lidarr_context(
+    monitor_env, monkeypatch
+):
+    import state_db
+    from download_backend import BackendState
+
+    server = monitor_env
+    _seed(server)
+    _stub_status(monkeypatch, BackendState.DOWNLOADING, progress=42.0)
+    monkeypatch.setattr(server, "_get_lidarr_key", lambda: "lidarr-key")
+    monkeypatch.setattr(
+        server,
+        "_infer_lidarr_target_album_id",
+        lambda jid, api, key: 9829,
+    )
+
+    server._reconcile_backend_jobs()
+
+    assert state_db.get_backend_job("jid-1")["target_album_id"] == 9829
+    assert server._jobs["jid-1"]["target_album_id"] == 9829
+
+
 def test_reconcile_hydrates_generic_title_from_backend_status(monitor_env, monkeypatch):
     import state_db
     from download_backend import BackendState

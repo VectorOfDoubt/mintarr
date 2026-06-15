@@ -141,6 +141,41 @@ def test_verification_get_reconciles_pending_import_from_lidarr_history(
     cleanup.assert_not_called()
 
 
+def test_verification_get_keeps_pending_when_history_exists_but_sources_remain(
+    tmp_path, monkeypatch, mocker
+):
+    output_base = _patch_paths(monkeypatch, tmp_path)
+    output_dir = output_base / "abc12345"
+    output_dir.mkdir(parents=True)
+    (output_dir / "01.flac").write_bytes(b"flac")
+    path = server._write_verification_sidecar(
+        "abc12345",
+        _result(decision="ACCEPT", outcome="PENDING"),
+        output_dir,
+    )
+    server._jobs["abc12345"] = {
+        "id": "abc12345",
+        "output_dir": str(output_dir),
+        "status": "processing",
+    }
+
+    monkeypatch.setenv("LIDARR_API_URL", "http://lidarr/api/v1")
+    mocker.patch.object(server, "_get_lidarr_key", return_value="lidarr-key")
+    mocker.patch.object(server, "_count_lidarr_imported_history", return_value=1)
+    mocker.patch.object(server, "_count_lidarr_trackfiles", return_value=0)
+    mocker.patch.object(server, "_lidarr_has_pending_import_for_jid", return_value=True)
+    cleanup = mocker.patch.object(server, "_cleanup_lidarr_queue")
+    mocker.patch.object(server, "_save_jobs")
+
+    client = server.app.test_client()
+    response = client.get(f"/verification/abc12345?apikey={VALID_KEY}")
+
+    assert response.status_code == 200
+    assert response.get_json()["v2_import_outcome"] == "PENDING"
+    assert json.loads(path.read_text())["v2_import_outcome"] == "PENDING"
+    cleanup.assert_not_called()
+
+
 def test_verification_get_marks_orphaned_pending_import_failed(
     tmp_path, monkeypatch, mocker
 ):

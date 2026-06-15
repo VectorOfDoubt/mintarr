@@ -1190,6 +1190,50 @@ def _restore_backend_review_projection(
         _save_jobs()
 
 
+def _capture_backend_target_album_id(jid: str, job: dict) -> dict:
+    """Persist a trusted Lidarr target albumId for a backend job when available.
+
+    Real SAB addfile requests do not carry Lidarr's albumId. Once Lidarr has
+    accepted our returned nzo_id, its queue/history row does. Capture that exact
+    row while the backend job is active so the later ManualImport guard can
+    reject a mismatch before mutating the library.
+    """
+    if job.get("target_album_id") not in (None, ""):
+        return job
+    api = os.environ.get("LIDARR_API_URL", "http://host.docker.internal:8686/api/v1")
+    key = _get_lidarr_key()
+    if not key:
+        return job
+    album_id = _infer_lidarr_target_album_id(jid, api, key)
+    if album_id is None:
+        return job
+    try:
+        import state_db
+
+        updated = state_db.update_backend_job(jid, target_album_id=album_id)
+    except Exception:
+        log.debug(
+            "[backend-lane] target albumId persist raised jid=%s",
+            jid,
+            exc_info=True,
+        )
+        return job
+    if updated is None:
+        log.warning(
+            "[backend-lane] target albumId did not persist; jid=%s albumId=%s",
+            jid,
+            album_id,
+        )
+        return job
+    with _jobs_lock:
+        projected = _jobs.get(jid)
+        if projected is not None:
+            projected["target_album_id"] = album_id
+            _save_jobs()
+    log.info("[backend-lane] captured target albumId=%s jid=%s", album_id, jid)
+    return updated
+
+
 def _reconcile_backend_jobs() -> None:
     """Poll backend status for active backend jobs and reconcile state (4b).
 
@@ -1226,6 +1270,7 @@ def _reconcile_backend_jobs() -> None:
         client = _backend_client_for_source(source_type)
         if client is None:
             continue
+        job = _capture_backend_target_album_id(jid, job)
         try:
             status = client.status(backend_id)
         except Exception:
@@ -4552,7 +4597,7 @@ def _count_manualimport_progress(
     key: str,
     files: list[dict],
     pre_counts: dict,
-    import_threshold: int,
+    required_count: int,
     *,
     context: str = "ManualImport",
 ) -> int:
@@ -4568,18 +4613,15 @@ def _count_manualimport_progress(
             imported_count += max(0, len(tfs_after) - pre_counts.get(aid, 0))
         except Exception:
             pass
-    if imported_count < import_threshold:
+    if imported_count < required_count:
         imported_count = max(
             imported_count, _count_lidarr_imported_history(jid, api, key)
         )
 
-    if imported_count < import_threshold:
+    if imported_count < required_count:
         current_trackfiles = _count_lidarr_trackfiles(pre_counts.keys(), api, key)
         missing_sources = _count_missing_manualimport_sources(files)
-        if (
-            current_trackfiles >= import_threshold
-            and missing_sources >= import_threshold
-        ):
+        if current_trackfiles >= required_count and missing_sources >= required_count:
             log.info(
                 "[%s] %s registered files even though command/history did not confirm "
                 "(trackfiles=%d, sources missing=%d/%d)",
@@ -4602,22 +4644,22 @@ def _wait_for_manualimport_progress(
     pre_counts: dict,
     *,
     context: str = "ManualImport",
-    timeout_s: int = 20,
+    timeout_s: int = 90,
     interval_s: int = 2,
 ) -> tuple[int, int]:
-    """Poll Lidarr import evidence and return early when enough files are imported."""
-    import_threshold = max(1, (len(files) + 1) // 2)
+    """Poll Lidarr import evidence until every submitted file is accounted for."""
+    required_count = max(1, len(files))
     attempts = max(1, (timeout_s // interval_s) + 1)
     imported_count = 0
     for attempt in range(attempts):
         imported_count = _count_manualimport_progress(
-            jid, api, key, files, pre_counts, import_threshold, context=context
+            jid, api, key, files, pre_counts, required_count, context=context
         )
-        if imported_count >= import_threshold:
-            return imported_count, import_threshold
+        if imported_count >= required_count:
+            return imported_count, required_count
         if attempt < attempts - 1:
             time.sleep(interval_s)
-    return imported_count, import_threshold
+    return imported_count, required_count
 
 
 def _lidarr_command_still_pending(cmd_response, api: str, key: str) -> bool:
@@ -4690,17 +4732,19 @@ def _reconcile_pending_import(jid: str, record: dict, path: Path | None = None) 
     if not key:
         return record
 
-    if _count_lidarr_imported_history(jid, api, key) > 0:
+    output_dir = Path(_jobs.get(jid, {}).get("output_dir") or OUTPUT_BASE / jid)
+    if (
+        _count_lidarr_imported_history(jid, api, key) > 0
+        and _count_audio_files(output_dir) == 0
+    ):
         record["v2_import_outcome"] = "MANUAL_IMPORTED"
         target = path or _find_verification_sidecar(jid)
         if target is not None:
             _atomic_write_json(target, record)
-        output_dir = Path(_jobs.get(jid, {}).get("output_dir") or OUTPUT_BASE / jid)
         _complete_lidarr_import_without_queue_delete(jid, output_dir)
         return record
 
     if record.get("v2_verification_decision") in ("ACCEPT", "ACCEPT_PROVISIONAL"):
-        output_dir = Path(_jobs.get(jid, {}).get("output_dir") or OUTPUT_BASE / jid)
         if (
             _count_lidarr_trackfiles(record.get("album_ids") or [], api, key) > 0
             and _count_audio_files(output_dir) == 0

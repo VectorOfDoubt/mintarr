@@ -4975,6 +4975,27 @@ def _cancel_backend_job_if_any(jid: str) -> bool | None:
     return True
 
 
+def _mark_backend_job_discarded(jid: str) -> None:
+    """Mirror an operator discard onto the durable backend-lane job.
+
+    The verification sidecar/record is the operator-facing audit. For
+    backend-lane jobs, also terminalize the durable backend row so active-job
+    recovery and queue projection do not keep revisiting a release the operator
+    has explicitly rejected. Best-effort: discard itself must remain governed by
+    sidecar/archive/blocklist semantics, not by this mirror write.
+    """
+    import state_db
+
+    job = state_db.get_backend_job(jid)
+    if job is None or job.get("state") in state_db.BACKEND_JOB_TERMINAL_STATES:
+        return
+    if state_db.update_backend_job(jid, state="cancelled", finished=True) is None:
+        log.warning(
+            "[backend-lane] failed to mark discarded backend job terminal jid=%s",
+            jid,
+        )
+
+
 def _cancel_and_hide_job(value: str | None) -> None:
     """Honor a Lidarr remove/blocklist (SAB delete): cancel the worker job, then hide.
 
@@ -7516,6 +7537,7 @@ def verification_discard(jid: str):
         invalidate_prefix("records")
     except Exception:
         log.exception("[%s] Failed to sync discarded verification record", jid)
+    _mark_backend_job_discarded(jid)
     _mark_import_failed(jid, "discarded by user")
     return jsonify({"jid": jid, "message": "discarded"})
 

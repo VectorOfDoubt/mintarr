@@ -906,6 +906,40 @@ def test_discard_updates_db_record_status(tmp_path, monkeypatch, mocker):
     assert record["actor"] == "user_discard"
 
 
+def test_discard_terminalizes_backend_review_job(tmp_path, monkeypatch, mocker):
+    state_db.init(db_path=tmp_path / "state.db")
+    output_base = _patch_paths(monkeypatch, tmp_path)
+    jid = "backend-review"
+    output_dir = output_base / jid
+    output_dir.mkdir(parents=True)
+    (output_dir / "01.flac").write_bytes(b"flac")
+    sidecar_path = server._write_verification_sidecar(jid, _result(jid=jid), output_dir)
+    sidecar = json.loads(sidecar_path.read_text())
+    state_db.upsert_from_sidecar(sidecar, derived_status="needs_review")
+    state_db.create_backend_job(
+        jid,
+        source_type="sab_usenet_backend",
+        category="mintarr-music",
+        backend_job_id="NZO-1",
+        state="review",
+        release_title="Artist - Album",
+    )
+    server._jobs[jid] = {"id": jid, "output_dir": str(output_dir)}
+    mocker.patch.object(server, "_get_lidarr_key", return_value="lidarr-key")
+    mocker.patch.object(server, "_blocklist_grab", return_value=True)
+    mocker.patch.object(server, "_save_jobs")
+
+    client = server.app.test_client()
+    response = client.post(f"/verification/{jid}/discard?apikey={VALID_KEY}")
+
+    assert response.status_code == 200
+    backend_job = state_db.get_backend_job(jid)
+    assert backend_job["state"] == "cancelled"
+    assert backend_job["finished_at"] is not None
+    record = state_db.get_record(jid)
+    assert record["derived_status"] == "discarded"
+
+
 def test_discard_accepts_failed_or_pending_manual_promote(
     tmp_path, monkeypatch, mocker
 ):

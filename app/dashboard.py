@@ -15,6 +15,7 @@ Implements TIDALHIRES_DASHBOARD_API.md v1 endpoints:
 
 from __future__ import annotations
 
+import os
 import subprocess
 import time
 from collections import Counter
@@ -1411,13 +1412,37 @@ def system_partial():
             "sab_emulated": queue.get("sab_emulated", 0),
             "lidarr_queue": queue.get("lidarr_queue_total"),
         }
+        try:
+            from backend_readiness import sab_backend_readiness
+
+            sab_backend = sab_backend_readiness(
+                lidarr_api_url=os.environ.get(
+                    "LIDARR_API_URL", "http://host.docker.internal:8686/api/v1"
+                ),
+                lidarr_api_key=server._get_lidarr_key(),
+            )
+        except Exception:
+            sab_backend = {
+                "status": "blocked",
+                "summary": "SAB backend readiness unavailable.",
+                "checks": [],
+            }
         events = [_audit_row(a) for a in state_db.list_actions(limit=12)]
     except Exception:
         stack = {}
         workers = {"active_jobs": 0, "sab_emulated": 0, "lidarr_queue": None}
+        sab_backend = {
+            "status": "blocked",
+            "summary": "SAB backend readiness unavailable.",
+            "checks": [],
+        }
         events = []
     return render_template(
-        "partials/system.html", stack=stack, workers=workers, events=events
+        "partials/system.html",
+        stack=stack,
+        workers=workers,
+        events=events,
+        sab_backend=sab_backend,
     )
 
 

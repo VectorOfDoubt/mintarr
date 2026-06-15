@@ -3,7 +3,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.test
-    image: tidalhires-tests:local
+    image: mintarr-tests:local
     environment:
       - TIDALHIRES_API_KEY=tidalhires-test-api-key
       - DOWNLOAD_BASE=/tmp/downloads

@@ -16,7 +16,7 @@
 
 **Mintarr is the quality control and import orchestration layer that Lidarr lacks. It is not a better Lidarr.**
 
-Mintarr sits between music sources (TIDAL, LocalFolder, Soulseek, future SAB / qBit / CD-rip / YouTube) and Lidarr. Every import is verified, scored, and either auto-imported, sent for operator review, or blocked — with full audit trail.
+Mintarr sits between music sources (TIDAL, LocalFolder, Soulseek, SAB/qBit-backed download clients, CD-rip evidence, local folders, and future source lanes) and Lidarr. Every import is verified, scored, and either auto-imported, sent for operator review, or blocked — with full audit trail.
 
 Mintarr exposes itself to Lidarr as a Newznab indexer and a SAB-compatible download client. Existing Lidarr installs adopt Mintarr without configuration changes on the Lidarr side beyond adding one indexer and one download client.
 
@@ -36,13 +36,13 @@ Each verifier produces evidence; the V2 policy turns evidence into one of four d
 
 ## Status
 
-Mintarr is in its **open-source foundation phase** (Phase 0 of the [roadmap](docs/strategy/ROADMAP.md)). The codebase that became Mintarr has been running in production for several months as `tidalhires`; the rename and the public-repository cutover are documented in [ADR-0001](docs/architecture/adr/0001-rename-from-tidalhires.md).
+Mintarr is in its **pre-release foundation phase**. The codebase that became Mintarr has been running in production for several months as `tidalhires`; the rename and public-repository cutover are documented in [ADR-0001](docs/architecture/adr/0001-rename-from-tidalhires.md).
 
-There is **no public release yet**. The public repository (`eivindsjursen-lab/mintarr`) is being prepared. Watch the [roadmap](docs/strategy/ROADMAP.md) for the cutover announcement.
+There is **no stable public release yet**. The public repository is open, active, and still hardening toward a first operator-ready release. Watch the [roadmap](docs/strategy/ROADMAP.md) for release readiness and migration milestones.
 
 ## Quick start
 
-> Quick start instructions are placeholder until Phase 0 cutover completes. See [docs/operations/INSTALL.md](docs/operations/INSTALL.md) for the current state.
+> Quick start instructions are preview-quality until the first stable release. See [docs/operations/INSTALL.md](docs/operations/INSTALL.md) for the current state.
 
 ```yaml
 # docker-compose.yml (preview — subject to change)
@@ -67,7 +67,7 @@ Then in Lidarr:
 
 ## Documentation
 
-Full documentation is on the [Mintarr docs site](https://eivindsjursen-lab.github.io/mintarr/) (deploys at Phase 0 cutover). Source lives under [`docs/`](docs/).
+Full documentation is on the [Mintarr docs site](https://eivindsjursen-lab.github.io/mintarr/). Source lives under [`docs/`](docs/).
 
 | If you want to... | Read |
 |---|---|

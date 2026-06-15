@@ -273,6 +273,7 @@ def test_system_partial_renders_status_and_workers(monkeypatch, tmp_path):
     body = resp.get_data(as_text=True)
     assert "Status" in body
     assert "Workers" in body
+    assert "SAB backend" in body
     assert "Active jobs" in body
     assert "health-badge" in body  # stack components rendered with a status badge
     assert "tidalhires" in body

@@ -207,9 +207,11 @@ main { flex: 1 1 auto; min-width: 0; padding: 16px 24px; }
   text-transform: capitalize;
 }
 .health-ok { color: var(--status-success); background: var(--status-success-bg); }
-.health-degraded, .health-blocked { color: var(--status-warning); background: var(--status-warning-bg); }
-.health-unreachable, .health-missing { color: var(--status-danger); background: var(--status-danger-bg); }
-.health-unknown { color: var(--status-neutral); background: var(--status-neutral-bg); }
+.health-degraded, .health-blocked,
+.health-warning, .health-warn { color: var(--status-warning); background: var(--status-warning-bg); }
+.health-unreachable, .health-missing,
+.health-fail { color: var(--status-danger); background: var(--status-danger-bg); }
+.health-unknown, .health-disabled { color: var(--status-neutral); background: var(--status-neutral-bg); }
 .sys-kv {
   display: flex; justify-content: space-between;
   padding: 4px 0; color: var(--text-secondary);

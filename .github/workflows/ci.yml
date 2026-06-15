@@ -22,7 +22,7 @@ jobs:
 
       - name: Build base image
         run: |
-          docker build -t tidalhires:local -f Dockerfile .
+          docker build -t mintarr:local -f Dockerfile .
 
       - name: Build test image
         run: |

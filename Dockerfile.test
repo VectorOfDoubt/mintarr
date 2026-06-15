@@ -1,4 +1,4 @@
-FROM tidalhires:local
+FROM mintarr:local
 
 COPY requirements-test.txt /tmp/requirements-test.txt
 RUN pip install --no-cache-dir -r /tmp/requirements-test.txt

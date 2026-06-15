@@ -37,6 +37,30 @@
     <h2>Library quality</h2>
     <p class="muted">Loading…</p>
   </div>
+  <div class="panel">
+    <h2>SAB backend</h2>
+    <div class="sys-kv">
+      <span>Readiness</span>
+      <span class="health-badge health-{{ sab_backend.status }}">{{ sab_backend.status }}</span>
+    </div>
+    {% if sab_backend.category %}
+    <div class="sys-kv"><span>Category</span><span>{{ sab_backend.category }}</span></div>
+    {% endif %}
+    <p class="muted">{{ sab_backend.summary }}</p>
+    <ul class="event-list">
+      {% for check in sab_backend.checks %}
+      <li>
+        <span class="event-action">{{ check.label }}</span>
+        <span class="event-meta muted">
+          <span class="health-badge health-{{ check.status }}">{{ check.status }}</span>
+          {% if check.detail %} {{ check.detail }}{% endif %}
+        </span>
+      </li>
+      {% else %}
+      <li class="muted">No readiness checks available.</li>
+      {% endfor %}
+    </ul>
+  </div>
   <div class="panel"><h2>Updates</h2><p class="muted">Update status lands in a later slice.</p></div>
   <div class="panel">
     <h2>Events <a class="audit-download" data-href="/dashboard/v1/actions/download" href="#" title="Download audit trail as CSV">⤓ CSV</a></h2>

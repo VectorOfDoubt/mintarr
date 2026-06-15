@@ -205,8 +205,19 @@ def _backend_review_row_visible(row: dict) -> bool:
         record = None
     # If the record is gone or still actionable, keep the hold. If an operator
     # has closed it (discard/promote/expire), do not resurrect a queue row from
-    # the stale durable backend review state.
-    return record is None or record.get("derived_status") == "needs_review"
+    # the stale durable backend review state. This is a re-grab prevention guard:
+    # default unknown/future statuses to visible, and drop only explicit closures.
+    closed = {
+        "blocked",
+        "discarded",
+        "expired",
+        "failed",
+        "imported",
+        "policy_violation",
+        "promoted",
+    }
+    derived = (record or {}).get("derived_status")
+    return record is None or derived not in closed
 
 
 def _backend_review_queue_slot(row: dict) -> dict:

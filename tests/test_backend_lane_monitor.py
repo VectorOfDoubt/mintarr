@@ -312,6 +312,50 @@ def test_queue_poll_includes_durable_review_hold_after_restart(monitor_env):
     assert state_db.get_backend_job("jid-1")["state"] == "review"
 
 
+def test_queue_poll_includes_durable_review_with_minimal_record(monitor_env):
+    import state_db
+
+    server = monitor_env
+    _seed(server, state="review", with_projection=False)
+    state_db.upsert_record(
+        {
+            "jid": "jid-1",
+            "title": "backend release NZO-1",
+        },
+        derived_status=None,
+    )
+
+    client = server.app.test_client()
+    q = client.get(f"/sabnzbd/api?mode=queue&apikey={_key()}").get_json()
+
+    slots = q["queue"]["slots"]
+    assert len(slots) == 1
+    assert slots[0]["nzo_id"] == "jid-1"
+    assert slots[0]["status"] == "Paused"
+
+
+def test_queue_poll_keeps_durable_review_for_unrecognized_status(monitor_env):
+    import state_db
+
+    server = monitor_env
+    _seed(server, state="review", with_projection=False)
+    state_db.upsert_record(
+        {
+            "jid": "jid-1",
+            "title": "Artist - Album",
+        },
+        derived_status="future_transient_status",
+    )
+
+    client = server.app.test_client()
+    q = client.get(f"/sabnzbd/api?mode=queue&apikey={_key()}").get_json()
+
+    slots = q["queue"]["slots"]
+    assert len(slots) == 1
+    assert slots[0]["nzo_id"] == "jid-1"
+    assert slots[0]["status"] == "Paused"
+
+
 def test_queue_poll_does_not_resurrect_closed_backend_review(monitor_env):
     import state_db
 

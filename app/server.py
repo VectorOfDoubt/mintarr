@@ -1027,6 +1027,8 @@ def _addurl_backend_lane(
     # the queue projection, and the SAB queue filename. Use Lidarr's nzbname, else
     # a secret-safe label keyed on the (non-secret) backend job id.
     title = (request.values.get("nzbname") or "").strip()
+    if not title and uploaded_file is not None:
+        title = Path(uploaded_file.filename or "").name
     if not title:
         title = f"backend release {job.backend_job_id}"
 
@@ -1108,6 +1110,12 @@ def _backend_state_to_jobs_status(lifecycle: str) -> str:
     return "downloading"
 
 
+def _generic_backend_release_title(title: str | None, backend_id: str | None) -> bool:
+    if not title:
+        return True
+    return bool(backend_id and title == f"backend release {backend_id}")
+
+
 def _reconcile_backend_jobs() -> None:
     """Poll backend status for active backend jobs and reconcile state (4b).
 
@@ -1150,16 +1158,23 @@ def _reconcile_backend_jobs() -> None:
         path_new = bool(status.completed_path) and status.completed_path != job.get(
             "backend_path"
         )
+        display_name = (getattr(status, "display_name", None) or "").strip()
+        title_new = (
+            bool(display_name)
+            and _generic_backend_release_title(job.get("release_title"), backend_id)
+            and display_name != job.get("release_title")
+        )
         # Durable state wins: if a needed backend_jobs update does not persist,
         # skip the projection so Lidarr never sees a state the recovery row has
         # not accepted (e.g. "Verifying"/"failed" with no durable row behind it).
-        if state_changed or path_new:
+        if state_changed or path_new or title_new:
             updated = None
             try:
                 updated = state_db.update_backend_job(
                     jid,
                     state=new_state if state_changed else None,
                     backend_path=status.completed_path if path_new else None,
+                    release_title=display_name if title_new else None,
                     finished=new_state in state_db.BACKEND_JOB_TERMINAL_STATES or None,
                 )
             except Exception:
@@ -1175,6 +1190,7 @@ def _reconcile_backend_jobs() -> None:
                     jid,
                 )
                 continue
+            job = updated
 
         with _jobs_lock:
             proj = _jobs.get(jid)
@@ -1189,9 +1205,10 @@ def _reconcile_backend_jobs() -> None:
                     "source_id": backend_id,
                     "created_at": job.get("created_at") or time.time(),
                 }
+            proj["title"] = job.get("release_title") or jid
             proj["status"] = _backend_state_to_jobs_status(new_state)
             proj["percent"] = max(0, min(100, int(status.progress)))
-            if state_changed:
+            if state_changed or title_new:
                 _save_jobs()
 
         # Slice 5: a completed download with a contained path is handed to the

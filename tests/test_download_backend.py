@@ -310,6 +310,27 @@ def test_status_downloading_from_queue():
     assert st.state is BackendState.DOWNLOADING
     assert st.progress == 42.0
     assert st.completed_path is None
+    assert st.display_name is None
+
+
+def test_status_captures_display_name_from_queue():
+    client = _client(
+        {
+            "queue": {
+                "queue": {
+                    "slots": [
+                        {
+                            "nzo_id": "NZO-1",
+                            "status": "Downloading",
+                            "percentage": "42",
+                            "filename": "Artist - Album",
+                        }
+                    ]
+                }
+            }
+        }
+    )
+    assert client.status("NZO-1").display_name == "Artist - Album"
 
 
 def test_status_failed_from_queue():
@@ -338,6 +359,31 @@ def test_status_completed_only_when_path_contained(tmp_path):
     st = client.status("NZO-1")
     assert st.state is BackendState.COMPLETED
     assert st.completed_path == str(done.resolve())
+    assert st.display_name is None
+
+
+def test_status_captures_display_name_from_history(tmp_path):
+    done = tmp_path / "Album"
+    done.mkdir()
+    client = _client(
+        {
+            "queue": {"queue": {"slots": []}},
+            "history": {
+                "history": {
+                    "slots": [
+                        {
+                            "nzo_id": "NZO-1",
+                            "status": "Completed",
+                            "storage": str(done),
+                            "name": "Artist - Album",
+                        }
+                    ]
+                }
+            },
+        },
+        download_root=str(tmp_path),
+    )
+    assert client.status("NZO-1").display_name == "Artist - Album"
 
 
 def test_status_completed_drops_uncontained_path(tmp_path):

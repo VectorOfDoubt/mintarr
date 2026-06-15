@@ -33,13 +33,15 @@ def monitor_env(tmp_path, monkeypatch):
     return server
 
 
-def _stub_status(monkeypatch, state, *, progress=0.0, completed_path=None):
+def _stub_status(
+    monkeypatch, state, *, progress=0.0, completed_path=None, display_name=None
+):
     import download_backend
     from download_backend import BackendJobStatus
 
     def _status(self, backend_job_id):
         return BackendJobStatus(
-            backend_job_id, state, progress, completed_path, state.value
+            backend_job_id, state, progress, completed_path, state.value, display_name
         )
 
     monkeypatch.setattr(download_backend.SabBackendClient, "status", _status)
@@ -69,6 +71,29 @@ def _seed(server, *, state="downloading", with_projection=True):
         }
 
 
+def _seed_generic_title(server):
+    import state_db
+
+    state_db.create_backend_job(
+        "jid-1",
+        source_type="sab_usenet_backend",
+        category="mintarr-music",
+        backend_job_id="NZO-1",
+        state="downloading",
+        release_title="backend release NZO-1",
+    )
+    server._jobs["jid-1"] = {
+        "id": "jid-1",
+        "category": "mintarr-music",
+        "status": "downloading",
+        "title": "backend release NZO-1",
+        "size": 0,
+        "percent": 0,
+        "source_type": "sab_usenet_backend",
+        "source_id": "NZO-1",
+    }
+
+
 def _key():
     return os.environ["TIDALHIRES_API_KEY"]
 
@@ -89,6 +114,25 @@ def test_reconcile_downloading_updates_progress(monitor_env, monkeypatch):
     assert state_db.get_backend_job("jid-1")["state"] == "downloading"
     assert server._jobs["jid-1"]["status"] == "downloading"
     assert server._jobs["jid-1"]["percent"] == 42
+
+
+def test_reconcile_hydrates_generic_title_from_backend_status(monitor_env, monkeypatch):
+    import state_db
+    from download_backend import BackendState
+
+    server = monitor_env
+    _seed_generic_title(server)
+    _stub_status(
+        monkeypatch,
+        BackendState.DOWNLOADING,
+        progress=42.0,
+        display_name="Artist - Album Proper",
+    )
+
+    server._reconcile_backend_jobs()
+
+    assert state_db.get_backend_job("jid-1")["release_title"] == "Artist - Album Proper"
+    assert server._jobs["jid-1"]["title"] == "Artist - Album Proper"
 
 
 def test_reconcile_completed_is_held_not_importable(monitor_env, monkeypatch, tmp_path):

@@ -66,6 +66,7 @@ class BackendJobStatus:
     progress: float  # 0..100
     completed_path: str | None
     raw_status: str
+    display_name: str | None = None
 
 
 # ---- Secret redaction ----------------------------------------------------
@@ -370,12 +371,16 @@ class SabBackendClient:
             if _has_token(raw, _SAB_FAILED_TOKENS)
             else BackendState.DOWNLOADING
         )
-        return BackendJobStatus(jid, state, progress, None, raw)
+        return BackendJobStatus(
+            jid, state, progress, None, raw, _slot_display_name(slot)
+        )
 
     def _history_status(self, jid: str, slot: dict[str, Any]) -> BackendJobStatus:
         raw = str(slot.get("status", ""))
         if _has_token(raw, _SAB_FAILED_TOKENS):
-            return BackendJobStatus(jid, BackendState.FAILED, 0.0, None, raw)
+            return BackendJobStatus(
+                jid, BackendState.FAILED, 0.0, None, raw, _slot_display_name(slot)
+            )
         # A COMPLETED job whose path is not contained in our root yields
         # completed_path=None. Downstream slices (3/5) MUST treat COMPLETED with
         # completed_path=None as "finished but not safely importable" and never
@@ -387,7 +392,9 @@ class SabBackendClient:
             storage = apply_path_map(str(slot.get("storage", "")), self.path_map)
             completed_path = contained_path(self.download_root, storage)
             completed = str(completed_path) if completed_path else None
-        return BackendJobStatus(jid, BackendState.COMPLETED, 100.0, completed, raw)
+        return BackendJobStatus(
+            jid, BackendState.COMPLETED, 100.0, completed, raw, _slot_display_name(slot)
+        )
 
     def cancel(self, backend_job_id: str, *, delete_files: bool = False) -> bool:
         """Remove the job from queue and history. Returns True if SAB accepted."""
@@ -666,7 +673,14 @@ class QbitBackendClient:
             path = match.get("content_path") or match.get("save_path") or ""
             contained = contained_path(self.download_root, path)
             completed = str(contained) if contained else None
-        return BackendJobStatus(backend_job_id, state, progress, completed, raw)
+        return BackendJobStatus(
+            backend_job_id,
+            state,
+            progress,
+            completed,
+            raw,
+            _slot_display_name(match),
+        )
 
     def cancel(self, backend_job_id: str, *, delete_files: bool = False) -> bool:
         """Cancel a grab on the backend — always propagates, never silently no-ops.
@@ -710,6 +724,11 @@ def _safe_float(value: Any) -> float:
         return float(value)
     except (TypeError, ValueError):
         return 0.0
+
+
+def _slot_display_name(slot: dict[str, Any] | None) -> str | None:
+    name = str((slot or {}).get("name") or (slot or {}).get("filename") or "").strip()
+    return name or None
 
 
 def _has_token(text: str, tokens: tuple[str, ...]) -> bool:

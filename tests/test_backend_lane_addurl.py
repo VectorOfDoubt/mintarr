@@ -159,6 +159,23 @@ def test_addfile_category_match_routes_to_backend(backend_env):
     assert q["queue"]["slots"][0]["status"] == "Downloading"
 
 
+def test_addfile_title_uses_uploaded_filename_when_nzbname_missing(backend_env):
+    import io
+    import state_db
+
+    r = backend_env.post(
+        f"/sabnzbd/api?apikey={_key()}",
+        data={
+            "mode": "addfile",
+            "cat": "mintarr-music",
+            "nzbfile": (io.BytesIO(b"<nzb/>"), "Artist - Album.nzb"),
+        },
+        content_type="multipart/form-data",
+    )
+    jid = r.get_json()["nzo_ids"][0]
+    assert state_db.get_backend_job(jid)["release_title"] == "Artist - Album.nzb"
+
+
 def test_addfile_backend_lane_rejects_empty_upload(backend_env):
     r = backend_env.post(
         f"/sabnzbd/api?apikey={_key()}",

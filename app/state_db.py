@@ -2088,6 +2088,7 @@ def update_backend_job(
     state: str | None = None,
     backend_job_id: str | None = None,
     backend_path: str | None = None,
+    release_title: str | None = None,
     error_text: str | None = None,
     finished: bool | None = None,
     now: float | None = None,
@@ -2110,6 +2111,9 @@ def update_backend_job(
         if backend_path is not None:
             sets.append("backend_path = ?")
             params.append(backend_path)
+        if release_title is not None:
+            sets.append("release_title = ?")
+            params.append(release_title)
         if error_text is not None:
             sets.append("error_text = ?")
             params.append(error_text)

@@ -36,7 +36,13 @@ def backend_env(tmp_path, monkeypatch):
     def _fake_submit(self, *, url):
         return BackendJob(backend_job_id="NZO-1", category=self.category)
 
+    def _fake_submit_file(self, *, filename, data):
+        return BackendJob(backend_job_id="NZO-FILE", category=self.category)
+
     monkeypatch.setattr(download_backend.SabBackendClient, "submit", _fake_submit)
+    monkeypatch.setattr(
+        download_backend.SabBackendClient, "submit_file", _fake_submit_file
+    )
 
     server.app.config["TESTING"] = True
     return server.app.test_client()
@@ -129,22 +135,38 @@ def test_addurl_wrong_category_falls_through_to_existing_path(backend_env):
     assert "no recognized source prefix" in r.get_json()["error"]
 
 
-def test_addurl_backend_lane_rejects_addfile(backend_env):
-    # addfile (uploaded NZB, no URL name) is not supported in 4a — fail closed
-    # inside the lane, do not mishandle.
+def test_addfile_category_match_routes_to_backend(backend_env):
     import io
+    import state_db
 
     r = backend_env.post(
         f"/sabnzbd/api?apikey={_key()}",
         data={
             "mode": "addfile",
             "cat": "mintarr-music",
+            "nzbname": "Artist - Album",
             "nzbfile": (io.BytesIO(b"<nzb/>"), "x.nzb"),
         },
         content_type="multipart/form-data",
     )
+    assert r.status_code == 200, r.data
+    jid = r.get_json()["nzo_ids"][0]
+    job = state_db.get_backend_job(jid)
+    assert job is not None
+    assert job["backend_job_id"] == "NZO-FILE"
+    assert job["release_title"] == "Artist - Album"
+    q = backend_env.get(f"/sabnzbd/api?mode=queue&apikey={_key()}").get_json()
+    assert q["queue"]["slots"][0]["status"] == "Downloading"
+
+
+def test_addfile_backend_lane_rejects_empty_upload(backend_env):
+    r = backend_env.post(
+        f"/sabnzbd/api?apikey={_key()}",
+        data={"mode": "addfile", "cat": "mintarr-music"},
+        content_type="multipart/form-data",
+    )
     assert r.status_code == 400
-    assert "addurl URL only" in r.get_json()["error"]
+    assert "addfile requires a file" in r.get_json()["error"]
 
 
 def test_addurl_title_never_uses_raw_url(backend_env):
@@ -205,6 +227,35 @@ def test_addurl_rolls_back_when_persist_fails(backend_env, monkeypatch):
     assert server._jobs == {}  # no orphaned queue projection
 
 
+def test_addfile_rolls_back_when_persist_fails(backend_env, monkeypatch):
+    import download_backend
+    import io
+    import server
+    import state_db
+
+    monkeypatch.setattr(state_db, "create_backend_job", lambda *a, **k: None)
+    cancelled = []
+
+    def _fake_cancel(self, backend_job_id, *, delete_files=False):
+        cancelled.append((backend_job_id, delete_files))
+        return True
+
+    monkeypatch.setattr(download_backend.SabBackendClient, "cancel", _fake_cancel)
+
+    r = backend_env.post(
+        f"/sabnzbd/api?apikey={_key()}",
+        data={
+            "mode": "addfile",
+            "cat": "mintarr-music",
+            "nzbfile": (io.BytesIO(b"<nzb/>"), "x.nzb"),
+        },
+        content_type="multipart/form-data",
+    )
+    assert r.status_code == 502
+    assert cancelled == [("NZO-FILE", False)]
+    assert server._jobs == {}
+
+
 def test_addurl_backend_submit_failure_returns_502(backend_env, monkeypatch):
     import download_backend
 
@@ -215,6 +266,27 @@ def test_addurl_backend_submit_failure_returns_502(backend_env, monkeypatch):
     r = backend_env.post(
         f"/sabnzbd/api?apikey={_key()}",
         data={"mode": "addurl", "name": "http://indexer/x.nzb", "cat": "mintarr-music"},
+    )
+    assert r.status_code == 502
+    assert r.get_json()["status"] is False
+
+
+def test_addfile_backend_submit_failure_returns_502(backend_env, monkeypatch):
+    import download_backend
+    import io
+
+    def _boom(self, *, filename, data):
+        raise RuntimeError("sab down")
+
+    monkeypatch.setattr(download_backend.SabBackendClient, "submit_file", _boom)
+    r = backend_env.post(
+        f"/sabnzbd/api?apikey={_key()}",
+        data={
+            "mode": "addfile",
+            "cat": "mintarr-music",
+            "nzbfile": (io.BytesIO(b"<nzb/>"), "x.nzb"),
+        },
+        content_type="multipart/form-data",
     )
     assert r.status_code == 502
     assert r.get_json()["status"] is False

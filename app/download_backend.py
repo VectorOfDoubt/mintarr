@@ -232,6 +232,7 @@ class SabBackendClient:
         path_map: str | None = None,
         timeout: int | None = None,
         request: Callable[..., Any] | None = None,
+        post: Callable[..., Any] | None = None,
     ) -> None:
         self._url = url
         self._api_key = api_key
@@ -240,6 +241,7 @@ class SabBackendClient:
         self._path_map = path_map
         self._timeout = timeout
         self._request = request or requests.get
+        self._post = post or requests.post
 
     @property
     def path_map(self) -> list[tuple[str, str]]:
@@ -298,6 +300,27 @@ class SabBackendClient:
         payload = response.json()
         return payload if isinstance(payload, dict) else {}
 
+    def _post_file(
+        self, *, filename: str, data: bytes, **params: Any
+    ) -> dict[str, Any]:
+        """Issue SAB ``addfile`` with a multipart NZB upload."""
+        query = {"mode": "addfile", "output": "json", "apikey": self.api_key, **params}
+        safe_filename = Path(filename or "release.nzb").name or "release.nzb"
+        log.debug(
+            "SAB backend call mode=addfile params=%s file=%s",
+            redact_params(query),
+            safe_filename,
+        )
+        response = self._post(
+            f"{self.api_url}/api",
+            params=query,
+            files={"nzbfile": (safe_filename, data)},
+            timeout=self.timeout,
+        )
+        response.raise_for_status()
+        payload = response.json()
+        return payload if isinstance(payload, dict) else {}
+
     def submit(self, *, url: str) -> BackendJob:
         """Add a download by URL into the client's dedicated category.
 
@@ -310,6 +333,17 @@ class SabBackendClient:
         nzo_ids = payload.get("nzo_ids") or []
         if not (payload.get("status", True) and nzo_ids):
             raise RuntimeError("SAB backend addurl returned no nzo_id")
+        return BackendJob(backend_job_id=str(nzo_ids[0]), category=cat)
+
+    def submit_file(self, *, filename: str, data: bytes) -> BackendJob:
+        """Add an uploaded NZB file into the client's dedicated category."""
+        cat = ensure_category(self.category)
+        if not data:
+            raise ValueError("backend addfile requires a non-empty NZB file")
+        payload = self._post_file(filename=filename, data=data, cat=cat)
+        nzo_ids = payload.get("nzo_ids") or []
+        if not (payload.get("status", True) and nzo_ids):
+            raise RuntimeError("SAB backend addfile returned no nzo_id")
         return BackendJob(backend_job_id=str(nzo_ids[0]), category=cat)
 
     def status(self, backend_job_id: str) -> BackendJobStatus:

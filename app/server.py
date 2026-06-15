@@ -976,27 +976,47 @@ def _backend_lane_for_category(cat: str):
     return client
 
 
-def _addurl_backend_lane(name: str, cat: str, client, has_file: bool):
+def _addurl_backend_lane(
+    name: str, cat: str, client, uploaded_file=None, *, addfile_requested: bool = False
+):
     """Submit a Lidarr AddUrl release to the backend and project it to Lidarr.
 
-    Slice 4a scope: submit + persist (backend_jobs) + queue projection only.
-    No monitor/poll, no cancel propagation, no ingest — those are 4b/4c/5. On
-    submission failure we return a failed result to Lidarr; we never fall back
-    to a direct Mintarr-source grab (ADR-0014 / design §5.2).
+    Supports both SAB ``addurl`` (URL) and ``addfile`` (uploaded NZB) once the
+    request category has selected the backend lane. On submission failure we
+    return a failed result to Lidarr; we never fall back to a direct
+    Mintarr-source grab (ADR-0014 / design §5.2).
     """
     import state_db
 
-    if not name or has_file:
-        # 4a handles addurl(name=URL) only. addfile (uploaded NZB) needs a
-        # submit-by-content path on the client — deferred. Fail closed inside the
-        # lane rather than mishandle it.
-        log.warning("[backend-lane] addfile/empty-name not supported yet (cat=%s)", cat)
-        return jsonify(
-            {"status": False, "error": "backend lane supports addurl URL only (4a)"}
-        ), 400
-
     try:
-        job = client.submit(url=name)
+        if addfile_requested and uploaded_file is None:
+            log.warning("[backend-lane] addfile request without upload (cat=%s)", cat)
+            return jsonify(
+                {"status": False, "error": "backend addfile requires a file"}
+            ), 400
+        if uploaded_file is not None:
+            filename = Path(
+                request.values.get("nzbname") or uploaded_file.filename or "release.nzb"
+            ).name
+            data = uploaded_file.read()
+            if not data:
+                log.warning("[backend-lane] empty addfile upload (cat=%s)", cat)
+                return jsonify(
+                    {"status": False, "error": "backend addfile requires a file"}
+                ), 400
+            if not hasattr(client, "submit_file"):
+                log.warning("[backend-lane] backend client lacks addfile support")
+                return jsonify(
+                    {"status": False, "error": "backend addfile unsupported"}
+                ), 400
+            job = client.submit_file(filename=filename, data=data)
+        else:
+            if not name:
+                log.warning("[backend-lane] empty addurl request (cat=%s)", cat)
+                return jsonify(
+                    {"status": False, "error": "backend addurl requires a URL"}
+                ), 400
+            job = client.submit(url=name)
     except Exception as exc:
         log.warning("[backend-lane] submit failed (cat=%s): %s", cat, exc)
         return jsonify({"status": False, "error": "backend submit failed"}), 502
@@ -1006,7 +1026,9 @@ def _addurl_backend_lane(name: str, cat: str, client, has_file: bool):
     # carries an indexer apikey, which would leak into backend_jobs.release_title,
     # the queue projection, and the SAB queue filename. Use Lidarr's nzbname, else
     # a secret-safe label keyed on the (non-secret) backend job id.
-    title = request.values.get("nzbname") or f"backend release {job.backend_job_id}"
+    title = (request.values.get("nzbname") or "").strip()
+    if not title:
+        title = f"backend release {job.backend_job_id}"
 
     stored = state_db.create_backend_job(
         jid,
@@ -1398,8 +1420,13 @@ def sab():
         # handled there and never falls through to the Mintarr-source path.
         backend_client = _backend_lane_for_category(cat)
         if backend_client is not None:
+            uploaded_file = next(iter(request.files.values()), None)
             return _addurl_backend_lane(
-                name, cat, backend_client, has_file=bool(request.files)
+                name,
+                cat,
+                backend_client,
+                uploaded_file=uploaded_file,
+                addfile_requested=(mode == "addfile"),
             )
         # F3.2: dispatch to whichever adapter matches the name prefix or NZB meta.
         parsed = _parse_source_name(name, request.files)

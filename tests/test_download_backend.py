@@ -57,6 +57,20 @@ def _recorder(payload_for):
     return fake_get
 
 
+def _post_recorder(payload_for):
+    """Build a fake `requests.post` that records multipart calls."""
+    calls = []
+
+    def fake_post(url, params=None, files=None, timeout=None):
+        calls.append({"url": url, "params": params, "files": files, "timeout": timeout})
+        mode = (params or {}).get("mode")
+        payload = payload_for.get(mode, {})
+        return _Resp(payload(params) if callable(payload) else payload)
+
+    fake_post.calls = calls
+    return fake_post
+
+
 # ---- redaction -----------------------------------------------------------
 
 
@@ -186,6 +200,7 @@ def _client(payload_for=None, **kw):
         category="mintarr-music",
         download_root=kw.pop("download_root", "/backend/complete"),
         request=_recorder(payload_for or {}),
+        post=kw.pop("post", None),
         **kw,
     )
 
@@ -227,6 +242,41 @@ def test_submit_fails_closed_without_category():
     )
     with pytest.raises(ValueError):
         client.submit(url="http://nzb/x")
+
+
+def test_submit_file_uploads_nzb_into_category():
+    post = _post_recorder({"addfile": {"status": True, "nzo_ids": ["NZO-FILE"]}})
+    client = _client(post=post)
+    job = client.submit_file(filename="Artist - Album.nzb", data=b"<nzb/>")
+    assert job.backend_job_id == "NZO-FILE"
+    assert job.category == "mintarr-music"
+    call = post.calls[0]
+    assert call["params"]["mode"] == "addfile"
+    assert call["params"]["cat"] == "mintarr-music"
+    assert call["files"]["nzbfile"] == ("Artist - Album.nzb", b"<nzb/>")
+
+
+def test_submit_file_raises_without_nzo_id():
+    post = _post_recorder({"addfile": {"status": True, "nzo_ids": []}})
+    client = _client(post=post)
+    with pytest.raises(RuntimeError):
+        client.submit_file(filename="x.nzb", data=b"<nzb/>")
+
+
+def test_submit_file_fails_closed_without_category():
+    post = _post_recorder({"addfile": {"status": True, "nzo_ids": ["NZO-FILE"]}})
+    client = SabBackendClient(url="http://sab", api_key="KEY", category="", post=post)
+    with pytest.raises(ValueError):
+        client.submit_file(filename="x.nzb", data=b"<nzb/>")
+    assert post.calls == []
+
+
+def test_submit_file_rejects_empty_payload():
+    post = _post_recorder({"addfile": {"status": True, "nzo_ids": ["NZO-FILE"]}})
+    client = _client(post=post)
+    with pytest.raises(ValueError):
+        client.submit_file(filename="x.nzb", data=b"")
+    assert post.calls == []
 
 
 def test_submit_url_secret_redacted_in_logs(caplog):

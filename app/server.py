@@ -179,6 +179,24 @@ def _sab_queue_slot(jid: str, job: dict) -> dict:
     }
 
 
+def _visible_in_sab_queue(jid: str, job: dict) -> bool:
+    """Return whether an in-memory projection should be shown to Lidarr.
+
+    Backend-lane jobs have a durable ``backend_jobs`` row. Once that durable row
+    is terminal, a stale in-memory ``_jobs`` projection must not keep the item in
+    Lidarr's queue as "Verifying".
+    """
+    if job.get("hidden_from_lidarr"):
+        return False
+    backend_job = state_db.get_backend_job(jid)
+    if backend_job and backend_job.get("state") in state_db.BACKEND_JOB_TERMINAL_STATES:
+        return False
+    return bool(
+        job.get("status") in ("queued", "downloading", "processing")
+        or job.get("lidarr_hold")
+    )
+
+
 def _v2_verification_enabled() -> bool:
     return os.environ.get("V2_VERIFICATION_ENABLED", "false").lower() in (
         "1",
@@ -1312,14 +1330,12 @@ def sab():
         with _jobs_lock:
             slots = []
             for jid, j in _jobs.items():
-                if j.get("hidden_from_lidarr"):
-                    continue
                 # review_required jobs carry lidarr_hold=True so they stay visible to
                 # Lidarr as a paused download (review-hold invariant), preventing a
-                # re-grab while the operator decides.
-                if j.get("status") in ("queued", "downloading", "processing") or j.get(
-                    "lidarr_hold"
-                ):
+                # re-grab while the operator decides. Backend jobs additionally check
+                # durable backend_jobs state so terminal jobs do not remain as stale
+                # "Verifying" rows in Lidarr's queue.
+                if _visible_in_sab_queue(jid, j):
                     slots.append(_sab_queue_slot(jid, j))
             mb_total = sum(float(slot["mb"]) for slot in slots)
             mb_left = sum(float(slot["mbleft"]) for slot in slots)

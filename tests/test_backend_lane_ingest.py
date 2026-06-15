@@ -7,6 +7,8 @@ is persisted before the copy job is enqueued. No direct ManualImport here.
 
 from __future__ import annotations
 
+import os
+
 import pytest
 
 
@@ -246,6 +248,40 @@ def test_ingest_outcome_mirrored_back(ingest_env, monkeypatch, proj, expected):
     server._execute_backend_completed_grab_job({"jid": "jid-1", "id": 1})
 
     assert state_db.get_backend_job("jid-1")["state"] == expected
+
+
+def test_imported_backend_job_is_not_left_visible_in_sab_queue(ingest_env):
+    import state_db
+
+    server, _root = ingest_env
+    state_db.create_backend_job(
+        "jid-1",
+        source_type="sab_usenet_backend",
+        category="mintarr-music",
+        backend_job_id="NZO-1",
+        state="imported",
+        release_title="Artist - Album",
+    )
+    # This stale in-memory projection is what a completed backend ingest leaves
+    # behind; the durable terminal row must win so Lidarr does not see it as an
+    # eternal "Verifying" queue item.
+    server._jobs["jid-1"] = {
+        "id": "jid-1",
+        "status": "processing",
+        "title": "Artist - Album",
+        "category": "mintarr-music",
+        "size": 1234,
+        "percent": 100,
+        "source_type": "sab_usenet_backend",
+    }
+
+    q = (
+        server.app.test_client()
+        .get(f"/sabnzbd/api?mode=queue&apikey={os.environ['TIDALHIRES_API_KEY']}")
+        .get_json()
+    )
+
+    assert q["queue"]["slots"] == []
 
 
 def test_ingest_outcome_failed_when_pipeline_raises(ingest_env, monkeypatch):

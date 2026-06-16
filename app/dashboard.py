@@ -1708,6 +1708,64 @@ def album_hold_create(album_id: int):
     return jsonify(_album_hold_view(hold, now=time.time()))
 
 
+# ---------- /dashboard/v1/backend-jobs ----------
+
+
+def _backend_job_view(job: dict) -> dict:
+    """Shape a durable backend-lane job (ADR-0014) for the dashboard.
+
+    Read-only observability over the Mintarr-managed SAB/qBit lane: which grabs
+    Mintarr is shepherding, their lifecycle state, and the Lidarr album each
+    targets. No secrets are surfaced — ``backend_job_id`` is the backend's own
+    transfer id (e.g. a SAB nzo_id), not a key. ``release_title`` originates from
+    an indexer and has historically embedded a download URL carrying ``apikey=``,
+    so it is defensively masked before it leaves the API.
+    """
+    import download_backend
+
+    release_title = job.get("release_title")
+    if isinstance(release_title, str):
+        release_title = download_backend.redact(release_title)
+    return {
+        "jid": job.get("jid"),
+        "state": job.get("state"),
+        "category": job.get("category"),
+        "source_type": job.get("source_type"),
+        "release_title": release_title,
+        "target_album_id": job.get("target_album_id"),
+        "backend_job_id": job.get("backend_job_id"),
+        "created_at": job.get("created_at"),
+        "updated_at": job.get("updated_at"),
+        "finished_at": job.get("finished_at"),
+    }
+
+
+@dashboard_bp.route("/v1/backend-jobs", methods=["GET"])
+def backend_jobs():
+    """List recent Mintarr-managed backend-lane jobs for the dashboard (ADR-0014).
+
+    Returns the newest jobs across all lifecycle states (active and terminal) so
+    operators can see in-flight transfers and how recent ones resolved
+    (imported / cancelled / failed). Read-only.
+    """
+    from server import require_apikey_check
+
+    auth_resp = require_apikey_check()
+    if auth_resp:
+        return auth_resp
+    import state_db
+
+    total, jobs = state_db.list_backend_jobs(limit=25)
+    active_total, _ = state_db.list_backend_jobs(active_only=True, limit=1)
+    return jsonify(
+        {
+            "total": total,
+            "active": active_total,
+            "jobs": [_backend_job_view(j) for j in jobs],
+        }
+    )
+
+
 # ---------- /dashboard/v1/record/<jid> ----------
 def _basename_any(path: str | None) -> str | None:
     """Basename handling both POSIX and Windows separators.

@@ -48,7 +48,7 @@ For the underlying positioning and what is *not* in any phase, see [VISION.md](V
 
 **Goal:** every source, verifier, and output is a Connector with a static manifest and a uniform operator surface.
 
-**Status:** partial - F4.1-F4.5 foundation shipped; optional verifier evidence runners remain future work
+**Status:** partial - F4.1-F4.5 foundation shipped; F4.6 GUI-native config is the active north star; optional verifier evidence runners remain future work
 
 **Scope:**
 
@@ -57,6 +57,7 @@ For the underlying positioning and what is *not* in any phase, see [VISION.md](V
 - **F4.3 Connector enable/disable + dry-run** — `connector_config` table, UI toggles for optional connectors, hard-gate disable protection, audit trail for config changes, `dry_run` vs `import` mode
 - **F4.4 Compose profile / install guidance** — implemented ([F4.4 connector install guidance](../design/F4.4_CONNECTOR_INSTALL_GUIDANCE.md)); dashboard shows missing services / mounts / env, documented compose profiles, no app-managed docker updates
 - **F4.5 Optional verifier connectors** — implemented registry/design first slice ([F4.5 optional verifier connectors](../design/F4.5_OPTIONAL_VERIFIER_CONNECTORS.md)); Picard/beets/AcoustID metadata-identity verifier defaults disabled, CUETools/CTDB connector for CD-rip lane remains planned, optional sensors start disabled or in `dry_run`
+- **F4.6 GUI-native configuration (no-env setup)** — proposed ([F4.6 GUI-driven config](../design/F4.6_GUI_DRIVEN_CONFIG.md)); **north star: long-term the GUI is the only config path, env is a transitional bootstrap that gets deprecated.** Operator enters connection settings + credentials in the dashboard (write-only secret fields, encrypted at rest, never browser-readable per [SECURITY_MODEL.md](../architecture/SECURITY_MODEL.md)); env→stored-config bootstrap import with staged precedence flip. Near-term quick wins (own PRs, no secret storage): SAB backend lane as a first-class Sources card, disambiguate the two "SABnzbd" concepts, backend-lane onboarding parity in compose/docs.
 
 **Depends on:** Phase 0 (so external contributors can author connectors against a stable contract).
 
@@ -74,7 +75,7 @@ For the underlying positioning and what is *not* in any phase, see [VISION.md](V
 
 - Sidebar layout with Overview / Queue / History / Review / Connectors / Settings / System sections
 - Topbar with search (jids, artists, albums), notifications, user menu
-- Settings cards: General, Source Connectors, Verifier Connectors, Output Connectors, Quality Policies, Notifications, UI
+- Settings cards: General, Source Connectors, Verifier Connectors, Output Connectors, Quality Policies, Notifications, UI — evolving toward GUI-native connection config per [F4.6](../design/F4.6_GUI_DRIVEN_CONFIG.md) (URLs/keys entered in the UI, not env)
 - System cards: Status, Workers, Tasks, Logs, Backup, Updates, Events
 - Live worker status view (current job per worker, queue depth, restart action)
 - Audit log viewer with filter (level, component, jid) and download
@@ -265,4 +266,4 @@ If any of these become viable, a new ADR overrides the old one. Until then, cont
 
 ---
 
-> Last updated: 2026-06-05
+> Last updated: 2026-06-16

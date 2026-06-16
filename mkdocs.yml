@@ -178,6 +178,7 @@ nav:
       - "F4.3 Connector config dry-run": design/F4.3_CONNECTOR_CONFIG_DRY_RUN.md
       - "F4.4 Connector install guidance": design/F4.4_CONNECTOR_INSTALL_GUIDANCE.md
       - "F4.5 Optional verifier connectors": design/F4.5_OPTIONAL_VERIFIER_CONNECTORS.md
+      - "F4.6 GUI-native configuration": design/F4.6_GUI_DRIVEN_CONFIG.md
       - "Phase 4 SAB/qBit completed ingest": design/PHASE4_SAB_QBIT_COMPLETED_INGEST.md
       - "Download client category gate": design/DOWNLOAD_CLIENT_CATEGORY_GATE.md
       - "Mintarr-managed SAB/qBit download client": design/MINTARR_MANAGED_SAB_QBIT_DOWNLOAD_CLIENT.md

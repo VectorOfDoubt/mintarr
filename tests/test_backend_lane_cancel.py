@@ -156,6 +156,9 @@ def test_cancel_holds_album_when_target_known(cancel_env):
     hold = state_db.get_album_hold(9619)
     assert hold is not None
     assert hold["reason"] == "operator_cancelled_active_grab"
+    # the Lidarr queue record is already gone, so the hold falls back to the
+    # durable release_title for a human-readable label
+    assert hold["details"]["download_title"] == "Artist - Album"
 
 
 def test_cancel_without_known_album_creates_no_hold(cancel_env):

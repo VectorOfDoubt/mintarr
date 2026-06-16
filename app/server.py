@@ -4954,6 +4954,15 @@ def _create_album_hold_for_cancel(value: str, job: dict) -> None:
         source_id = job.get("source_id") or projected.get("source_id")
         details = _album_hold_details_from_lidarr_record(queue_record)
         details.setdefault("download_id", value)
+        # When the Lidarr queue record is already gone (e.g. a backend cancel
+        # resolves the albumId from durable state, not the live queue), the
+        # record-derived details are empty. Fall back to the durable backend
+        # release_title so the hold still carries a human-readable label. This
+        # is the literal release name, not a guessed artist/album split, and is
+        # scoped to the backend column so worker-job holds are unaffected.
+        release_title = job.get("release_title")
+        if release_title:
+            details.setdefault("download_title", str(release_title))
         state_db.create_album_hold(
             album_id,
             reason="operator_cancelled_active_grab",

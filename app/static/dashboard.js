@@ -92,13 +92,14 @@ function applyRecordsSearch() {
 
 async function refresh() {
   try {
-    const [sumResp, recResp, timingResp, jobsResp, connectorResp, holdsResp] = await Promise.all([
+    const [sumResp, recResp, timingResp, jobsResp, connectorResp, holdsResp, backendResp] = await Promise.all([
       api('/summary'),
       api('/records?' + buildFilterParams()),
       api('/timings?window=7d'),
       api('/jobs?state=queued,running,cancelling&limit=20'),
       api('/connectors'),
-      api('/album-holds')
+      api('/album-holds'),
+      api('/backend-jobs')
     ]);
     const sum = await sumResp.json();
     const rec = await recResp.json();
@@ -106,6 +107,7 @@ async function refresh() {
     const jobs = await jobsResp.json();
     const connectors = await connectorResp.json();
     const holds = await holdsResp.json();
+    const backend = await backendResp.json();
     lastConnectors = connectors.connectors || [];
     renderSummary(sum, connectors.connectors || []);
     renderActiveJobs(jobs.jobs || []);
@@ -113,6 +115,7 @@ async function refresh() {
     renderRecords(rec.records);
     renderIntegrations(connectors.connectors || []);
     renderAlbumHolds(holds.holds || []);
+    renderBackendJobs(backend);
     lastUpdate = Date.now();
     updateRefreshIndicator();
     // Save filter state
@@ -380,6 +383,37 @@ function renderAlbumHolds(holds) {
           <span class="reason">${esc(h.reason || '')}</span>
           <span class="age">expires ${esc(fmtExpiresIn(h.expires_in_sec))}</span>
           <button class="btn-small" onclick="clearAlbumHold(${Number(h.album_id)})">Clear</button>
+        </div>
+      `).join('')}
+    </div>
+  `;
+}
+
+function backendStateClass(state) {
+  if (state === 'imported') return 'ok';
+  if (state === 'failed') return 'error';
+  if (state === 'cancelled') return 'muted';
+  return 'warn'; // queued / downloading / completed / importing / review — in-flight
+}
+
+function renderBackendJobs(payload) {
+  const jobs = (payload && payload.jobs) || [];
+  const active = (payload && payload.active) || 0;
+  const countEl = $('backend-jobs-count');
+  if (countEl) countEl.textContent = active ? `(${active} active)` : '';
+  if (!jobs.length) {
+    $('backend-jobs-body').innerHTML = '<span class="muted">No backend-lane jobs yet.</span>';
+    return;
+  }
+  const now = Date.now() / 1000;
+  $('backend-jobs-body').innerHTML = `
+    <div class="command-list">
+      ${jobs.map(j => `
+        <div class="command-item">
+          <span class="name">${esc(j.release_title || j.jid || '—')}</span>
+          <span class="reason ${backendStateClass(j.state)}">${esc(j.state || '')}</span>
+          <span class="muted">${esc(j.category || '')}${j.target_album_id ? ' · album #' + esc(j.target_album_id) : ''}</span>
+          <span class="age">${fmtAge(now - (j.finished_at || j.updated_at || now))} ago</span>
         </div>
       `).join('')}
     </div>

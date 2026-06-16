@@ -89,6 +89,28 @@ def test_lists_jobs_newest_first_with_active_count(backend_api_env):
     }
 
 
+def test_release_title_is_redacted(backend_api_env):
+    import state_db
+
+    client = backend_api_env
+    # release_title comes from an indexer and has historically embedded a
+    # download URL carrying the indexer apikey — it must not leave the API raw
+    state_db.create_backend_job(
+        "leaky",
+        source_type="sab_usenet_backend",
+        category="mintarr-music",
+        backend_job_id="NZO-9",
+        state="downloading",
+        release_title="Artist - Album https://indexer.example/get?apikey=SECRET123&id=1",
+    )
+
+    r = client.get(f"/dashboard/v1/backend-jobs?apikey={_key()}")
+    assert r.status_code == 200
+    title = r.get_json()["jobs"][0]["release_title"]
+    assert "SECRET123" not in title
+    assert "apikey=<redacted>" in title
+
+
 def test_requires_api_key(backend_api_env):
     client = backend_api_env
     r = client.get("/dashboard/v1/backend-jobs")

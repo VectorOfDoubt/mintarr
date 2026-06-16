@@ -1717,14 +1717,21 @@ def _backend_job_view(job: dict) -> dict:
     Read-only observability over the Mintarr-managed SAB/qBit lane: which grabs
     Mintarr is shepherding, their lifecycle state, and the Lidarr album each
     targets. No secrets are surfaced — ``backend_job_id`` is the backend's own
-    transfer id (e.g. a SAB nzo_id), not a key.
+    transfer id (e.g. a SAB nzo_id), not a key. ``release_title`` originates from
+    an indexer and has historically embedded a download URL carrying ``apikey=``,
+    so it is defensively masked before it leaves the API.
     """
+    import download_backend
+
+    release_title = job.get("release_title")
+    if isinstance(release_title, str):
+        release_title = download_backend.redact(release_title)
     return {
         "jid": job.get("jid"),
         "state": job.get("state"),
         "category": job.get("category"),
         "source_type": job.get("source_type"),
-        "release_title": job.get("release_title"),
+        "release_title": release_title,
         "target_album_id": job.get("target_album_id"),
         "backend_job_id": job.get("backend_job_id"),
         "created_at": job.get("created_at"),

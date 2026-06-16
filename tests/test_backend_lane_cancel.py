@@ -29,6 +29,11 @@ def cancel_env(tmp_path, monkeypatch):
     monkeypatch.setattr(server, "_save_jobs", lambda: None)
     # isolate from the hide path (existing behavior, not under test here)
     monkeypatch.setattr(server, "_hide_from_lidarr", lambda jid: None)
+    # never reach Lidarr for the album-hold albumId fallback; the album-hold
+    # path under test resolves the id from durable backend state, not the network
+    monkeypatch.setattr(
+        server, "_lidarr_queue_record_for_download_id", lambda *a, **k: None
+    )
 
     cancelled = []
 
@@ -126,6 +131,44 @@ def test_cancel_keeps_visible_when_durable_cancel_fails(cancel_env, monkeypatch)
     # attempted (durable intent must land first)
     assert hidden == []
     assert cancelled == []
+
+
+def test_cancel_holds_album_when_target_known(cancel_env):
+    import state_db
+
+    server, _ = cancel_env
+    # a backend row carries a trusted Lidarr albumId captured during the grab
+    state_db.create_backend_job(
+        "jid-1",
+        source_type="sab_usenet_backend",
+        category="mintarr-music",
+        backend_job_id="NZO-1",
+        state="downloading",
+        target_album_id=9619,
+        release_title="Artist - Album",
+    )
+    server._jobs["jid-1"] = {"id": "jid-1", "category": "mintarr-music"}
+
+    server._cancel_and_hide_job("jid-1")
+
+    # without the hold, Lidarr blocklists the cancelled release and immediately
+    # re-grabs an alternative of the same album (observed live)
+    hold = state_db.get_album_hold(9619)
+    assert hold is not None
+    assert hold["reason"] == "operator_cancelled_active_grab"
+
+
+def test_cancel_without_known_album_creates_no_hold(cancel_env):
+    import state_db
+
+    server, _ = cancel_env
+    _seed(server, state="downloading")  # no target_album_id anywhere
+
+    server._cancel_and_hide_job("jid-1")
+
+    # no trusted albumId → never guess from titles, so no hold is created
+    total, _rows = state_db.list_album_holds(active_only=True)
+    assert total == 0
 
 
 def test_cancel_via_sab_delete_endpoint(cancel_env):

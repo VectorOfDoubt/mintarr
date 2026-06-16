@@ -4929,8 +4929,10 @@ def _create_album_hold_for_cancel(value: str, job: dict) -> None:
         with _jobs_lock:
             projected = dict(_jobs.get(value) or {})
 
-        album_id = _int_or_none(payload.get("target_album_id")) or _int_or_none(
-            projected.get("target_album_id")
+        album_id = (
+            _int_or_none(payload.get("target_album_id"))
+            or _int_or_none(job.get("target_album_id"))
+            or _int_or_none(projected.get("target_album_id"))
         )
         queue_record = None
         if album_id is None:
@@ -5016,6 +5018,13 @@ def _cancel_backend_job_if_any(jid: str) -> bool | None:
                 "[backend-lane] backend cancel failed (already marked cancelled) jid=%s",
                 jid,
             )
+
+    # Mirror the worker-cancel path: an operator cancel is intent to stop trying
+    # this album, so hold it. Without this, Lidarr blocklists the cancelled
+    # release and immediately re-grabs an alternative (observed live: a backend
+    # cancel triggered a fresh TidalHires grab of the same album). The backend
+    # row carries a trusted ``target_album_id``; the helper never raises.
+    _create_album_hold_for_cancel(jid, job)
     return True
 
 

@@ -174,6 +174,44 @@ def test_cancel_without_known_album_creates_no_hold(cancel_env):
     assert total == 0
 
 
+def test_cancel_terminalizes_backend_row_during_import_handoff(cancel_env, monkeypatch):
+    import state_db
+
+    server, cancelled = cancel_env
+    # the backend job has progressed to the import phase, where it spawns a
+    # worker import job — so a worker job AND the durable backend row coexist
+    state_db.create_backend_job(
+        "jid-1",
+        source_type="sab_usenet_backend",
+        category="mintarr-music",
+        backend_job_id="NZO-1",
+        state="importing",
+        target_album_id=10069,
+        release_title="Artist - Album",
+    )
+    cancel_requests = []
+    monkeypatch.setattr(
+        state_db, "get_active_job_by_jid", lambda jid: {"id": 89, "jid": jid}
+    )
+    monkeypatch.setattr(
+        state_db,
+        "request_job_cancel",
+        lambda job_id: cancel_requests.append(job_id) or True,
+    )
+
+    server._cancel_and_hide_job("jid-1")
+
+    # the worker import job is cancelled AND the durable backend row is
+    # terminalized — without the fix it was stranded in `importing` forever
+    assert cancel_requests == [89]
+    assert cancelled == [("NZO-1", False)]
+    job = state_db.get_backend_job("jid-1")
+    assert job["state"] == "cancelled"
+    assert job["finished_at"] is not None
+    # the album is still held so Lidarr does not immediately re-grab
+    assert state_db.list_album_holds(active_only=True)[0] == 1
+
+
 def test_cancel_via_sab_delete_endpoint(cancel_env):
     import os
     import state_db

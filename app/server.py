@@ -5083,7 +5083,13 @@ def _cancel_and_hide_job(value: str | None) -> None:
                     job["id"],
                 )
                 _create_album_hold_for_cancel(value, job)
-        elif _cancel_backend_job_if_any(value) is False:
+        # Terminalize the durable backend row whenever this is a backend job —
+        # this must run even when a worker job was just cancelled, not as an
+        # ``elif``. During the import handoff a backend job spawns a worker
+        # import job, so both coexist; cancelling only the worker left the
+        # backend row stranded in ``importing`` forever (observed live: a cancel
+        # raced download completion and the row never reached a terminal state).
+        if _cancel_backend_job_if_any(value) is False:
             # Durable backend cancel did not persist — keep the job visible so
             # Lidarr and Mintarr do not disagree about whether it is cancelled.
             hide = False

@@ -4929,8 +4929,10 @@ def _create_album_hold_for_cancel(value: str, job: dict) -> None:
         with _jobs_lock:
             projected = dict(_jobs.get(value) or {})
 
-        album_id = _int_or_none(payload.get("target_album_id")) or _int_or_none(
-            projected.get("target_album_id")
+        album_id = (
+            _int_or_none(payload.get("target_album_id"))
+            or _int_or_none(job.get("target_album_id"))
+            or _int_or_none(projected.get("target_album_id"))
         )
         queue_record = None
         if album_id is None:
@@ -4952,6 +4954,15 @@ def _create_album_hold_for_cancel(value: str, job: dict) -> None:
         source_id = job.get("source_id") or projected.get("source_id")
         details = _album_hold_details_from_lidarr_record(queue_record)
         details.setdefault("download_id", value)
+        # When the Lidarr queue record is already gone (e.g. a backend cancel
+        # resolves the albumId from durable state, not the live queue), the
+        # record-derived details are empty. Fall back to the durable backend
+        # release_title so the hold still carries a human-readable label. This
+        # is the literal release name, not a guessed artist/album split, and is
+        # scoped to the backend column so worker-job holds are unaffected.
+        release_title = job.get("release_title")
+        if release_title:
+            details.setdefault("download_title", str(release_title))
         state_db.create_album_hold(
             album_id,
             reason="operator_cancelled_active_grab",
@@ -5016,6 +5027,13 @@ def _cancel_backend_job_if_any(jid: str) -> bool | None:
                 "[backend-lane] backend cancel failed (already marked cancelled) jid=%s",
                 jid,
             )
+
+    # Mirror the worker-cancel path: an operator cancel is intent to stop trying
+    # this album, so hold it. Without this, Lidarr blocklists the cancelled
+    # release and immediately re-grabs an alternative (observed live: a backend
+    # cancel triggered a fresh TidalHires grab of the same album). The backend
+    # row carries a trusted ``target_album_id``; the helper never raises.
+    _create_album_hold_for_cancel(jid, job)
     return True
 
 

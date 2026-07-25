@@ -1,5 +1,5 @@
 ---
-description: Architecture baseline (ADR-001/ADR-002)
+description: Architecture baseline (ADR-001/ADR-002/ADR-003)
 globs:
 alwaysApply: true
 ---
@@ -7,31 +7,37 @@ alwaysApply: true
 <!-- BEGIN MANAGED ARCHITECTURE BASELINE -->
 GENERATED CONTENT — DO NOT EDIT DIRECTLY
 Source: policy/agent-architecture-baseline.md
-Baseline: ADR-001 v1.2
-Release: v1.2.2
-Source revision: 90b42b4
+Baseline: ADR-001 v1.3
+Release: v1.3.1
+Source revision: a15a43e
 
 ## Architecture baseline — rules for AI agents
 
-This project follows **ADR-001 (robust, vendor-independent Git architecture)** and
-**ADR-002 (agent instruction distribution)**. Agents MUST respect the rules below. Each
-rule is tagged with its criticality. These are guidance; the security/data/legal-critical
-rules are ALSO enforced technically — never assume a text rule is the enforcement.
+This project follows **ADR-001 (robust, vendor-independent Git architecture)**,
+**ADR-002 (agent instruction distribution)**, and where explicitly activated
+**ADR-003 (GitHub collaboration profile)**. Agents MUST respect the rules below. Each rule
+is tagged with its criticality. These are guidance; the security/data/legal-critical rules
+are ALSO enforced technically — never assume a text rule is the enforcement.
 
-1. **[SECURITY] Forgejo is the canonical target.** The authoritative remote for code AND
-   metadata (issues, PRs, releases) is the self-hosted Forgejo instance; `origin` is
-   Forgejo. **Transition state:** until Forgejo is stood up (check the repo status), this
-   is the *target* state — do not treat any cloud platform as the permanent source of
-   truth and do not reintroduce one as a hard dependency. GitHub/GitLab/Codeberg are
-   replaceable, mostly read-only mirrors.
+1. **[SECURITY] One declared writer-of-record per repository.** `FORGEJO-FIRST` is the
+   default: Forgejo is authoritative for Git refs and metadata, and `origin` is Forgejo.
+   `GITHUB-COLLAB` is allowed only for an explicitly approved, `PUBLIC-SAFE` repository
+   under ADR-003; while active, GitHub is the declared writer for refs and collaboration
+   metadata and Forgejo is its read-only recovery replica. Never assume a profile from a
+   remote name: check the repository declaration. Never allow both platforms to write the
+   same protected ref.
 
 2. **[DATA] Mirrors are not backup.** Git mirrors carry commits/branches/tags only — not
    issues, PRs, attachments, registry, config, secrets or full release/LFS data. Never
-   propose a mirror as a substitute for an instance backup.
+   propose a mirror as a substitute for backup. If an approved external platform is
+   authoritative for collaboration metadata, that metadata must be exported versioned,
+   integrity-checked, retained, and restore-tested inside the owner's backup domain.
 
-3. **[DATA] Server-side push mirrors, not local multi-push.** Redundancy is fanned out by
-   Forgejo, not by adding multiple push URLs on a client. This is a normative redundancy
-   and credential-boundary rule, not a project-local workflow preference.
+3. **[DATA] Instance-managed mirrors, never local multi-push for redundancy.**
+   `FORGEJO-FIRST` fans out through Forgejo server-side push mirrors.
+   `GITHUB-COLLAB` uses a Forgejo server-side pull mirror from its declared GitHub writer
+   and must not push-mirror back to that writer. Never add multiple client push URLs as
+   the redundancy mechanism. Mirror lag and divergence must fail closed and alert.
 
 4. **[SECURITY] Least privilege on credentials.** Use project-/repo-scoped, short-lived
    tokens (e.g. GitLab `write_repository`, fine-grained/repo-scoped tokens). Never
@@ -64,9 +70,11 @@ rules are ALSO enforced technically — never assume a text rule is the enforcem
    still live in Forgejo + encrypted backup. Self-hosting does not make unlawful content
    lawful.
 
-10. **[SECURITY] GitHub is optional and gated.** The architecture works fully without
-    GitHub. Do not reintroduce GitHub as a required dependency. A new/replacement GitHub
-    account is used only after the account situation is resolved in writing.
+10. **[SECURITY] GitHub is optional at architecture level and gated per repository.**
+    `FORGEJO-FIRST` works fully without GitHub. A `GITHUB-COLLAB` repository may depend on
+    GitHub for its active collaboration UX only after written approval and account
+    resolution; it must retain a tested path to fail over code development to Forgejo.
+    Do not activate the profile merely because a GitHub remote exists.
 
 11. **[DATA-CRITICAL] Fase 0 before further architecture work.** Uncommitted/untracked
     local work is not protected by mirrors, bundles, or a later Forgejo. A full

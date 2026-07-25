@@ -48,7 +48,7 @@ There is **no stable public release yet**. The public repository is open, active
 # docker-compose.yml (preview — subject to change)
 services:
   mintarr:
-    image: ghcr.io/eivindsjursen-lab/mintarr:latest
+    image: ghcr.io/eivindsjursen-lab/mintarr@sha256:<release-manifest-digest>
     container_name: mintarr
     ports:
       - "127.0.0.1:5025:8000"
@@ -59,6 +59,10 @@ services:
       - MINTARR_API_KEY=<generate-something-long>
       - LIDARR_API_URL=http://lidarr:8686/api/v1
 ```
+
+Replace `<release-manifest-digest>` with the multi-platform digest published for the
+release. Mintarr has no stable release yet; until one exists, build the image locally
+instead of substituting a floating `latest` tag.
 
 Then in Lidarr:
 

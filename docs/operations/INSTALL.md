@@ -23,12 +23,16 @@ If you do not have FLAC Detective running, install it before continuing — Mint
 
 Copy [`docker-compose.example.yml`](https://github.com/eivindsjursen-lab/mintarr/blob/main/docker-compose.example.yml) and customise the placeholders.
 
+> Replace `<release-manifest-digest>` with the digest published for the chosen release.
+> There is no stable image release yet; build locally during the preview phase. Do not
+> substitute a floating `latest` tag in a persistent deployment.
+
 ### 2.1 Minimum config
 
 ```yaml
 services:
   mintarr:
-    image: ghcr.io/eivindsjursen-lab/mintarr:latest
+    image: ghcr.io/eivindsjursen-lab/mintarr@sha256:<release-manifest-digest>
     container_name: mintarr
     restart: unless-stopped
     environment:

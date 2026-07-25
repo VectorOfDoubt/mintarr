@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security and architecture baseline
+
+- Adopted architecture-baseline v1.2.2 for Codex, Claude Code, Cursor and Copilot.
+- Pinned third-party GitHub Actions to reviewed full commit SHAs.
+- Pinned the Python base image to a verified multi-architecture manifest digest.
+- Replaced floating `latest` deployment examples with an explicit release-digest
+  placeholder; preview operators must build locally until a stable image is published.
+- Added a tested CI guard that rejects mutable Action, base-image and deployment refs.
+
 ### Foundation phase
 
 Mintarr is in its open-source foundation phase. No releases yet.

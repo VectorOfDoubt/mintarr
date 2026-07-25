@@ -9,6 +9,7 @@ services:
       - DOWNLOAD_BASE=/tmp/downloads
       - OUTPUT_BASE=/tmp/output
       - TIDAL_DL_NG_CONFIG=/tmp/tidal-config
+      - MINTARR_REPO_ROOT=/repo
     volumes:
       - type: bind
         source: ./app
@@ -16,5 +17,9 @@ services:
       - type: bind
         source: ./tests
         target: /tests
+      - type: bind
+        source: .
+        target: /repo
+        read_only: true
     working_dir: /app
     command: ["pytest", "/tests", "-v", "--tb=short"]

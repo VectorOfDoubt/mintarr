@@ -3,4 +3,4 @@ pytest-benchmark==4.0.0
 pytest-cov==5.0.0
 pytest-mock==3.14.0
 mypy==1.16.0
-types-requests==2.33.0.20260518
+types-requests==2.33.0.20260712

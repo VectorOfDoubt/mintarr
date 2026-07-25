@@ -91,3 +91,49 @@ jobs:
         uses: wagoid/commitlint-github-action@b948419dd99f3fd78a6548d48f94e3df7f6bf3ed # v6
         with:
           configFile: '.commitlintrc.yaml'
+
+  fork-security-probe:
+    name: Fork security probe
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork == true
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+    env:
+      FORK_SECURITY_SENTINEL: ${{ secrets.FORK_SECURITY_SENTINEL }}
+      GH_TOKEN: ${{ github.token }}
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+    steps:
+      - name: Assert secret isolation, read-only token and hosted runner
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ -n "${FORK_SECURITY_SENTINEL}" ]]; then
+            echo "Repository secret was exposed to fork PR code." >&2
+            exit 1
+          fi
+
+          if [[ "${RUNNER_ENVIRONMENT}" != "github-hosted" ]]; then
+            echo "Fork PR did not run on a GitHub-hosted runner." >&2
+            exit 1
+          fi
+
+          response_code="$(
+            curl --silent --show-error \
+              --output /dev/null \
+              --write-out '%{http_code}' \
+              --request POST \
+              --header "Accept: application/vnd.github+json" \
+              --header "Authorization: Bearer ${GH_TOKEN}" \
+              --header "X-GitHub-Api-Version: 2026-03-10" \
+              "https://api.github.com/repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/comments" \
+              --data '{"body":"fork-security-probe-unexpected-write"}'
+          )"
+          if [[ "${response_code}" != "403" ]]; then
+            echo "Expected write denial (403), received ${response_code}." >&2
+            exit 1
+          fi
+
+          echo "Fork PR isolation verified."

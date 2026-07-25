@@ -8,8 +8,8 @@ alwaysApply: true
 GENERATED CONTENT — DO NOT EDIT DIRECTLY
 Source: policy/agent-architecture-baseline.md
 Baseline: ADR-001 v1.3
-Release: v1.3.1
-Source revision: a15a43e
+Release: v1.3.2
+Source revision: 582b7e4
 
 ## Architecture baseline — rules for AI agents
 

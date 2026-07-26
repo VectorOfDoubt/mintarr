@@ -2,8 +2,12 @@
 
 > **Type:** Strategy / live status tracker
 > **Version:** 0.1 — 2026-05-26
-> **Status:** Living document — phases and statuses update as work lands.
+> **Status:** PAUSED INDEFINITELY — 2026-07-26
 > **Audience:** Anyone wondering "is feature X planned?" or "when does this land?"
+
+This roadmap is retained as historical planning context. It is not an active
+delivery commitment. See [PAUSE_2026-07-26.md](PAUSE_2026-07-26.md) for the
+owner decision and resume gate.
 
 ---
 

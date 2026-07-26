@@ -20,7 +20,9 @@ Mintarr is built without a fixed schedule. Phases are sequenced by dependency, n
 - **Scope** — concrete deliverables, with links to design docs where they exist
 - **Depends on** — what must land first
 
-When a phase ships, this document is updated in the same commit as the merge. Stale phase status is a documentation bug.
+All phase statuses below are frozen snapshots from the pause date, not current
+work indicators. If the project is resumed, this document must be reviewed and
+updated in the same change that clears the pause gate.
 
 For the underlying positioning and what is *not* in any phase, see [VISION.md](VISION.md) and [ADR-0008](../architecture/adr/0008-strategic-positioning.md).
 
@@ -30,7 +32,7 @@ For the underlying positioning and what is *not* in any phase, see [VISION.md](V
 
 **Goal:** establish Mintarr as a public, documented, contribution-ready project.
 
-**Status:** in progress
+**Historical status at pause:** in progress
 
 **Scope:**
 
@@ -52,7 +54,7 @@ For the underlying positioning and what is *not* in any phase, see [VISION.md](V
 
 **Goal:** every source, verifier, and output is a Connector with a static manifest and a uniform operator surface.
 
-**Status:** partial - F4.1-F4.5 foundation shipped; optional verifier evidence runners remain future work
+**Historical status at pause:** partial - F4.1-F4.5 foundation shipped; optional verifier evidence runners remained future work
 
 **Scope:**
 
@@ -72,7 +74,7 @@ For the underlying positioning and what is *not* in any phase, see [VISION.md](V
 
 **Goal:** Mintarr's dashboard feels like an arr-stack tool, with a sidebar layout and Settings / System cards.
 
-**Status:** shipped — sidebar shell with seven sections, vendored Alpine + HTMX (no Node toolchain) per [ADR-0011](../architecture/adr/0011-frontend-framework.md), dark/light/auto theme + table density, live Queue/History/System via HTMX, audit feed with CSV export, and records + topbar search. Remaining Tasks/Logs/Backup/Updates card content and server-side global search are optional follow-ups.
+**Historical status at pause:** shipped — sidebar shell with seven sections, vendored Alpine + HTMX (no Node toolchain) per [ADR-0011](../architecture/adr/0011-frontend-framework.md), dark/light/auto theme + table density, live Queue/History/System via HTMX, audit feed with CSV export, and records + topbar search. Remaining Tasks/Logs/Backup/Updates card content and server-side global search were optional follow-ups.
 
 **Scope:**
 
@@ -107,7 +109,7 @@ For the underlying positioning and what is *not* in any phase, see [VISION.md](V
 
 **Goal:** Mintarr fits cleanly into existing self-hosting observability and notification stacks.
 
-**Status:** shipped — all scope delivered: structured JSON logging (`MINTARR_LOG_FORMAT=json`), Prometheus `/metrics` with a documented metric catalogue, Grafana dashboard templates under `docs/grafana/`, OpenAPI `/openapi.json` + Swagger UI at `/docs`, opt-in Apprise notifications (`MINTARR_NOTIFY_URLS`) on attention events, the backup/restore feature (read-only `GET /backup`, optional scheduled backup zips, and staged restore via `POST /restore` + crash-safe boot-time apply with System-section status/cancel controls), generic webhook-in (`POST /webhook/ingest`), and the MkDocs Material docs site. Enhancements such as Prometheus event counters/histograms and a richer event-metric surface are tracked as future work, not Phase 3 scope.
+**Historical status at pause:** shipped — all scope delivered: structured JSON logging (`MINTARR_LOG_FORMAT=json`), Prometheus `/metrics` with a documented metric catalogue, Grafana dashboard templates under `docs/grafana/`, OpenAPI `/openapi.json` + Swagger UI at `/docs`, opt-in Apprise notifications (`MINTARR_NOTIFY_URLS`) on attention events, the backup/restore feature (read-only `GET /backup`, optional scheduled backup zips, and staged restore via `POST /restore` + crash-safe boot-time apply with System-section status/cancel controls), generic webhook-in (`POST /webhook/ingest`), and the MkDocs Material docs site. Enhancements such as Prometheus event counters/histograms and a richer event-metric surface were tracked as future work, not Phase 3 scope.
 
 **Scope:**
 
@@ -130,7 +132,7 @@ Restore implementation follows [Phase 3 restore endpoint design](../design/PHASE
 
 **Goal:** Mintarr supports the realistic source mix of a self-hosted music collector.
 
-**Status:** partial (TIDAL, LocalFolder, Soulseek, SAB completed-folder,
+**Historical status at pause:** partial (TIDAL, LocalFolder, Soulseek, SAB completed-folder,
 qBittorrent completed-folder, and the Mintarr-managed SAB backend lane shipped)
 
 **Scope:**
@@ -159,7 +161,7 @@ qBittorrent completed-folder, and the Mintarr-managed SAB backend lane shipped)
 
 **Goal:** Mintarr's verification and import decisions reflect the real-world ambiguity of music release data.
 
-**Status:** partial — F5.1 shipped; F5.3 shipped through the advisory tier (local CD-rip evidence + opt-in default-off scoring, plus a default-off network CTDB/AccurateRip lookup that surfaces advisory evidence); F5.4 library-evidence indexing and scan-tier architecture shipped through dogfood. Remaining Phase 5 work is focused on F5.2 source-aware thresholds, the heavier F5.3B checksum-recompute slice, adaptive scan concurrency, and broader dogfood before enabling measured-existing decisions by default.
+**Historical status at pause:** partial — F5.1 shipped; F5.3 shipped through the advisory tier (local CD-rip evidence + opt-in default-off scoring, plus a default-off network CTDB/AccurateRip lookup that surfaces advisory evidence); F5.4 library-evidence indexing and scan-tier architecture shipped through dogfood. Remaining Phase 5 work was focused on F5.2 source-aware thresholds, the heavier F5.3B checksum-recompute slice, adaptive scan concurrency, and broader dogfood before enabling measured-existing decisions by default.
 
 **Scope:**
 
@@ -176,7 +178,7 @@ qBittorrent completed-folder, and the Mintarr-managed SAB backend lane shipped)
 
 **Goal:** Mintarr is useful to operators who do not run Lidarr.
 
-**Status:** planned (post-V1.0)
+**Historical status at pause:** planned (post-V1.0)
 
 **Scope:**
 
@@ -193,7 +195,7 @@ qBittorrent completed-folder, and the Mintarr-managed SAB backend lane shipped)
 
 **Goal:** reduce Mintarr's Lidarr dependency from "always required" to "primary output among several".
 
-**Status:** opportunistic — pursued when one of the conditions in [ADR-0007 §Re-evaluation triggers](../architecture/adr/0007-no-lidarr-fork.md) is approached.
+**Historical status at pause:** opportunistic — intended to be pursued when one of the conditions in [ADR-0007 §Re-evaluation triggers](../architecture/adr/0007-no-lidarr-fork.md) was approached.
 
 **Scope:**
 
@@ -210,7 +212,7 @@ qBittorrent completed-folder, and the Mintarr-managed SAB backend lane shipped)
 
 **Goal:** Mintarr ships its own audio analysis sensors that complement (not replace) the external verifier stack.
 
-**Status:** intended direction. Not scoped; not started. Pursued only after Phase 4 source coverage and Phase 5 quality refinement have produced clear gaps that in-house sensors would fill.
+**Historical status at pause:** intended direction. Not scoped; not started. It was to be pursued only after Phase 4 source coverage and Phase 5 quality refinement produced clear gaps that in-house sensors would fill.
 
 **Scope (tentative — locked when an F-numbered design doc lands):**
 
@@ -269,4 +271,4 @@ If any of these become viable, a new ADR overrides the old one. Until then, cont
 
 ---
 
-> Last updated: 2026-06-05
+> Last updated: 2026-07-26 (project pause; phase statuses frozen)

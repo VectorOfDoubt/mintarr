@@ -103,14 +103,17 @@ If you wanted a quality control and orchestration layer that catches fake high-r
 
 ## Contributing
 
-Mintarr is built for community contribution. The [Documentation Index](docs/MINTARR_DOCUMENTATION_INDEX.md) tracks what is planned, what is drafted, and what is locked.
+Mintarr was built for community contribution, but the project is now paused.
+New issues and pull requests may be retained as historical input, but they are
+not being reviewed while the pause remains in effect and no response time is
+promised. See the [pause decision](docs/strategy/PAUSE_2026-07-26.md).
 
-Before opening a PR:
+If the project is resumed, contributors should:
 
 1. Read [VISION.md](docs/strategy/VISION.md) and [ADR-0008](docs/architecture/adr/0008-strategic-positioning.md) to understand scope
 2. Read [CONTRIBUTING.md](CONTRIBUTING.md) for PR process
 3. Run the boundary test from ADR-0008 against your proposed change
-4. Open an issue first for non-trivial changes — fast scope feedback saves wasted work
+4. Open an issue first for non-trivial changes
 
 Adapter authors should read [ADAPTER_PROTOCOL_v1.md](docs/specs/ADAPTER_PROTOCOL_v1.md) and the [ADAPTER_TUTORIAL.md](docs/development/ADAPTER_TUTORIAL.md).
 

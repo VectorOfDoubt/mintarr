@@ -106,6 +106,7 @@ nav:
   - Home: index.md
 
   - Strategy:
+      - Pause: strategy/PAUSE_2026-07-26.md
       - Vision: strategy/VISION.md
       - Roadmap: strategy/ROADMAP.md
       - Glossary: strategy/GLOSSARY.md

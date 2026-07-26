@@ -2,6 +2,11 @@
 
 **Quality control and import orchestration for Lidarr.**
 
+> **Project paused indefinitely from 2026-07-26.** There is no active
+> deployment, feature-development, contribution-review or roadmap commitment.
+> The repository is retained for preservation and narrowly scoped maintenance.
+> See the [pause decision](strategy/PAUSE_2026-07-26.md).
+
 Mintarr verifies, scores, and orchestrates music imports across multiple sources
 (TIDAL, LocalFolder, Soulseek, future SAB / qBit / CD-rip / YouTube) before they
 reach Lidarr. Every import is verified, scored, and either auto-imported, sent
@@ -18,6 +23,7 @@ changes on the Lidarr side beyond adding one indexer and one download client.
 | If you want to... | Read |
 |---|---|
 | Understand what Mintarr is | [Vision](strategy/VISION.md) |
+| Read the current project status | [Pause decision](strategy/PAUSE_2026-07-26.md) |
 | See what's planned | [Roadmap](strategy/ROADMAP.md) |
 | Look up a term | [Glossary](strategy/GLOSSARY.md) |
 | Understand the architecture | [Overview](architecture/OVERVIEW.md) |

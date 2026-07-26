@@ -283,14 +283,18 @@ Violating any of these in a PR is grounds for rejection. Changes that affect any
 
 ## 11. Disclosure and remediation
 
-The public disclosure process is in [SECURITY.md](https://github.com/eivindsjursen-lab/mintarr/blob/main/SECURITY.md). Summary:
+The public disclosure process, including the best-effort qualification that
+applies while the project is paused, is in
+[SECURITY.md](https://github.com/VectorOfDoubt/mintarr/blob/main/SECURITY.md).
+Summary:
 
 - GitHub Private Vulnerability Reporting preferred
 - Email fallback to the maintainer
 - 90-day coordinated disclosure default
 - Credit in published security advisory unless requested anonymous
 
-For maintainers receiving a report:
+For maintainers receiving a report, the response targets below are not a
+guaranteed service-level agreement while the project is paused:
 
 1. Acknowledge within 5 business days
 2. Triage within 14 business days

@@ -4,7 +4,7 @@
 > **Version:** 1.0 — 2026-05-26
 > **Status:** Living document. Updated as new threats are discovered or new attack surfaces appear.
 > **Audience:** Mintarr maintainers. Security researchers. Operators making informed deployment decisions.
-> **Related:** [SECURITY.md](https://github.com/eivindsjursen-lab/mintarr/blob/main/SECURITY.md) (operator-facing summary), [OVERVIEW.md](OVERVIEW.md)
+> **Related:** [SECURITY.md](https://github.com/VectorOfDoubt/mintarr/blob/main/SECURITY.md) (operator-facing summary), [OVERVIEW.md](OVERVIEW.md)
 
 ---
 
@@ -226,7 +226,7 @@ To prevent over-eager security reports, here are common failure modes that look 
 - **Operator's reverse proxy misconfigured to forward `Remote-User` without authentication:** This is a proxy misconfiguration, not a Mintarr vulnerability. Mintarr trusts the proxy by design.
 - **Operator commits API key into a public git repo:** Operator's responsibility, not Mintarr's.
 
-For genuinely security-relevant issues, follow [SECURITY.md](https://github.com/eivindsjursen-lab/mintarr/blob/main/SECURITY.md) disclosure process.
+For genuinely security-relevant issues, follow [SECURITY.md](https://github.com/VectorOfDoubt/mintarr/blob/main/SECURITY.md) disclosure process.
 
 ## 9. Threat scenarios (high-level)
 
@@ -266,7 +266,7 @@ For genuinely security-relevant issues, follow [SECURITY.md](https://github.com/
 
 ## 10. Invariants (locked)
 
-These are referenced from [SECURITY.md](https://github.com/eivindsjursen-lab/mintarr/blob/main/SECURITY.md) and [Connector architecture §15](../design/CONNECTOR_PLUGIN_ARCHITECTURE.md). They are load-bearing:
+These are referenced from [SECURITY.md](https://github.com/VectorOfDoubt/mintarr/blob/main/SECURITY.md) and [Connector architecture §15](../design/CONNECTOR_PLUGIN_ARCHITECTURE.md). They are load-bearing:
 
 1. **No source bypasses shared QC before Lidarr import.**
 2. **Hard gates cannot be disabled in import mode.**
@@ -283,14 +283,18 @@ Violating any of these in a PR is grounds for rejection. Changes that affect any
 
 ## 11. Disclosure and remediation
 
-The public disclosure process is in [SECURITY.md](https://github.com/eivindsjursen-lab/mintarr/blob/main/SECURITY.md). Summary:
+The public disclosure process, including the best-effort qualification that
+applies while the project is paused, is in
+[SECURITY.md](https://github.com/VectorOfDoubt/mintarr/blob/main/SECURITY.md).
+Summary:
 
 - GitHub Private Vulnerability Reporting preferred
 - Email fallback to the maintainer
 - 90-day coordinated disclosure default
 - Credit in published security advisory unless requested anonymous
 
-For maintainers receiving a report:
+For maintainers receiving a report, the response targets below are not a
+guaranteed service-level agreement while the project is paused:
 
 1. Acknowledge within 5 business days
 2. Triage within 14 business days

@@ -40,6 +40,13 @@ We do not require a PoC for the initial report — a credible description is eno
 
 ### What to expect in response
 
+Mintarr is paused indefinitely, but good-faith vulnerability reports remain
+within the narrow security-maintenance exception. The targets below describe
+the intended coordinated-disclosure process; they are best-effort while the
+project is paused and are not a guaranteed service-level agreement. If the
+project cannot safely remediate a confirmed issue, affected deployments will be
+advised to stop using the vulnerable version.
+
 - **Acknowledgement** within 5 business days
 - **Initial triage** (confirmed / not-confirmed / needs-more-info) within 14 business days
 - **Status updates** at least every 30 days while the issue is open

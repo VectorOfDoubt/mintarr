@@ -3,6 +3,12 @@
 > Quality control and import orchestration for Lidarr.
 > Verifies, scores, and orchestrates music imports across multiple sources.
 
+> [!IMPORTANT]
+> **Project paused indefinitely from 2026-07-26.** There is no active
+> deployment or feature-development commitment. Source and collaboration
+> history remain preserved on GitHub with a Forgejo recovery replica. See
+> [the pause decision](docs/strategy/PAUSE_2026-07-26.md).
+
 [![CI](https://github.com/eivindsjursen-lab/mintarr/actions/workflows/ci.yml/badge.svg)](https://github.com/eivindsjursen-lab/mintarr/actions/workflows/ci.yml)
 [![Container](https://github.com/eivindsjursen-lab/mintarr/actions/workflows/build.yml/badge.svg)](https://github.com/eivindsjursen-lab/mintarr/actions/workflows/build.yml)
 [![Docs](https://github.com/eivindsjursen-lab/mintarr/actions/workflows/docs.yml/badge.svg)](https://eivindsjursen-lab.github.io/mintarr/)
@@ -36,9 +42,11 @@ Each verifier produces evidence; the V2 policy turns evidence into one of four d
 
 ## Status
 
-Mintarr is in its **pre-release foundation phase**. The codebase that became Mintarr has been running in production for several months as `tidalhires`; the rename and public-repository cutover are documented in [ADR-0001](docs/architecture/adr/0001-rename-from-tidalhires.md).
-
-There is **no stable public release yet**. The public repository is open, active, and still hardening toward a first operator-ready release. Watch the [roadmap](docs/strategy/ROADMAP.md) for release readiness and migration milestones.
+Mintarr is **paused indefinitely**. It reached a pre-release foundation state
+but has no stable public release, and the owner is not currently pursuing the
+remaining roadmap. The historical roadmap is retained for context rather than
+as an active commitment. See
+[PAUSE_2026-07-26.md](docs/strategy/PAUSE_2026-07-26.md).
 
 ## Quick start
 
@@ -95,14 +103,17 @@ If you wanted a quality control and orchestration layer that catches fake high-r
 
 ## Contributing
 
-Mintarr is built for community contribution. The [Documentation Index](docs/MINTARR_DOCUMENTATION_INDEX.md) tracks what is planned, what is drafted, and what is locked.
+Mintarr was built for community contribution, but the project is now paused.
+New issues and pull requests may be retained as historical input, but they are
+not being reviewed while the pause remains in effect and no response time is
+promised. See the [pause decision](docs/strategy/PAUSE_2026-07-26.md).
 
-Before opening a PR:
+If the project is resumed, contributors should:
 
 1. Read [VISION.md](docs/strategy/VISION.md) and [ADR-0008](docs/architecture/adr/0008-strategic-positioning.md) to understand scope
 2. Read [CONTRIBUTING.md](CONTRIBUTING.md) for PR process
 3. Run the boundary test from ADR-0008 against your proposed change
-4. Open an issue first for non-trivial changes — fast scope feedback saves wasted work
+4. Open an issue first for non-trivial changes
 
 Adapter authors should read [ADAPTER_PROTOCOL_v1.md](docs/specs/ADAPTER_PROTOCOL_v1.md) and the [ADAPTER_TUTORIAL.md](docs/development/ADAPTER_TUTORIAL.md).
 

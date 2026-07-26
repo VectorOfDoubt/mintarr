@@ -105,7 +105,12 @@ Maintainers look for:
 
 A more detailed reviewer checklist is in [docs/development/REVIEW_CHECKLIST.md](docs/development/REVIEW_CHECKLIST.md).
 
-Review pace is intentionally not fast. Mintarr is built without a deadline ([VISION.md](docs/strategy/VISION.md) §"Documentation pace and contribution rhythm"). Expect substantive feedback within a week; expect merges to wait until the change is right rather than soon.
+Mintarr is paused indefinitely. New contributions may remain open as historical
+input, but maintainers are not reviewing them while the pause remains in effect
+and no response or merge timeline is promised. If the project resumes, review
+will continue to favor correctness over speed as described in
+[VISION.md](docs/strategy/VISION.md) §"Documentation pace and contribution
+rhythm".
 
 ## When your contribution will not be accepted
 

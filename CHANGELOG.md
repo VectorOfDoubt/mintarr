@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+> **Frozen at the 2026-07-26 project pause.** This section records the state at
+> the pause date; it is not an active release plan. See
+> [the pause decision](docs/strategy/PAUSE_2026-07-26.md).
+
 ### Security and architecture baseline
 
 - Adopted architecture-baseline v1.2.2 for Codex, Claude Code, Cursor and Copilot.
@@ -18,15 +22,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   placeholder; preview operators must build locally until a stable image is published.
 - Added a tested CI guard that rejects mutable Action, base-image and deployment refs.
 
-### Foundation phase
+### Historical foundation state at pause
 
-Mintarr is in its open-source foundation phase. No releases yet.
+Mintarr was in its open-source foundation phase when paused. No releases were
+published.
 
 The pre-rename project (`tidalhires`) ran in private production through F1-F4 design work. The history of those phases is preserved in the design documents under [`docs/design/`](docs/design/) but is not part of any Mintarr release.
 
 Phase 0 progress is tracked in [docs/strategy/ROADMAP.md](docs/strategy/ROADMAP.md).
 
-### Planned for first release (v0.1.0)
+### Historical first-release plan (not active)
 
 - Static connector registry (F4.1)
 - Renamed code (`tidalhires/` → `mintarr/`)

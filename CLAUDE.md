@@ -6,8 +6,8 @@ Guidance for Claude Code in this repository.
 GENERATED CONTENT — DO NOT EDIT DIRECTLY
 Source: policy/agent-architecture-baseline.md
 Baseline: ADR-001 v1.4.1
-Release: v1.4.2
-Source revision: 0144984
+Release: v1.4.3
+Source revision: 18ac264
 
 ## Architecture baseline — rules for AI agents
 
